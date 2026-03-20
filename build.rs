@@ -2,6 +2,10 @@ use std::{env, path::PathBuf, process::Command};
 
 fn main() {
     let manifest = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+
+    // -------------------------------------------------------------------------
+    // mRuby
+    // -------------------------------------------------------------------------
     let mruby_dir = manifest.join("vendor/mruby");
     let lib_path = mruby_dir.join("build/host/lib/libmruby.a");
 
@@ -32,9 +36,55 @@ fn main() {
         .include(mruby_dir.join("include"))
         .compile("rrcad_ruby_glue");
 
-    // Rerun if sources change.
+    // -------------------------------------------------------------------------
+    // OCCT C++ bridge (cxx)
+    // -------------------------------------------------------------------------
+    cxx_build::bridge("src/occt/mod.rs")
+        .file("src/occt/bridge.cpp")
+        .include("/usr/include/opencascade")
+        .include(manifest.join("src/occt")) // so bridge.cpp can #include "bridge.h"
+        .flag_if_supported("-std=c++17")
+        .flag_if_supported("-w") // suppress OCCT header warnings
+        .compile("rrcad_occt_bridge");
+
+    // Link OCCT shared libraries.
+    println!("cargo:rustc-link-search=native=/usr/lib/x86_64-linux-gnu");
+    for lib in &[
+        "TKernel",
+        "TKMath",
+        "TKG2d",
+        "TKG3d",
+        "TKBRep",
+        "TKGeomBase",
+        "TKGeomAlgo",
+        "TKTopAlgo",
+        "TKPrim",
+        "TKBool",
+        "TKBO",
+        "TKFillet",
+        "TKShHealing",
+        "TKMesh",
+        "TKCDF",
+        "TKCAF",
+        "TKLCAF",
+        "TKXCAF",
+        "TKXSBase",
+        "TKDESTEP",
+        "TKDESTL",
+        "TKDEGLTF",
+        "TKRWMesh",
+    ] {
+        println!("cargo:rustc-link-lib={lib}");
+    }
+
+    // -------------------------------------------------------------------------
+    // Rerun triggers
+    // -------------------------------------------------------------------------
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=src/ruby/glue.c");
+    println!("cargo:rerun-if-changed=src/occt/mod.rs");
+    println!("cargo:rerun-if-changed=src/occt/bridge.h");
+    println!("cargo:rerun-if-changed=src/occt/bridge.cpp");
     println!(
         "cargo:rerun-if-changed={}",
         mruby_dir.join("build/host/lib/libmruby.a").display()
