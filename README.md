@@ -1,4 +1,4 @@
-<p align="center"><img src="doc/rrcad-logo.svg" alt="rrcad logo" width="400"></p>
+<p align="center"><img src="doc/rrcad-logo.png" alt="rrcad logo" width="400"></p>
 
 # rrcad
 
