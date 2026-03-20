@@ -291,29 +291,30 @@ fn assembly_inspect_contains_name() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn stub_preview_mentions_phase3() {
+fn native_preview_no_op_outside_preview_mode() {
+    // When PREVIEW is not initialised (non --preview run), preview(shape)
+    // should succeed silently rather than raising an error.
     let mut vm = MrubyVm::new();
-    assert_err_contains(&mut vm, "$s = box(5.0, 5.0, 5.0); preview($s)", "Phase 3");
+    let r = vm.eval("$s = box(5.0, 5.0, 5.0); preview($s)");
+    assert!(r.is_ok(), "preview() raised outside --preview mode: {r:?}");
 }
 
 #[test]
-fn stub_faces_selector_mentions_phase3() {
+fn native_faces_selector_returns_array() {
     let mut vm = MrubyVm::new();
-    assert_err_contains(
-        &mut vm,
-        "$s = box(5.0, 5.0, 5.0); $s.faces(:top)",
-        "Phase 3",
-    );
+    let r = vm
+        .eval("box(5.0, 5.0, 5.0).faces(:top).class")
+        .expect("faces(:top) should not raise");
+    assert!(r.contains("Array"), "expected Array, got: {r}");
 }
 
 #[test]
-fn stub_edges_selector_mentions_phase3() {
+fn native_edges_selector_returns_array() {
     let mut vm = MrubyVm::new();
-    assert_err_contains(
-        &mut vm,
-        "$s = box(5.0, 5.0, 5.0); $s.edges(:vertical)",
-        "Phase 3",
-    );
+    let r = vm
+        .eval("box(5.0, 5.0, 5.0).edges(:vertical).class")
+        .expect("edges(:vertical) should not raise");
+    assert!(r.contains("Array"), "expected Array, got: {r}");
 }
 
 #[test]

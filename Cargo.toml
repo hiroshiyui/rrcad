@@ -8,6 +8,12 @@ license = "GPL-3.0-or-later"
 cxx = "1.0"
 rustyline = "14"
 
+# Phase 3: live preview
+axum = { version = "0.7", features = ["ws"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "fs"] }
+notify = "6"
+open = "5"
+
 [build-dependencies]
 cc = "1"
 cxx-build = "1.0"

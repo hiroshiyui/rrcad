@@ -48,10 +48,25 @@ mod ffi {
         fn make_spline_3d(pts: &[f64]) -> Result<UniquePtr<OcctShape>>;
         fn shape_sweep(profile: &OcctShape, path: &OcctShape) -> Result<UniquePtr<OcctShape>>;
 
+        // --- Phase 3: sub-shape selectors ---
+        fn shape_faces_count(shape: &OcctShape, selector: &str) -> Result<i32>;
+        fn shape_faces_get(
+            shape: &OcctShape,
+            selector: &str,
+            idx: i32,
+        ) -> Result<UniquePtr<OcctShape>>;
+        fn shape_edges_count(shape: &OcctShape, selector: &str) -> Result<i32>;
+        fn shape_edges_get(
+            shape: &OcctShape,
+            selector: &str,
+            idx: i32,
+        ) -> Result<UniquePtr<OcctShape>>;
+
         // --- Export ---
         fn export_step(shape: &OcctShape, path: &str) -> Result<()>;
         fn export_stl(shape: &OcctShape, path: &str) -> Result<()>;
         fn export_gltf(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
+        fn export_glb(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
     }
 }
 
@@ -187,6 +202,30 @@ impl Shape {
             .map_err(|e| e.to_string())
     }
 
+    // --- Phase 3: sub-shape selectors ---
+
+    pub fn faces(&self, selector: &str) -> Result<Vec<Shape>, String> {
+        let n = ffi::shape_faces_count(&self.inner, selector).map_err(|e| e.to_string())?;
+        (0..n)
+            .map(|i| {
+                ffi::shape_faces_get(&self.inner, selector, i)
+                    .map(|p| Shape { inner: p })
+                    .map_err(|e| e.to_string())
+            })
+            .collect()
+    }
+
+    pub fn edges(&self, selector: &str) -> Result<Vec<Shape>, String> {
+        let n = ffi::shape_edges_count(&self.inner, selector).map_err(|e| e.to_string())?;
+        (0..n)
+            .map(|i| {
+                ffi::shape_edges_get(&self.inner, selector, i)
+                    .map(|p| Shape { inner: p })
+                    .map_err(|e| e.to_string())
+            })
+            .collect()
+    }
+
     // --- Export ---
 
     pub fn export_step(&self, path: &str) -> Result<(), String> {
@@ -200,6 +239,11 @@ impl Shape {
     /// Export to glTF. `linear_deflection` controls tessellation quality (e.g. `0.1` for 0.1 mm).
     pub fn export_gltf(&self, path: &str, linear_deflection: f64) -> Result<(), String> {
         ffi::export_gltf(&self.inner, path, linear_deflection).map_err(|e| e.to_string())
+    }
+
+    /// Export to binary glTF (GLB). Single-file format suitable for HTTP serving.
+    pub fn export_glb(&self, path: &str, linear_deflection: f64) -> Result<(), String> {
+        ffi::export_glb(&self.inner, path, linear_deflection).map_err(|e| e.to_string())
     }
 }
 

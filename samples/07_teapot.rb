@@ -1,7 +1,8 @@
 # Utah Teapot — rrcad DSL example
 #
 # Approximation using spline profiles swept/revolved into solids.
-# Run with: cargo run -- examples/teapot.rb
+# Run with:  cargo run -- samples/07_teapot.rb
+# Preview:   cargo run -- --preview samples/07_teapot.rb
 
 # --- Body (surface of revolution) ---
 body_profile = spline_2d([
@@ -39,3 +40,4 @@ end
 
 teapot.export("teapot.step")
 puts "Exported teapot.step"
+preview teapot

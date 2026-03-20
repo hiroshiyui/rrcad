@@ -177,7 +177,8 @@ module Kernel
     asm
   end
 
-  # Open the live browser preview for a shape — Phase 3.
+  # Tessellate shape and push it to the live browser preview — Phase 3.
+  # Overridden natively after prelude runs; no-op when not in --preview mode.
   def preview(_shape)
     raise NotImplementedError, "preview() is not yet implemented (Phase 3)"
   end

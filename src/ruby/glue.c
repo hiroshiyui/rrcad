@@ -81,10 +81,21 @@ extern void* rrcad_make_circle_face(double r, const char** error_out);
 extern void* rrcad_shape_extrude(void* ptr, double height, const char** error_out);
 extern void* rrcad_shape_revolve(void* ptr, double angle_deg, const char** error_out);
 
-/* Phase 3 */
+/* Phase 3 — splines and sweep */
 extern void* rrcad_make_spline_2d(const double* pts, size_t n_pts, const char** error_out);
 extern void* rrcad_make_spline_3d(const double* pts, size_t n_pts, const char** error_out);
 extern void* rrcad_shape_sweep(void* profile, void* path, const char** error_out);
+
+/* Phase 3 — live preview */
+extern void rrcad_preview_shape(void* ptr, const char** error_out);
+
+/* Phase 3 — sub-shape selectors */
+extern int rrcad_shape_faces_count(void* ptr, const char* selector, const char** error_out);
+extern void* rrcad_shape_faces_get(void* ptr, const char* selector, int idx,
+                                   const char** error_out);
+extern int rrcad_shape_edges_count(void* ptr, const char* selector, const char** error_out);
+extern void* rrcad_shape_edges_get(void* ptr, const char* selector, int idx,
+                                   const char** error_out);
 
 /* mRuby data type descriptor — name appears in TypeError messages. */
 static void shape_dfree(mrb_state* mrb, void* ptr) {
@@ -459,6 +470,87 @@ static mrb_value mrb_rrcad_shape_sweep(mrb_state* mrb, mrb_value self) {
     return shape_from_ptr(mrb, result);
 }
 
+/* -------------------------------------------------------------------------
+ * Phase 3: Live preview — preview(shape)
+ *
+ * Tessellates the shape to a temp GLB file and signals WebSocket clients
+ * to reload.  A no-op when not in --preview mode.
+ * -------------------------------------------------------------------------
+ */
+
+static mrb_value mrb_rrcad_preview(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value shape_val;
+    mrb_get_args(mrb, "o", &shape_val);
+
+    void* ptr = shape_ptr(mrb, shape_val);
+    if (!ptr)
+        return mrb_nil_value(); /* stub shape (no OCCT backing) — silent no-op */
+
+    const char* err = NULL;
+    rrcad_preview_shape(ptr, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return mrb_nil_value();
+}
+
+/* -------------------------------------------------------------------------
+ * Phase 3: Sub-shape selectors — faces and edges
+ *
+ * Both methods accept a Ruby Symbol selector (:all, :top, :bottom, :side for
+ * faces; :all, :vertical, :horizontal for edges) and return an Array of Shape
+ * objects, each wrapping one matching sub-shape.
+ * -------------------------------------------------------------------------
+ */
+
+static mrb_value mrb_rrcad_shape_faces(mrb_state* mrb, mrb_value self) {
+    mrb_sym sel_sym;
+    mrb_get_args(mrb, "n", &sel_sym);
+    const char* sel = mrb_sym_name(mrb, sel_sym);
+
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+
+    const char* err = NULL;
+    int count = rrcad_shape_faces_count(ptr, sel, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+
+    mrb_value result = mrb_ary_new_capa(mrb, count);
+    for (int i = 0; i < count; i++) {
+        err = NULL;
+        void* face_ptr = rrcad_shape_faces_get(ptr, sel, i, &err);
+        if (err)
+            mrb_raise(mrb, E_RUNTIME_ERROR, err);
+        mrb_ary_push(mrb, result, shape_from_ptr(mrb, face_ptr));
+    }
+    return result;
+}
+
+static mrb_value mrb_rrcad_shape_edges(mrb_state* mrb, mrb_value self) {
+    mrb_sym sel_sym;
+    mrb_get_args(mrb, "n", &sel_sym);
+    const char* sel = mrb_sym_name(mrb, sel_sym);
+
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+
+    const char* err = NULL;
+    int count = rrcad_shape_edges_count(ptr, sel, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+
+    mrb_value result = mrb_ary_new_capa(mrb, count);
+    for (int i = 0; i < count; i++) {
+        err = NULL;
+        void* edge_ptr = rrcad_shape_edges_get(ptr, sel, i, &err);
+        if (err)
+            mrb_raise(mrb, E_RUNTIME_ERROR, err);
+        mrb_ary_push(mrb, result, shape_from_ptr(mrb, edge_ptr));
+    }
+    return result;
+}
+
 /* =========================================================================
  * rrcad_register_shape_class
  *
@@ -504,4 +596,11 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     mrb_define_method(mrb, mrb->kernel_module, "spline_2d", mrb_rrcad_spline_2d, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, mrb->kernel_module, "spline_3d", mrb_rrcad_spline_3d, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "sweep", mrb_rrcad_shape_sweep, MRB_ARGS_REQ(1));
+
+    /* Phase 3: Live preview */
+    mrb_define_method(mrb, mrb->kernel_module, "preview", mrb_rrcad_preview, MRB_ARGS_REQ(1));
+
+    /* Phase 3: Sub-shape selectors */
+    mrb_define_method(mrb, shape_class, "faces", mrb_rrcad_shape_faces, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "edges", mrb_rrcad_shape_edges, MRB_ARGS_REQ(1));
 }

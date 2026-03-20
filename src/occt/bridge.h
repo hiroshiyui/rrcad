@@ -72,9 +72,20 @@ std::unique_ptr<OcctShape> make_spline_2d(rust::Slice<const double> pts);
 std::unique_ptr<OcctShape> make_spline_3d(rust::Slice<const double> pts);
 std::unique_ptr<OcctShape> shape_sweep(const OcctShape& profile, const OcctShape& path);
 
+// --- Phase 3: sub-shape selectors ---
+// Face selectors: "all", "top", "bottom", "side"
+// Edge selectors: "all", "vertical", "horizontal"
+// Throws std::runtime_error for unknown selector strings.
+int32_t shape_faces_count(const OcctShape& shape, rust::Str selector);
+std::unique_ptr<OcctShape> shape_faces_get(const OcctShape& shape, rust::Str selector, int32_t idx);
+int32_t shape_edges_count(const OcctShape& shape, rust::Str selector);
+std::unique_ptr<OcctShape> shape_edges_get(const OcctShape& shape, rust::Str selector, int32_t idx);
+
 // --- Export ---
 void export_step(const OcctShape& shape, rust::Str path);
 void export_stl(const OcctShape& shape, rust::Str path);
 void export_gltf(const OcctShape& shape, rust::Str path, double linear_deflection);
+// Binary glTF (GLB) — single-file format, suitable for HTTP serving.
+void export_glb(const OcctShape& shape, rust::Str path, double linear_deflection);
 
 } // namespace rrcad

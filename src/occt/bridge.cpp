@@ -47,6 +47,16 @@
 #include <Geom_BSplineCurve.hxx>
 #include <TColgp_HArray1OfPnt.hxx>
 
+// --- OCCT: Phase 3 — sub-shape selectors ---
+#include <BRepAdaptor_Curve.hxx>
+#include <BRepAdaptor_Surface.hxx>
+#include <BRepLProp_SLProps.hxx>
+#include <BRep_Tool.hxx>
+#include <TopExp.hxx>
+#include <TopTools_IndexedMapOfShape.hxx>
+#include <TopoDS_Face.hxx>
+#include <TopoDS_Vertex.hxx>
+
 // --- OCCT: tessellation (required before glTF export) ---
 #include <BRepMesh_IncrementalMesh.hxx>
 
@@ -363,6 +373,149 @@ std::unique_ptr<OcctShape> shape_sweep(const OcctShape& profile, const OcctShape
 }
 
 // ---------------------------------------------------------------------------
+// Phase 3: Sub-shape selectors
+// ---------------------------------------------------------------------------
+
+// Returns true if face matches the given selector.
+// BRepLProp_SLProps returns the geometric surface normal; we must flip it
+// when the face orientation is TopAbs_REVERSED so dz reflects the outward
+// (shell-facing) direction rather than the underlying surface direction.
+static bool face_matches(const TopoDS_Face& face, const std::string& sel) {
+    BRepAdaptor_Surface adaptor(face);
+    double umid = 0.5 * (adaptor.FirstUParameter() + adaptor.LastUParameter());
+    double vmid = 0.5 * (adaptor.FirstVParameter() + adaptor.LastVParameter());
+    BRepLProp_SLProps props(adaptor, umid, vmid, 1, 1e-6);
+    if (!props.IsNormalDefined())
+        return false; // degenerate face — skip
+
+    gp_Dir normal = props.Normal();
+    if (face.Orientation() == TopAbs_REVERSED)
+        normal.Reverse();
+
+    const double dz = normal.Z();
+    const double threshold = 0.5;
+
+    if (sel == "all")
+        return true;
+    if (sel == "top")
+        return dz > threshold;
+    if (sel == "bottom")
+        return dz < -threshold;
+    if (sel == "side")
+        return std::fabs(dz) <= threshold;
+    throw std::runtime_error(std::string("faces: unknown selector ':") + sel +
+                             "' — use :all, :top, :bottom, or :side");
+}
+
+// Returns true if edge matches the given selector.
+// Degenerate edges are always excluded.
+static bool edge_matches(const TopoDS_Edge& edge, const std::string& sel) {
+    if (BRep_Tool::Degenerated(edge))
+        return false;
+
+    BRepAdaptor_Curve adaptor(edge);
+    double tmid = 0.5 * (adaptor.FirstParameter() + adaptor.LastParameter());
+    gp_Pnt pnt;
+    gp_Vec tangent;
+    adaptor.D1(tmid, pnt, tangent);
+    if (tangent.Magnitude() < 1e-10)
+        return false; // zero-length edge
+
+    const double tz = std::fabs(tangent.Z()) / tangent.Magnitude();
+    const double threshold = 0.5;
+
+    if (sel == "all")
+        return true;
+    if (sel == "vertical")
+        return tz > threshold;
+    if (sel == "horizontal")
+        return tz <= threshold;
+    throw std::runtime_error(std::string("edges: unknown selector ':") + sel +
+                             "' — use :all, :vertical, or :horizontal");
+}
+
+int32_t shape_faces_count(const OcctShape& shape, rust::Str selector) {
+    std::string sel(selector.data(), selector.size());
+    // Validate selector by calling face_matches on a dummy check; easier to
+    // iterate and count (also validates selector via exception on first call).
+    int32_t count = 0;
+    bool validated = false;
+    TopExp_Explorer exp(shape.get(), TopAbs_FACE);
+    for (; exp.More(); exp.Next()) {
+        TopoDS_Face face = TopoDS::Face(exp.Current());
+        if (!validated) {
+            // This call throws on unknown selector — propagates to Rust as Err
+            face_matches(face, sel);
+            validated = true;
+        }
+        if (face_matches(face, sel))
+            ++count;
+    }
+    if (!validated && sel != "all" && sel != "top" && sel != "bottom" && sel != "side") {
+        // Shape has no faces — still validate selector
+        throw std::runtime_error(std::string("faces: unknown selector ':") + sel +
+                                 "' — use :all, :top, :bottom, or :side");
+    }
+    return count;
+}
+
+std::unique_ptr<OcctShape> shape_faces_get(const OcctShape& shape, rust::Str selector,
+                                           int32_t idx) {
+    std::string sel(selector.data(), selector.size());
+    int32_t cur = 0;
+    TopExp_Explorer exp(shape.get(), TopAbs_FACE);
+    for (; exp.More(); exp.Next()) {
+        TopoDS_Face face = TopoDS::Face(exp.Current());
+        if (face_matches(face, sel)) {
+            if (cur == idx)
+                return wrap(face);
+            ++cur;
+        }
+    }
+    throw std::runtime_error("shape_faces_get: index out of range");
+}
+
+// Build a deduplicated list of matching edges.
+// TopExp_Explorer may visit shared edges multiple times; TopTools_IndexedMapOfShape
+// guarantees each unique TShape appears exactly once.
+static std::vector<TopoDS_Edge> collect_edges(const OcctShape& shape, const std::string& sel) {
+    TopTools_IndexedMapOfShape edge_map;
+    TopExp::MapShapes(shape.get(), TopAbs_EDGE, edge_map);
+
+    std::vector<TopoDS_Edge> result;
+    bool validated = false;
+    for (int i = 1; i <= edge_map.Extent(); i++) {
+        TopoDS_Edge edge = TopoDS::Edge(edge_map(i));
+        if (!validated) {
+            edge_matches(edge, sel); // throws on unknown selector
+            validated = true;
+        }
+        if (edge_matches(edge, sel))
+            result.push_back(edge);
+    }
+    if (!validated && sel != "all" && sel != "vertical" && sel != "horizontal") {
+        throw std::runtime_error(std::string("edges: unknown selector ':") + sel +
+                                 "' — use :all, :vertical, or :horizontal");
+    }
+    return result;
+}
+
+int32_t shape_edges_count(const OcctShape& shape, rust::Str selector) {
+    std::string sel(selector.data(), selector.size());
+    return static_cast<int32_t>(collect_edges(shape, sel).size());
+}
+
+std::unique_ptr<OcctShape> shape_edges_get(const OcctShape& shape, rust::Str selector,
+                                           int32_t idx) {
+    std::string sel(selector.data(), selector.size());
+    auto edges = collect_edges(shape, sel);
+    auto i = static_cast<size_t>(idx);
+    if (i >= edges.size())
+        throw std::runtime_error("shape_edges_get: index out of range");
+    return wrap(edges[i]);
+}
+
+// ---------------------------------------------------------------------------
 // Export
 // ---------------------------------------------------------------------------
 
@@ -418,6 +571,31 @@ void export_gltf(const OcctShape& shape, rust::Str path, double linear_deflectio
 
     if (!writer.Perform(doc, metadata, progress))
         throw std::runtime_error("RWGltf_CafWriter::Perform failed for: " + path_str);
+}
+
+void export_glb(const OcctShape& shape, rust::Str path, double linear_deflection) {
+    BRepMesh_IncrementalMesh mesher(shape.get(), linear_deflection,
+                                    /*isRelative=*/Standard_False,
+                                    /*angularDeflection=*/0.5);
+    mesher.Perform();
+
+    Handle(XCAFApp_Application) app = XCAFApp_Application::GetApplication();
+    Handle(TDocStd_Document) doc;
+    app->NewDocument(TCollection_ExtendedString("BinXCAF"), doc);
+    if (doc.IsNull())
+        throw std::runtime_error("Failed to create XDE document for GLB export");
+
+    Handle(XCAFDoc_ShapeTool) shape_tool = XCAFDoc_DocumentTool::ShapeTool(doc->Main());
+    shape_tool->AddShape(shape.get());
+
+    std::string path_str(path.data(), path.size());
+    TCollection_AsciiString glb_path(path_str.c_str());
+    RWGltf_CafWriter writer(glb_path, /*isBinary=*/Standard_True);
+    TColStd_IndexedDataMapOfStringString metadata;
+    Message_ProgressRange progress;
+
+    if (!writer.Perform(doc, metadata, progress))
+        throw std::runtime_error("RWGltf_CafWriter::Perform (GLB) failed for: " + path_str);
 }
 
 } // namespace rrcad

@@ -184,6 +184,13 @@ fn main() {
 
     match args.get(1).map(String::as_str) {
         None | Some("--repl") => run_repl(),
+        Some("--preview") => match args.get(2) {
+            Some(path) => run_preview(path),
+            None => {
+                eprintln!("usage: rrcad --preview <script.rb>");
+                std::process::exit(1);
+            }
+        },
         Some(path) => run_script(path),
     }
 }
@@ -241,5 +248,55 @@ fn run_script(path: &str) {
     if let Err(e) = vm.eval(&code) {
         eprintln!("{path}: {e}");
         std::process::exit(1);
+    }
+}
+
+fn run_preview(script_path: &str) {
+    use notify::{RecursiveMode, Watcher};
+    use rrcad::preview;
+
+    let glb_path = std::env::temp_dir().join("rrcad_preview.glb");
+    let _rt = preview::start(glb_path, 3000);
+
+    // Helper: read and eval the script, reporting errors to stderr.
+    let eval_script = |path: &str| match std::fs::read_to_string(path) {
+        Ok(code) => {
+            let mut vm = MrubyVm::new();
+            if let Err(e) = vm.eval(&code) {
+                eprintln!("{path}: {e}");
+            }
+        }
+        Err(e) => eprintln!("error: could not read '{path}': {e}"),
+    };
+
+    // Initial eval.
+    eval_script(script_path);
+
+    // Watch the script file; re-eval on every change.
+    let (tx, rx) = std::sync::mpsc::channel();
+    let mut watcher = notify::recommended_watcher(move |res| {
+        tx.send(res).ok();
+    })
+    .expect("failed to create file watcher");
+    watcher
+        .watch(script_path.as_ref(), RecursiveMode::NonRecursive)
+        .expect("failed to watch script");
+
+    println!("Watching {script_path} for changes…");
+
+    loop {
+        match rx.recv() {
+            Ok(_) => {
+                // Debounce: drain events that arrive within the next 50 ms.
+                loop {
+                    match rx.recv_timeout(std::time::Duration::from_millis(50)) {
+                        Ok(_) => continue,
+                        Err(_) => break,
+                    }
+                }
+                eval_script(script_path);
+            }
+            Err(_) => break,
+        }
     }
 }

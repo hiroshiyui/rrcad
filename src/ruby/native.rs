@@ -411,6 +411,156 @@ pub unsafe extern "C" fn rrcad_make_spline_3d(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Phase 3: Sub-shape selectors — faces and edges
+// ---------------------------------------------------------------------------
+
+/// Returns the count of matching faces, or -1 on error (sets *error_out).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_faces_count(
+    ptr: *mut c_void,
+    selector: *const c_char,
+    error_out: *mut *const c_char,
+) -> i32 {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let sel = match unsafe { std::ffi::CStr::from_ptr(selector) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "selector is not valid UTF-8") };
+            return -1;
+        }
+    };
+    match shape.faces(sel) {
+        Ok(v) => v.len() as i32,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            -1
+        }
+    }
+}
+
+/// Returns the idx-th matching face as an owned Shape pointer, or null on error.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_faces_get(
+    ptr: *mut c_void,
+    selector: *const c_char,
+    idx: i32,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let sel = match unsafe { std::ffi::CStr::from_ptr(selector) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "selector is not valid UTF-8") };
+            return std::ptr::null_mut();
+        }
+    };
+    match shape.faces(sel) {
+        Ok(mut v) => {
+            let i = idx as usize;
+            if i < v.len() {
+                Box::into_raw(Box::new(v.swap_remove(i))) as *mut c_void
+            } else {
+                unsafe { set_err(error_out, "face index out of range") };
+                std::ptr::null_mut()
+            }
+        }
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Returns the count of matching edges, or -1 on error.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_edges_count(
+    ptr: *mut c_void,
+    selector: *const c_char,
+    error_out: *mut *const c_char,
+) -> i32 {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let sel = match unsafe { std::ffi::CStr::from_ptr(selector) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "selector is not valid UTF-8") };
+            return -1;
+        }
+    };
+    match shape.edges(sel) {
+        Ok(v) => v.len() as i32,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            -1
+        }
+    }
+}
+
+/// Returns the idx-th matching edge as an owned Shape pointer, or null on error.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_edges_get(
+    ptr: *mut c_void,
+    selector: *const c_char,
+    idx: i32,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let sel = match unsafe { std::ffi::CStr::from_ptr(selector) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "selector is not valid UTF-8") };
+            return std::ptr::null_mut();
+        }
+    };
+    match shape.edges(sel) {
+        Ok(mut v) => {
+            let i = idx as usize;
+            if i < v.len() {
+                Box::into_raw(Box::new(v.swap_remove(i))) as *mut c_void
+            } else {
+                unsafe { set_err(error_out, "edge index out of range") };
+                std::ptr::null_mut()
+            }
+        }
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3: Live preview
+// ---------------------------------------------------------------------------
+
+/// Tessellate `ptr` to binary glTF (GLB) and notify the WebSocket clients.
+/// No-op (returns success) when not in `--preview` mode.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_preview_shape(
+    ptr: *mut c_void,
+    error_out: *mut *const c_char,
+) {
+    unsafe { *error_out = std::ptr::null() };
+
+    let Some(state) = crate::preview::PREVIEW.get() else {
+        // Not in --preview mode — silently ignore.
+        return;
+    };
+
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let path = state.glb_path.to_string_lossy();
+    if let Err(e) = shape.export_glb(&path, 0.1) {
+        unsafe { set_err(error_out, &e) };
+        return;
+    }
+
+    state.reload_tx.send(()).ok();
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rrcad_shape_sweep(
     profile: *mut c_void,
