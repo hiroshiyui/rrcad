@@ -70,8 +70,7 @@ See [`doc/TODOs.md`](doc/TODOs.md) for the phased implementation plan:
 - **Phase 2** ✓ — DSL enrichment (transforms, fillets, mirror, assemblies, sketches, extrude/revolve)
 - **Phase 3** ✓ — Spline profiles + sweep; sub-shape selectors (`.faces`, `.edges`); live browser preview (`axum` + Three.js + WebSocket file watcher; `--preview` CLI)
 - **Phase 4** — OCCT coverage: `cone`, `torus`, `loft`, `shell`, `offset`, `polygon`, selective fillet/chamfer, patterns, STEP import, bounding box / volume queries
-- **Phase 5** — Native egui + wgpu desktop viewer
-- **Phase 6** — Parametric design and constraints
+- **Phase 5** — Parametric design and constraints
 
 ## Third-party components
 

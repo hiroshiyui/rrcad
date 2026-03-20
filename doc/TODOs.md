@@ -99,21 +99,7 @@ Goal: close the gap between our DSL and what OpenSCAD / CadQuery expose from OCC
 
 ---
 
-## Phase 5 — Native Viewer (egui + wgpu)
-
-Goal: replace browser preview with a native desktop viewer with tighter integration.
-
-- [ ] `egui` + `wgpu` + `winit` scaffold (via `eframe`)
-- [ ] 3D viewport render pass: camera, orbit controls, mesh draw
-- [ ] Face/edge picking (ray cast or ID buffer)
-- [ ] Assembly tree panel (egui side panel)
-- [ ] Clip plane / cross-section mode
-- [ ] Parameter sliders wired back to mRuby globals
-- [ ] Migrate tessellation output from glTF to direct wgpu vertex buffers
-
----
-
-## Phase 6 — Parametric Design & Constraints
+## Phase 5 — Parametric Design & Constraints
 
 Goal: scripts with parameters, constraints, and design tables.
 
