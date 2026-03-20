@@ -40,6 +40,13 @@ OCCT geometry kernel        (src/occt/)
 - **Preview (short-term)** — `axum` HTTP server + WebSocket + Three.js in the browser. OCCT tessellates to glTF via `RWGltf_CafWriter`; `notify` crate watches `.rb` files and pushes reload events over WebSocket.
 - **Preview (long-term)** — `egui` + `wgpu` native viewer once the DSL stabilizes.
 
+## Code Style
+
+- **Rust** — standard `rustfmt`; `cargo clippy` must pass clean.
+- **C++** — run `clang-format -i` on every C++ file you write or modify before finishing.
+  Config is in `.clang-format` (LLVM base, 100-col, 4-space indent).
+  Check with: `clang-format --dry-run -Werror src/occt/bridge.h src/occt/bridge.cpp`
+
 ## DSL Style
 
 Prefer the Ruby block/builder style:
