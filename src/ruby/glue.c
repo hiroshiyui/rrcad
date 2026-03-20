@@ -24,9 +24,7 @@
  *               (also GC-owned).  The pending exception is cleared.
  * -------------------------------------------------------------------------
  */
-const char *rrcad_mrb_eval(mrb_state *mrb, const char *code,
-                            const char **error_out)
-{
+const char* rrcad_mrb_eval(mrb_state* mrb, const char* code, const char** error_out) {
     *error_out = NULL;
 
     mrb_value result = mrb_load_string(mrb, code);
@@ -58,20 +56,31 @@ const char *rrcad_mrb_eval(mrb_state *mrb, const char *code,
  */
 
 /* Forward-declare every Rust extern that this file calls. */
-extern void *rrcad_make_box(double dx, double dy, double dz,
-                            const char **error_out);
-extern void *rrcad_make_cylinder(double r, double h, const char **error_out);
-extern void *rrcad_make_sphere(double r, const char **error_out);
-extern void  rrcad_shape_drop(void *ptr);
-extern void  rrcad_shape_export_step(void *ptr, const char *path,
-                                     const char **error_out);
-extern void *rrcad_shape_fuse(void *a, void *b, const char **error_out);
-extern void *rrcad_shape_cut(void *a, void *b, const char **error_out);
-extern void *rrcad_shape_common(void *a, void *b, const char **error_out);
+extern void* rrcad_make_box(double dx, double dy, double dz, const char** error_out);
+extern void* rrcad_make_cylinder(double r, double h, const char** error_out);
+extern void* rrcad_make_sphere(double r, const char** error_out);
+extern void rrcad_shape_drop(void* ptr);
+extern void rrcad_shape_export_step(void* ptr, const char* path, const char** error_out);
+extern void* rrcad_shape_fuse(void* a, void* b, const char** error_out);
+extern void* rrcad_shape_cut(void* a, void* b, const char** error_out);
+extern void* rrcad_shape_common(void* a, void* b, const char** error_out);
+
+/* Phase 2 */
+extern void* rrcad_shape_translate(void* ptr, double dx, double dy, double dz,
+                                   const char** error_out);
+extern void* rrcad_shape_rotate(void* ptr, double ax, double ay, double az, double angle_deg,
+                                const char** error_out);
+extern void* rrcad_shape_scale(void* ptr, double factor, const char** error_out);
+extern void* rrcad_shape_fillet(void* ptr, double radius, const char** error_out);
+extern void* rrcad_shape_chamfer(void* ptr, double dist, const char** error_out);
+extern void* rrcad_shape_mirror(void* ptr, const char* plane, const char** error_out);
+extern void* rrcad_make_rect(double w, double h, const char** error_out);
+extern void* rrcad_make_circle_face(double r, const char** error_out);
+extern void* rrcad_shape_extrude(void* ptr, double height, const char** error_out);
+extern void* rrcad_shape_revolve(void* ptr, double angle_deg, const char** error_out);
 
 /* mRuby data type descriptor — name appears in TypeError messages. */
-static void shape_dfree(mrb_state *mrb, void *ptr)
-{
+static void shape_dfree(mrb_state* mrb, void* ptr) {
     (void)mrb;
     rrcad_shape_drop(ptr); /* no-op for NULL */
 }
@@ -81,17 +90,15 @@ static const mrb_data_type shape_type = {"Shape", shape_dfree};
 /* Wrap a raw Rust Box pointer in a new mRuby Shape RData value.
  * The Shape class is looked up per-call so multiple concurrent VMs
  * (e.g. parallel test threads) each see their own class pointer. */
-static mrb_value shape_from_ptr(mrb_state *mrb, void *ptr)
-{
-    struct RClass *cls = mrb_class_get(mrb, "Shape");
-    struct RData *rd = mrb_data_object_alloc(mrb, cls, ptr, &shape_type);
+static mrb_value shape_from_ptr(mrb_state* mrb, void* ptr) {
+    struct RClass* cls = mrb_class_get(mrb, "Shape");
+    struct RData* rd = mrb_data_object_alloc(mrb, cls, ptr, &shape_type);
     return mrb_obj_value(rd);
 }
 
 /* Extract and type-check the raw pointer from a Shape mrb_value.
  * Raises TypeError if `v` is not a Shape RData object. */
-static void *shape_ptr(mrb_state *mrb, mrb_value v)
-{
+static void* shape_ptr(mrb_state* mrb, mrb_value v) {
     return mrb_data_get_ptr(mrb, v, &shape_type);
 }
 
@@ -103,8 +110,7 @@ static void *shape_ptr(mrb_state *mrb, mrb_value v)
 /* Check that `ptr` is not NULL (i.e. the shape was created natively).
  * Raises RuntimeError if it is — this protects callers from accessing
  * stub shapes that have no backing OCCT object. */
-static void require_native_ptr(mrb_state *mrb, void *ptr)
-{
+static void require_native_ptr(mrb_state* mrb, void* ptr) {
     if (!ptr) {
         mrb_raise(mrb, E_RUNTIME_ERROR,
                   "Shape has no backing geometry — "
@@ -117,39 +123,39 @@ static void require_native_ptr(mrb_state *mrb, void *ptr)
  * -------------------------------------------------------------------------
  */
 
-static mrb_value mrb_rrcad_box(mrb_state *mrb, mrb_value self)
-{
+static mrb_value mrb_rrcad_box(mrb_state* mrb, mrb_value self) {
     (void)self;
     mrb_float dx, dy, dz;
     mrb_get_args(mrb, "fff", &dx, &dy, &dz);
 
-    const char *err = NULL;
-    void *ptr = rrcad_make_box((double)dx, (double)dy, (double)dz, &err);
-    if (err) mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    const char* err = NULL;
+    void* ptr = rrcad_make_box((double)dx, (double)dy, (double)dz, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, ptr);
 }
 
-static mrb_value mrb_rrcad_cylinder(mrb_state *mrb, mrb_value self)
-{
+static mrb_value mrb_rrcad_cylinder(mrb_state* mrb, mrb_value self) {
     (void)self;
     mrb_float r, h;
     mrb_get_args(mrb, "ff", &r, &h);
 
-    const char *err = NULL;
-    void *ptr = rrcad_make_cylinder((double)r, (double)h, &err);
-    if (err) mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    const char* err = NULL;
+    void* ptr = rrcad_make_cylinder((double)r, (double)h, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, ptr);
 }
 
-static mrb_value mrb_rrcad_sphere(mrb_state *mrb, mrb_value self)
-{
+static mrb_value mrb_rrcad_sphere(mrb_state* mrb, mrb_value self) {
     (void)self;
     mrb_float r;
     mrb_get_args(mrb, "f", &r);
 
-    const char *err = NULL;
-    void *ptr = rrcad_make_sphere((double)r, &err);
-    if (err) mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    const char* err = NULL;
+    void* ptr = rrcad_make_sphere((double)r, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, ptr);
 }
 
@@ -158,71 +164,206 @@ static mrb_value mrb_rrcad_sphere(mrb_state *mrb, mrb_value self)
  * -------------------------------------------------------------------------
  */
 
-static mrb_value mrb_rrcad_shape_inspect(mrb_state *mrb, mrb_value self)
-{
+static mrb_value mrb_rrcad_shape_inspect(mrb_state* mrb, mrb_value self) {
     (void)self;
     return mrb_str_new_cstr(mrb, "#<Shape>");
 }
 
-static mrb_value mrb_rrcad_shape_export(mrb_state *mrb, mrb_value self)
-{
-    const char *path;
+static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
+    const char* path;
     mrb_get_args(mrb, "z", &path);
 
-    void *ptr = DATA_PTR(self);
+    void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
 
-    const char *err = NULL;
+    const char* err = NULL;
     rrcad_shape_export_step(ptr, path, &err);
-    if (err) mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return self;
 }
 
-static mrb_value mrb_rrcad_shape_fuse(mrb_state *mrb, mrb_value self)
-{
+static mrb_value mrb_rrcad_shape_fuse(mrb_state* mrb, mrb_value self) {
     mrb_value other;
     mrb_get_args(mrb, "o", &other);
 
-    void *a = DATA_PTR(self);
+    void* a = DATA_PTR(self);
     require_native_ptr(mrb, a);
-    void *b = shape_ptr(mrb, other);
+    void* b = shape_ptr(mrb, other);
     require_native_ptr(mrb, b);
 
-    const char *err = NULL;
-    void *result = rrcad_shape_fuse(a, b, &err);
-    if (err) mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    const char* err = NULL;
+    void* result = rrcad_shape_fuse(a, b, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
 }
 
-static mrb_value mrb_rrcad_shape_cut(mrb_state *mrb, mrb_value self)
-{
+static mrb_value mrb_rrcad_shape_cut(mrb_state* mrb, mrb_value self) {
     mrb_value other;
     mrb_get_args(mrb, "o", &other);
 
-    void *a = DATA_PTR(self);
+    void* a = DATA_PTR(self);
     require_native_ptr(mrb, a);
-    void *b = shape_ptr(mrb, other);
+    void* b = shape_ptr(mrb, other);
     require_native_ptr(mrb, b);
 
-    const char *err = NULL;
-    void *result = rrcad_shape_cut(a, b, &err);
-    if (err) mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    const char* err = NULL;
+    void* result = rrcad_shape_cut(a, b, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
 }
 
-static mrb_value mrb_rrcad_shape_common(mrb_state *mrb, mrb_value self)
-{
+static mrb_value mrb_rrcad_shape_common(mrb_state* mrb, mrb_value self) {
     mrb_value other;
     mrb_get_args(mrb, "o", &other);
 
-    void *a = DATA_PTR(self);
+    void* a = DATA_PTR(self);
     require_native_ptr(mrb, a);
-    void *b = shape_ptr(mrb, other);
+    void* b = shape_ptr(mrb, other);
     require_native_ptr(mrb, b);
 
-    const char *err = NULL;
-    void *result = rrcad_shape_common(a, b, &err);
-    if (err) mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    const char* err = NULL;
+    void* result = rrcad_shape_common(a, b, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* -------------------------------------------------------------------------
+ * Phase 2: Transform methods
+ * -------------------------------------------------------------------------
+ */
+
+static mrb_value mrb_rrcad_shape_translate(mrb_state* mrb, mrb_value self) {
+    mrb_float dx, dy, dz;
+    mrb_get_args(mrb, "fff", &dx, &dy, &dz);
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    void* result = rrcad_shape_translate(ptr, (double)dx, (double)dy, (double)dz, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+static mrb_value mrb_rrcad_shape_rotate(mrb_state* mrb, mrb_value self) {
+    mrb_float ax, ay, az, angle;
+    mrb_get_args(mrb, "ffff", &ax, &ay, &az, &angle);
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    void* result = rrcad_shape_rotate(ptr, (double)ax, (double)ay, (double)az, (double)angle, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+static mrb_value mrb_rrcad_shape_scale(mrb_state* mrb, mrb_value self) {
+    mrb_float factor;
+    mrb_get_args(mrb, "f", &factor);
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    void* result = rrcad_shape_scale(ptr, (double)factor, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+static mrb_value mrb_rrcad_shape_fillet(mrb_state* mrb, mrb_value self) {
+    mrb_float r;
+    mrb_value opts = mrb_nil_value();
+    mrb_get_args(mrb, "f|o", &r, &opts);
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    void* result = rrcad_shape_fillet(ptr, (double)r, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+static mrb_value mrb_rrcad_shape_chamfer(mrb_state* mrb, mrb_value self) {
+    mrb_float d;
+    mrb_value opts = mrb_nil_value();
+    mrb_get_args(mrb, "f|o", &d, &opts);
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    void* result = rrcad_shape_chamfer(ptr, (double)d, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+static mrb_value mrb_rrcad_shape_mirror(mrb_state* mrb, mrb_value self) {
+    mrb_sym plane_sym;
+    mrb_get_args(mrb, "n", &plane_sym);
+    const char* plane = mrb_sym_name(mrb, plane_sym);
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    void* result = rrcad_shape_mirror(ptr, plane, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* -------------------------------------------------------------------------
+ * Phase 2: Sketch constructors (top-level)
+ * -------------------------------------------------------------------------
+ */
+
+static mrb_value mrb_rrcad_rect(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_float w, h;
+    mrb_get_args(mrb, "ff", &w, &h);
+    const char* err = NULL;
+    void* ptr = rrcad_make_rect((double)w, (double)h, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, ptr);
+}
+
+static mrb_value mrb_rrcad_circle(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_float r;
+    mrb_get_args(mrb, "f", &r);
+    const char* err = NULL;
+    void* ptr = rrcad_make_circle_face((double)r, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, ptr);
+}
+
+/* -------------------------------------------------------------------------
+ * Phase 2: Extrude / Revolve
+ * -------------------------------------------------------------------------
+ */
+
+static mrb_value mrb_rrcad_shape_extrude(mrb_state* mrb, mrb_value self) {
+    mrb_float height;
+    mrb_get_args(mrb, "f", &height);
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    void* result = rrcad_shape_extrude(ptr, (double)height, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+static mrb_value mrb_rrcad_shape_revolve(mrb_state* mrb, mrb_value self) {
+    mrb_float angle = 360.0;
+    mrb_get_args(mrb, "|f", &angle);
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    void* result = rrcad_shape_revolve(ptr, (double)angle, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -233,31 +374,37 @@ static mrb_value mrb_rrcad_shape_common(mrb_state *mrb, mrb_value self)
  * Registering after the prelude means our native methods shadow the stubs.
  * =========================================================================
  */
-void rrcad_register_shape_class(mrb_state *mrb)
-{
+void rrcad_register_shape_class(mrb_state* mrb) {
     /* Get (or create) the Shape class and mark its instances as RData. */
-    struct RClass *shape_class = mrb_define_class(mrb, "Shape", mrb->object_class);
+    struct RClass* shape_class = mrb_define_class(mrb, "Shape", mrb->object_class);
     MRB_SET_INSTANCE_TT(shape_class, MRB_TT_DATA);
 
     /* Instance methods — override the prelude stubs. */
-    mrb_define_method(mrb, shape_class, "inspect",
-                      mrb_rrcad_shape_inspect, MRB_ARGS_NONE());
-    mrb_define_method(mrb, shape_class, "to_s",
-                      mrb_rrcad_shape_inspect, MRB_ARGS_NONE());
-    mrb_define_method(mrb, shape_class, "export",
-                      mrb_rrcad_shape_export, MRB_ARGS_REQ(1));
-    mrb_define_method(mrb, shape_class, "fuse",
-                      mrb_rrcad_shape_fuse, MRB_ARGS_REQ(1));
-    mrb_define_method(mrb, shape_class, "cut",
-                      mrb_rrcad_shape_cut, MRB_ARGS_REQ(1));
-    mrb_define_method(mrb, shape_class, "common",
-                      mrb_rrcad_shape_common, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "inspect", mrb_rrcad_shape_inspect, MRB_ARGS_NONE());
+    mrb_define_method(mrb, shape_class, "to_s", mrb_rrcad_shape_inspect, MRB_ARGS_NONE());
+    mrb_define_method(mrb, shape_class, "export", mrb_rrcad_shape_export, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "fuse", mrb_rrcad_shape_fuse, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "cut", mrb_rrcad_shape_cut, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "common", mrb_rrcad_shape_common, MRB_ARGS_REQ(1));
+
+    /* Phase 2: Transforms */
+    mrb_define_method(mrb, shape_class, "translate", mrb_rrcad_shape_translate, MRB_ARGS_REQ(3));
+    mrb_define_method(mrb, shape_class, "rotate", mrb_rrcad_shape_rotate, MRB_ARGS_REQ(4));
+    mrb_define_method(mrb, shape_class, "scale", mrb_rrcad_shape_scale, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "fillet", mrb_rrcad_shape_fillet,
+                      MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
+    mrb_define_method(mrb, shape_class, "chamfer", mrb_rrcad_shape_chamfer,
+                      MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
+    mrb_define_method(mrb, shape_class, "mirror", mrb_rrcad_shape_mirror, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "extrude", mrb_rrcad_shape_extrude, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "revolve", mrb_rrcad_shape_revolve, MRB_ARGS_OPT(1));
 
     /* Top-level primitive constructors — available everywhere via Kernel. */
-    mrb_define_method(mrb, mrb->kernel_module, "box",
-                      mrb_rrcad_box, MRB_ARGS_REQ(3));
-    mrb_define_method(mrb, mrb->kernel_module, "cylinder",
-                      mrb_rrcad_cylinder, MRB_ARGS_REQ(2));
-    mrb_define_method(mrb, mrb->kernel_module, "sphere",
-                      mrb_rrcad_sphere, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, mrb->kernel_module, "box", mrb_rrcad_box, MRB_ARGS_REQ(3));
+    mrb_define_method(mrb, mrb->kernel_module, "cylinder", mrb_rrcad_cylinder, MRB_ARGS_REQ(2));
+    mrb_define_method(mrb, mrb->kernel_module, "sphere", mrb_rrcad_sphere, MRB_ARGS_REQ(1));
+
+    /* Phase 2: Sketch constructors */
+    mrb_define_method(mrb, mrb->kernel_module, "rect", mrb_rrcad_rect, MRB_ARGS_REQ(2));
+    mrb_define_method(mrb, mrb->kernel_module, "circle", mrb_rrcad_circle, MRB_ARGS_REQ(1));
 }

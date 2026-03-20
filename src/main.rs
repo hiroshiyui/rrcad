@@ -15,10 +15,26 @@ use rustyline::{
 const HELP_TEXT: &str = "\
 rrcad DSL — quick reference
 ═══════════════════════════════════════════════════════════
-Primitives
+Primitives (3D solids)
   box(dx, dy, dz)           rectangular solid
   cylinder(r, h)            cylinder (Z-axis)
   sphere(r)                 sphere
+
+Sketch faces (2D, for extrude/revolve)
+  rect(w, h)                rectangular face in XY plane
+  circle(r)                 circular face in XY plane
+
+Transforms                   (return a new Shape)
+  s.translate(x, y, z)      move
+  s.rotate(ax, ay, az, deg) rotate around axis by degrees
+  s.scale(factor)           uniform scale
+  s.mirror(:xy|:xz|:yz)     mirror about a plane
+
+Modifiers
+  s.fillet(r)               round all edges
+  s.chamfer(d)              bevel all edges
+  s.extrude(h)              extrude face/profile by height
+  s.revolve(deg=360)        revolve around Z axis
 
 Boolean operations           (return a new Shape)
   a.fuse(b)                 union of a and b
@@ -28,9 +44,11 @@ Boolean operations           (return a new Shape)
 Export
   shape.export(\"out.step\")  write STEP file
 
-Variables & scripting
-  s = box(10, 20, 30)       assign to a variable
-  s.fuse(sphere(8))         chain operations
+Builders
+  solid do ... end          block returning last shape
+  assembly(\"name\") do |a|
+    a.place shape           add shape to assembly
+  end
 
 REPL controls
   help                      show this message
@@ -44,8 +62,9 @@ REPL controls
 /// Top-level identifiers available in the rrcad DSL REPL.
 const TOP_LEVEL: &[&str] = &[
     // DSL primitives
-    "box", "cylinder", "sphere", // DSL builders / utilities (Phase 2+)
-    "solid", "preview", // REPL control
+    "box", "cylinder", "sphere", // DSL sketch faces
+    "rect", "circle", // DSL builders
+    "solid", "assembly", "preview", // REPL control
     "help", "exit", "quit", // Ruby keywords
     "do", "end", "if", "else", "elsif", "unless", "while", "until", "for", "def", "class",
     "module", "return", "nil", "true", "false", "puts", "p", "pp", "raise", "begin", "rescue",
@@ -58,12 +77,18 @@ const SHAPE_METHODS: &[&str] = &[
     "fuse",
     "cut",
     "common",
-    // Phase 2 — stubs
+    // Phase 2 — native
     "translate",
     "rotate",
     "scale",
     "fillet",
     "chamfer",
+    "mirror",
+    "extrude",
+    "revolve",
+    // Phase 3+ — stubs
+    "faces",
+    "edges",
     // Ruby built-ins
     "class",
     "inspect",

@@ -41,16 +41,16 @@ Goal: call `box(10,20,30).export("test.step")` from a Ruby script.
 
 Goal: expressive Ruby DSL with transforms, fillets, chamfers, and assemblies.
 
-- [ ] `.fillet(r, edges: :all | :vertical | [...])` method
-- [ ] `.chamfer(d, edges: ...)` method
-- [ ] `.translate(x, y, z)` / `.rotate(axis, angle)` / `.scale(f)` methods
-- [ ] `.mirror(:xy | :xz | :yz)` method
-- [ ] `solid do ... end` block DSL
-- [ ] `assembly "name" do ... end` block DSL with `place` / `mate` primitives
-- [ ] 2D sketch primitives: `rect`, `circle`, `polygon`
-- [ ] Extrude / revolve: `.extrude(h)`, `.revolve(angle)`
-- [ ] Face/edge selectors: `.faces(:top)`, `.edges(:vertical)` returning sub-Shape handles
-- [ ] Error messages: Ruby-level exceptions mapped to user-friendly messages
+- [x] `.fillet(r, edges: :all | :vertical | [...])` method — `:all` (default) implemented; `edges: :vertical` and custom edge lists are deferred to Phase 2+
+- [x] `.chamfer(d, edges: ...)` method — same note as fillet above
+- [x] `.translate(x, y, z)` / `.rotate(axis, angle)` / `.scale(f)` methods
+- [x] `.mirror(:xy | :xz | :yz)` method
+- [x] `solid do ... end` block DSL
+- [x] `assembly "name" do ... end` block DSL with `place` primitive; `mate` is deferred to Phase 5
+- [x] 2D sketch primitives: `rect`, `circle` — `polygon` deferred
+- [x] Extrude / revolve: `.extrude(h)`, `.revolve(angle)`
+- [ ] Face/edge selectors: `.faces(:top)`, `.edges(:vertical)` returning sub-Shape handles — Phase 3
+- [x] Error messages: Ruby-level exceptions mapped to user-friendly messages (implemented throughout native layer)
 
 ---
 

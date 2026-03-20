@@ -177,3 +177,198 @@ pub unsafe extern "C" fn rrcad_shape_common(
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Transforms (Phase 2 — wiring existing OCCT ops)
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_translate(
+    ptr: *mut c_void,
+    dx: f64,
+    dy: f64,
+    dz: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.translate(dx, dy, dz) {
+        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_rotate(
+    ptr: *mut c_void,
+    ax: f64,
+    ay: f64,
+    az: f64,
+    angle_deg: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.rotate(ax, ay, az, angle_deg) {
+        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_scale(
+    ptr: *mut c_void,
+    factor: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.scale(factor) {
+        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_fillet(
+    ptr: *mut c_void,
+    radius: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.fillet(radius) {
+        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_chamfer(
+    ptr: *mut c_void,
+    dist: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.chamfer(dist) {
+        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Mirror (Phase 2)
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_mirror(
+    ptr: *mut c_void,
+    plane: *const c_char,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let plane_str = match unsafe { std::ffi::CStr::from_ptr(plane) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "plane name is not valid UTF-8") };
+            return std::ptr::null_mut();
+        }
+    };
+    match shape.mirror(plane_str) {
+        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 2D sketch constructors (Phase 2)
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_make_rect(
+    w: f64,
+    h: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    match Shape::make_rect(w, h) {
+        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_make_circle_face(
+    r: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    match Shape::make_circle_face(r) {
+        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Extrude / Revolve (Phase 2)
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_extrude(
+    ptr: *mut c_void,
+    height: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.extrude(height) {
+        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_revolve(
+    ptr: *mut c_void,
+    angle_deg: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.revolve(angle_deg) {
+        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}

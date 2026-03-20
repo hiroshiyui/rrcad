@@ -163,59 +163,166 @@ fn native_shape_common_returns_shape() {
 }
 
 // ---------------------------------------------------------------------------
-// Stubs — Phase 2 methods still raise NotImplementedError
+// Phase 2: Transforms
 // ---------------------------------------------------------------------------
 
 #[test]
-fn stub_shape_translate_raises_not_implemented() {
+fn native_translate_returns_shape() {
     let mut vm = MrubyVm::new();
-    assert_err_contains(
+    assert_contains(
         &mut vm,
-        "$s = box(5.0, 5.0, 5.0); $s.translate(1, 2, 3)",
-        "NotImplementedError",
+        "box(10.0,10.0,10.0).translate(5.0,0.0,0.0).class",
+        "Shape",
     );
 }
 
 #[test]
-fn stub_shape_rotate_raises_not_implemented() {
+fn native_rotate_returns_shape() {
     let mut vm = MrubyVm::new();
-    assert_err_contains(
+    assert_contains(
         &mut vm,
-        "$s = box(5.0, 5.0, 5.0); $s.rotate(0, 0, 1, 45)",
-        "NotImplementedError",
+        "box(10.0,10.0,10.0).rotate(0.0,0.0,1.0,45.0).class",
+        "Shape",
     );
 }
 
 #[test]
-fn stub_shape_scale_raises_not_implemented() {
+fn native_scale_returns_shape() {
     let mut vm = MrubyVm::new();
-    assert_err_contains(
-        &mut vm,
-        "$s = box(5.0, 5.0, 5.0); $s.scale(2)",
-        "NotImplementedError",
-    );
+    assert_contains(&mut vm, "box(10.0,10.0,10.0).scale(2.0).class", "Shape");
 }
 
 #[test]
-fn stub_shape_fillet_mentions_phase2() {
+fn native_fillet_returns_shape() {
     let mut vm = MrubyVm::new();
-    assert_err_contains(&mut vm, "$s = box(5.0, 5.0, 5.0); $s.fillet(1)", "Phase 2");
+    assert_contains(&mut vm, "box(10.0,10.0,10.0).fillet(1.0).class", "Shape");
 }
 
 #[test]
-fn stub_shape_chamfer_mentions_phase2() {
+fn native_chamfer_returns_shape() {
     let mut vm = MrubyVm::new();
-    assert_err_contains(&mut vm, "$s = box(5.0, 5.0, 5.0); $s.chamfer(1)", "Phase 2");
+    assert_contains(&mut vm, "box(10.0,10.0,10.0).chamfer(1.0).class", "Shape");
 }
 
 #[test]
-fn stub_solid_block_mentions_phase2() {
+fn native_mirror_returns_shape() {
     let mut vm = MrubyVm::new();
-    assert_err_contains(&mut vm, "solid {}", "Phase 2");
+    assert_contains(&mut vm, "box(10.0,10.0,10.0).mirror(:xy).class", "Shape");
 }
+
+// ---------------------------------------------------------------------------
+// Phase 2: Sketch + extrude/revolve
+// ---------------------------------------------------------------------------
+
+#[test]
+fn native_rect_returns_shape() {
+    let mut vm = MrubyVm::new();
+    assert_contains(&mut vm, "rect(10.0, 20.0).class", "Shape");
+}
+
+#[test]
+fn native_circle_returns_shape() {
+    let mut vm = MrubyVm::new();
+    assert_contains(&mut vm, "circle(5.0).class", "Shape");
+}
+
+#[test]
+fn native_rect_extrude_returns_shape() {
+    let mut vm = MrubyVm::new();
+    assert_contains(&mut vm, "rect(10.0, 20.0).extrude(5.0).class", "Shape");
+}
+
+#[test]
+fn native_circle_revolve_returns_shape() {
+    let mut vm = MrubyVm::new();
+    assert_contains(&mut vm, "circle(5.0).revolve(360.0).class", "Shape");
+}
+
+#[test]
+fn native_revolve_default_angle_is_full() {
+    let mut vm = MrubyVm::new();
+    // revolve() with no args should succeed (defaults to 360°)
+    assert_contains(&mut vm, "circle(5.0).revolve.class", "Shape");
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: solid builder
+// ---------------------------------------------------------------------------
+
+#[test]
+fn solid_block_returns_last_shape() {
+    let mut vm = MrubyVm::new();
+    assert_contains(&mut vm, "solid { box(5.0, 5.0, 5.0) }.class", "Shape");
+}
+
+#[test]
+fn solid_block_can_chain_operations() {
+    let mut vm = MrubyVm::new();
+    let code = "solid { box(10.0, 10.0, 10.0).fuse(sphere(6.0)) }.class";
+    assert_contains(&mut vm, code, "Shape");
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: Assembly
+// ---------------------------------------------------------------------------
+
+#[test]
+fn assembly_can_place_shapes() {
+    let mut vm = MrubyVm::new();
+    let code = r#"
+      asm = assembly("test") do |a|
+        a.place box(5.0, 5.0, 5.0)
+        a.place sphere(3.0)
+      end
+      asm.class
+    "#;
+    assert_contains(&mut vm, code, "Assembly");
+}
+
+#[test]
+fn assembly_inspect_contains_name() {
+    let mut vm = MrubyVm::new();
+    let code = r#"assembly("bracket") { }.inspect"#;
+    assert_contains(&mut vm, code, "bracket");
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3+ stubs still raise NotImplementedError
+// ---------------------------------------------------------------------------
 
 #[test]
 fn stub_preview_mentions_phase3() {
     let mut vm = MrubyVm::new();
     assert_err_contains(&mut vm, "$s = box(5.0, 5.0, 5.0); preview($s)", "Phase 3");
+}
+
+#[test]
+fn stub_faces_selector_mentions_phase3() {
+    let mut vm = MrubyVm::new();
+    assert_err_contains(
+        &mut vm,
+        "$s = box(5.0, 5.0, 5.0); $s.faces(:top)",
+        "Phase 3",
+    );
+}
+
+#[test]
+fn stub_edges_selector_mentions_phase3() {
+    let mut vm = MrubyVm::new();
+    assert_err_contains(
+        &mut vm,
+        "$s = box(5.0, 5.0, 5.0); $s.edges(:vertical)",
+        "Phase 3",
+    );
+}
+
+#[test]
+fn stub_assembly_mate_mentions_phase5() {
+    let mut vm = MrubyVm::new();
+    let code = r#"
+      $asm = assembly("test") {}
+      $s = box(5.0, 5.0, 5.0)
+      $asm.mate($s)
+    "#;
+    assert_err_contains(&mut vm, code, "Phase 5");
 }

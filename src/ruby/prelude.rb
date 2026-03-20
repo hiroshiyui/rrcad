@@ -4,19 +4,18 @@
 # MrubyVm::new().  Users never need to write `require` or `require_relative`.
 #
 # After the prelude runs, MrubyVm::new() calls rrcad_register_shape_class()
-# which registers native implementations for Shape, box(), cylinder(), and
-# sphere().  Those native methods shadow the Ruby stubs below.
+# which registers native implementations for Shape and all DSL methods.
+# Native methods shadow the Ruby stubs below.
 
 # ---------------------------------------------------------------------------
 # Shape — backing class for all solid geometry objects.
 #
-# Native instances (created via box/cylinder/sphere) are mRuby RData objects
-# holding a raw pointer to a heap-allocated Rust Shape.  The native `inspect`
-# returns "#<Shape>".
+# Native instances (created via box/cylinder/sphere/rect/circle) are mRuby
+# RData objects holding a raw pointer to a heap-allocated Rust Shape.
 #
-# Stub instances (created via Shape.new for testing Phase 2/3 stub methods)
-# carry @kind / @args as instance variables; their inspect uses the prelude
-# definition below until the native override runs.
+# Stub instances (created via Shape.new for Phase 3+ stub tests) carry
+# @kind / @args instance variables; their inspect uses the prelude definition
+# until the native override runs.
 # ---------------------------------------------------------------------------
 class Shape
   def initialize(kind = nil, *args)
@@ -30,7 +29,23 @@ class Shape
 
   alias inspect to_s
 
-  # --- Methods not yet implemented natively (Phase 2) ----------------------
+  # --- Stubs overridden by native after prelude runs -----------------------
+
+  def export(_path)
+    raise NotImplementedError, "Shape#export is not yet implemented (Phase 1)"
+  end
+
+  def fuse(_other)
+    raise NotImplementedError, "Shape#fuse is not yet implemented (Phase 1)"
+  end
+
+  def cut(_other)
+    raise NotImplementedError, "Shape#cut is not yet implemented (Phase 1)"
+  end
+
+  def common(_other)
+    raise NotImplementedError, "Shape#common is not yet implemented (Phase 1)"
+  end
 
   def translate(_x, _y, _z)
     raise NotImplementedError, "Shape#translate is not yet implemented (Phase 2)"
@@ -52,31 +67,68 @@ class Shape
     raise NotImplementedError, "Shape#chamfer is not yet implemented (Phase 2)"
   end
 
-  # --- Stubs overridden by native after prelude runs -----------------------
-  # (kept here only so that Shape.new(:box).export / .fuse etc. work from
-  # tests that intentionally exercise the stub path before native registration)
-
-  def export(_path)
-    raise NotImplementedError, "Shape#export is not yet implemented (Phase 1)"
+  def mirror(_plane)
+    raise NotImplementedError, "Shape#mirror is not yet implemented (Phase 2)"
   end
 
-  def fuse(_other)
-    raise NotImplementedError, "Shape#fuse is not yet implemented (Phase 1)"
+  def extrude(_height)
+    raise NotImplementedError, "Shape#extrude is not yet implemented (Phase 2)"
   end
 
-  def cut(_other)
-    raise NotImplementedError, "Shape#cut is not yet implemented (Phase 1)"
+  def revolve(_angle = 360.0)
+    raise NotImplementedError, "Shape#revolve is not yet implemented (Phase 2)"
   end
 
-  def common(_other)
-    raise NotImplementedError, "Shape#common is not yet implemented (Phase 1)"
+  # --- Face/edge selectors — Phase 3+ -------------------------------------
+
+  def faces(_selector)
+    raise NotImplementedError, "Shape#faces is not yet implemented (Phase 3)"
+  end
+
+  def edges(_selector)
+    raise NotImplementedError, "Shape#edges is not yet implemented (Phase 3)"
   end
 end
 
 # ---------------------------------------------------------------------------
-# Top-level primitive constructors — stubs overridden by native after prelude.
+# Assembly — groups named shapes; supports place; mate is Phase 5.
+# ---------------------------------------------------------------------------
+class Assembly
+  def initialize(name)
+    @name = name
+    @shapes = []
+  end
+
+  def place(shape)
+    @shapes << shape
+    shape
+  end
+
+  def mate(_shape, *_args)
+    raise NotImplementedError, "Assembly#mate is not yet implemented (Phase 5)"
+  end
+
+  def to_shape
+    raise RuntimeError, "Assembly '#{@name}' contains no shapes" if @shapes.empty?
+    @shapes.inject { |acc, s| acc.fuse(s) }
+  end
+
+  def export(path)
+    to_shape.export(path)
+  end
+
+  def inspect
+    "#<Assembly:#{@name} (#{@shapes.length} shapes)>"
+  end
+
+  alias to_s inspect
+end
+
+# ---------------------------------------------------------------------------
+# Top-level DSL methods
 # ---------------------------------------------------------------------------
 module Kernel
+  # Primitives — overridden natively after prelude runs.
   def box(_x, _y, _z)
     raise NotImplementedError, "box() is not yet implemented (Phase 1)"
   end
@@ -89,9 +141,25 @@ module Kernel
     raise NotImplementedError, "sphere() is not yet implemented (Phase 1)"
   end
 
-  # `solid do ... end` builder — Phase 2.
+  # 2D sketch faces — overridden natively after prelude runs.
+  def rect(_w, _h)
+    raise NotImplementedError, "rect() is not yet implemented (Phase 2)"
+  end
+
+  def circle(_r)
+    raise NotImplementedError, "circle() is not yet implemented (Phase 2)"
+  end
+
+  # `solid do ... end` — evaluates block, returns its result.
   def solid
-    raise NotImplementedError, "solid {} is not yet implemented (Phase 2)"
+    yield
+  end
+
+  # `assembly "name" do |asm| ... end` — creates an Assembly.
+  def assembly(name)
+    asm = Assembly.new(name)
+    yield asm if block_given?
+    asm
   end
 
   # Open the live browser preview for a shape — Phase 3.

@@ -35,6 +35,14 @@ mod ffi {
         ) -> Result<UniquePtr<OcctShape>>;
         fn shape_scale(shape: &OcctShape, factor: f64) -> Result<UniquePtr<OcctShape>>;
 
+        fn shape_mirror(shape: &OcctShape, plane: &str) -> Result<UniquePtr<OcctShape>>;
+
+        fn make_rect(w: f64, h: f64) -> Result<UniquePtr<OcctShape>>;
+        fn make_circle_face(r: f64) -> Result<UniquePtr<OcctShape>>;
+
+        fn shape_extrude(shape: &OcctShape, height: f64) -> Result<UniquePtr<OcctShape>>;
+        fn shape_revolve(shape: &OcctShape, angle_deg: f64) -> Result<UniquePtr<OcctShape>>;
+
         // --- Export ---
         fn export_step(shape: &OcctShape, path: &str) -> Result<()>;
         fn export_stl(shape: &OcctShape, path: &str) -> Result<()>;
@@ -120,6 +128,36 @@ impl Shape {
 
     pub fn scale(&self, factor: f64) -> Result<Shape, String> {
         ffi::shape_scale(&self.inner, factor)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn mirror(&self, plane: &str) -> Result<Shape, String> {
+        ffi::shape_mirror(&self.inner, plane)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn make_rect(w: f64, h: f64) -> Result<Self, String> {
+        ffi::make_rect(w, h)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn make_circle_face(r: f64) -> Result<Self, String> {
+        ffi::make_circle_face(r)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn extrude(&self, height: f64) -> Result<Shape, String> {
+        ffi::shape_extrude(&self.inner, height)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn revolve(&self, angle_deg: f64) -> Result<Shape, String> {
+        ffi::shape_revolve(&self.inner, angle_deg)
             .map(|p| Shape { inner: p })
             .map_err(|e| e.to_string())
     }

@@ -30,6 +30,16 @@
 // --- OCCT: transforms ---
 #include <BRepBuilderAPI_Transform.hxx>
 
+// --- OCCT: Phase 2 ---
+#include <BRepBuilderAPI_MakeEdge.hxx>
+#include <BRepBuilderAPI_MakeFace.hxx>
+#include <BRepBuilderAPI_MakePolygon.hxx>
+#include <BRepBuilderAPI_MakeWire.hxx>
+#include <BRepPrimAPI_MakePrism.hxx>
+#include <BRepPrimAPI_MakeRevol.hxx>
+#include <gp_Ax2.hxx>
+#include <gp_Circ.hxx>
+
 // --- OCCT: tessellation (required before glTF export) ---
 #include <BRepMesh_IncrementalMesh.hxx>
 
@@ -186,6 +196,82 @@ std::unique_ptr<OcctShape> shape_scale(const OcctShape& s, double factor) {
     if (!xform.IsDone())
         throw std::runtime_error("BRepBuilderAPI_Transform (scale) failed");
     return wrap(xform.Shape());
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: Mirror
+// ---------------------------------------------------------------------------
+
+std::unique_ptr<OcctShape> shape_mirror(const OcctShape& s, rust::Str plane) {
+    gp_Trsf trsf;
+    if (plane == "xy") {
+        trsf.SetMirror(gp_Ax2(gp_Pnt(0.0, 0.0, 0.0), gp_Dir(0.0, 0.0, 1.0)));
+    } else if (plane == "xz") {
+        trsf.SetMirror(gp_Ax2(gp_Pnt(0.0, 0.0, 0.0), gp_Dir(0.0, 1.0, 0.0)));
+    } else if (plane == "yz") {
+        trsf.SetMirror(gp_Ax2(gp_Pnt(0.0, 0.0, 0.0), gp_Dir(1.0, 0.0, 0.0)));
+    } else {
+        std::string msg = "mirror: unknown plane '";
+        msg += std::string(plane.data(), plane.size());
+        msg += "' — expected :xy, :xz, or :yz";
+        throw std::runtime_error(msg);
+    }
+    BRepBuilderAPI_Transform xform(s.get(), trsf, /*copy=*/Standard_True);
+    xform.Build();
+    if (!xform.IsDone())
+        throw std::runtime_error("BRepBuilderAPI_Transform (mirror) failed");
+    return wrap(xform.Shape());
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: 2D sketch faces
+// ---------------------------------------------------------------------------
+
+std::unique_ptr<OcctShape> make_rect(double w, double h) {
+    BRepBuilderAPI_MakePolygon poly;
+    poly.Add(gp_Pnt(0.0, 0.0, 0.0));
+    poly.Add(gp_Pnt(w, 0.0, 0.0));
+    poly.Add(gp_Pnt(w, h, 0.0));
+    poly.Add(gp_Pnt(0.0, h, 0.0));
+    poly.Close();
+    if (!poly.IsDone())
+        throw std::runtime_error("BRepBuilderAPI_MakePolygon (rect) failed");
+    BRepBuilderAPI_MakeFace face(poly.Wire());
+    if (!face.IsDone())
+        throw std::runtime_error("BRepBuilderAPI_MakeFace (rect) failed");
+    return wrap(face.Face());
+}
+
+std::unique_ptr<OcctShape> make_circle_face(double r) {
+    gp_Circ circ(gp_Ax2(gp_Pnt(0.0, 0.0, 0.0), gp_Dir(0.0, 0.0, 1.0)), r);
+    TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(circ).Edge();
+    TopoDS_Wire wire = BRepBuilderAPI_MakeWire(edge).Wire();
+    BRepBuilderAPI_MakeFace face(wire);
+    if (!face.IsDone())
+        throw std::runtime_error("BRepBuilderAPI_MakeFace (circle) failed");
+    return wrap(face.Face());
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: Extrude / Revolve
+// ---------------------------------------------------------------------------
+
+std::unique_ptr<OcctShape> shape_extrude(const OcctShape& s, double height) {
+    BRepPrimAPI_MakePrism prism(s.get(), gp_Vec(0.0, 0.0, height));
+    prism.Build();
+    if (!prism.IsDone())
+        throw std::runtime_error("BRepPrimAPI_MakePrism (extrude) failed");
+    return wrap(prism.Shape());
+}
+
+std::unique_ptr<OcctShape> shape_revolve(const OcctShape& s, double angle_deg) {
+    gp_Ax1 axis(gp_Pnt(0.0, 0.0, 0.0), gp_Dir(0.0, 0.0, 1.0));
+    const double angle_rad = angle_deg * (M_PI / 180.0);
+    BRepPrimAPI_MakeRevol revol(s.get(), axis, angle_rad);
+    revol.Build();
+    if (!revol.IsDone())
+        throw std::runtime_error("BRepPrimAPI_MakeRevol (revolve) failed");
+    return wrap(revol.Shape());
 }
 
 // ---------------------------------------------------------------------------

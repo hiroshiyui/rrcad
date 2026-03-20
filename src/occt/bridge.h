@@ -56,6 +56,17 @@ std::unique_ptr<OcctShape> shape_rotate(const OcctShape& shape, double axis_x, d
                                         double axis_z, double angle_deg);
 std::unique_ptr<OcctShape> shape_scale(const OcctShape& shape, double factor);
 
+// --- Phase 2: mirror ---
+std::unique_ptr<OcctShape> shape_mirror(const OcctShape& shape, rust::Str plane);
+
+// --- Phase 2: 2D sketch faces ---
+std::unique_ptr<OcctShape> make_rect(double w, double h);
+std::unique_ptr<OcctShape> make_circle_face(double r);
+
+// --- Phase 2: extrude / revolve ---
+std::unique_ptr<OcctShape> shape_extrude(const OcctShape& shape, double height);
+std::unique_ptr<OcctShape> shape_revolve(const OcctShape& shape, double angle_deg);
+
 // --- Export ---
 void export_step(const OcctShape& shape, rust::Str path);
 void export_stl(const OcctShape& shape, rust::Str path);
