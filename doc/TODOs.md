@@ -63,18 +63,21 @@ Goal: close the gap between our DSL and what OpenSCAD / CadQuery expose from OCC
 - [ ] `wedge(dx, dy, dz, ltx)` — `BRepPrimAPI_MakeWedge`
 
 ### Sketch / 2-D profiles
-- [ ] `polygon([[x,y], ...])` — arbitrary closed polygon face (`BRepBuilderAPI_MakeWire` + `MakeFace`)
-- [ ] `ellipse(rx, ry)` — elliptic face (`GC_MakeEllipse`)
-- [ ] `arc(r, start_deg, end_deg)` — circular arc wire for wire-building
+- [ ] `polygon([[x,y], ...])` — arbitrary closed polygon face (`BRepBuilderAPI_MakePolygon` + `BRepBuilderAPI_MakeFace`)
+- [ ] `ellipse(rx, ry)` — elliptic face (`GC_MakeEllipse` + `BRepBuilderAPI_MakeEdge`)
+- [ ] `arc(r, start_deg, end_deg)` — circular arc wire (`GC_MakeArcOfCircle` + `BRepBuilderAPI_MakeEdge`)
 
 ### 3-D operations
 - [ ] `loft([profile1, profile2, ...], ruled: false)` — `BRepOffsetAPI_ThruSections`; solves organic shapes (teapot body, blades, …)
-- [ ] `.shell(thickness)` — hollow out a solid; `BRepOffsetAPI_MakeOffset`
+- [ ] `.shell(thickness)` — hollow out a solid; `BRepOffsetAPI_MakeThickSolid::MakeThickSolidByJoin`
+  - Note: **not** `BRepOffsetAPI_MakeOffset` — that is for 2D wire offsetting only
 - [ ] `.offset(distance)` — inflate / deflate a solid; `BRepOffsetAPI_MakeOffsetShape`
-- [ ] `.extrude(h, twist_deg: 0, scale: 1.0)` — extend `shape_extrude` with twist and end-scale (`BRepOffsetAPI_MakePipeShell`)
+- [ ] `.extrude(h, twist_deg: 0, scale: 1.0)` — extend `shape_extrude` with twist and end-scale;
+  use `BRepOffsetAPI_MakePipeShell` with a `GeomFill_EvolvedSection` law (replaces `MakePrism` when twist/scale are nonzero)
 
 ### Transforms
-- [ ] `.scale(sx, sy, sz)` — non-uniform scale; `BRepBuilderAPI_GTransform`
+- [ ] `.scale(sx, sy, sz)` — non-uniform scale; `BRepBuilderAPI_GTransform` with `gp_GTrsf`
+  (current `shape_scale` uses `gp_Trsf::SetScaleFactor` which is uniform-only)
 
 ### Selective modifiers
 - [ ] `.fillet(r, selector)` — fillet only edges matching a selector string (reuse existing edge-selector machinery)
@@ -86,16 +89,75 @@ Goal: close the gap between our DSL and what OpenSCAD / CadQuery expose from OCC
 
 ### Import
 - [ ] `import_step("file.step")` — `STEPControl_Reader`
-- [ ] `import_stl("file.stl")` — `RWStl` / `StlAPI_Reader`
+- [ ] `import_stl("file.stl")` — `RWStl::ReadFile` (returns `Handle(Poly_Triangulation)`)
 
 ### Query / introspection
-- [ ] `.bounding_box` — returns `{x:, y:, z:, dx:, dy:, dz:}`; `Bnd_Box` + `BRepBndLib`
-- [ ] `.volume` — mass properties; `BRepGProp` + `GProp_GProps`
-- [ ] `.surface_area` — same API as volume
+- [ ] `.bounding_box` — returns `{x:, y:, z:, dx:, dy:, dz:}`; use `BRepBndLib::AddOptimal` (tighter than `BRepBndLib::Add`) + `Bnd_Box`
+- [ ] `.volume` — mass properties; `BRepGProp::VolumeProperties` + `GProp_GProps`
+- [ ] `.surface_area` — `BRepGProp::SurfaceProperties` + `GProp_GProps`
 
 ### Sub-shape selectors (extensions)
 - [ ] `vertices` selector on shapes (complement to existing `faces` / `edges`)
 - [ ] Direction-based face selector: `faces(">Z")` / `faces("<X")` (CadQuery style)
+
+### Export additions
+- [ ] OBJ export — `RWObj_CafWriter` (OCCT 7.6+); same XDE pipeline as glTF, trivial to add
+
+---
+
+## OCCT API Improvements (existing code)
+
+Targeted improvements to the current `bridge.cpp` implementation using newer OCCT APIs.
+
+### Boolean operations — robustness and performance
+Use the builder-style API instead of the two-argument constructors (`BRepAlgoAPI_Fuse(a,b)`):
+```cpp
+op.SetRunParallel(Standard_True);  // multi-threaded; OCCT 7.4+
+op.SetFuzzyValue(1e-6);            // handles near-coincident faces; prevents spurious failures
+```
+Apply to all three of `shape_fuse`, `shape_cut`, `shape_common`.
+
+### Tessellation — parallel meshing
+`BRepMesh_IncrementalMesh` accepts a parallel flag (OCCT 7.4+); speeds up complex shapes:
+```cpp
+BRepMesh_IncrementalMesh mesher(shape, deflection, /*isRelative=*/false, 0.5,
+                                /*isParallel=*/Standard_True);
+```
+Apply in `export_stl`, `export_gltf`, `export_glb`.
+
+### Spline tangent constraints
+`GeomAPI_Interpolate::Load(startTangent, endTangent)` produces smoother BSplines with
+user-specified end tangents. Currently `make_spline_2d` / `make_spline_3d` use natural
+boundary conditions, which can cause oscillation near endpoints (visible on teapot sweep paths).
+Expose as optional `tangents:` array argument in the DSL.
+
+### GLB transform format
+`RWGltf_CafWriter::SetTransformationFormat(RWGltf_WriterTrsfFormat_TRS)` (OCCT 7.7+)
+emits TRS components instead of a 4×4 matrix — the glTF spec default, better for Three.js.
+Add to `export_glb` before `Perform`.
+
+### GLB color/material support
+Before calling `RWGltf_CafWriter::Perform`, attach colors via `XCAFDoc_ColorTool`:
+```cpp
+Handle(XCAFDoc_ColorTool) colorTool = XCAFDoc_DocumentTool::ColorTool(doc->Main());
+colorTool->SetColor(shapeLabel, Quantity_Color(r, g, b, Quantity_TOC_sRGB),
+                   XCAFDoc_ColorSurf);
+```
+Needed for multi-part assemblies where parts should render in different colors.
+
+### Shape validity check before export
+Add `BRepCheck_Analyzer` to `export_step` / `export_glb` for actionable error messages
+instead of silent writer failures:
+```cpp
+#include <BRepCheck_Analyzer.hxx>
+BRepCheck_Analyzer checker(shape);
+if (!checker.IsValid())
+    throw std::runtime_error("shape is topologically invalid — check for degenerate faces");
+```
+
+### Feature removal (`BRepAlgoAPI_Defeaturing`, OCCT 7.4+)
+Removes small features (holes, fillets) for simplified export-for-simulation meshes.
+Not urgent, but useful for a future `.simplify(min_feature_size)` DSL method.
 
 ---
 
