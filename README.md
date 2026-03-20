@@ -57,13 +57,13 @@ cargo run -- --preview script.rb
 cargo test
 ```
 
-Requires OCCT 7.7+ headers and libraries, and mRuby built as a static library. See `doc/TODOs.md` for the full build setup roadmap.
+Requires OCCT 7.7+ headers and libraries, and mRuby built as a static library. See [`doc/development.md`](doc/development.md) for full build setup instructions.
 
 ## Roadmap
 
 See [`doc/TODOs.md`](doc/TODOs.md) for the phased implementation plan:
 
-- **Phase 0** — OCCT Rust bindings via `cxx` (box, boolean ops, STEP export)
+- **Phase 0** ✓ — OCCT Rust bindings via `cxx` (primitives, boolean ops, fillets, transforms, STEP/STL/glTF export)
 - **Phase 1** — mRuby embedded; end-to-end Ruby → STEP
 - **Phase 2** — DSL enrichment (fillets, assemblies, sketches, extrude/revolve)
 - **Phase 3** — Live browser preview (Three.js + WebSocket file watcher)

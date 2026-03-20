@@ -16,7 +16,7 @@ cargo test <test_name>   # run a single test by name substring
 cargo clippy
 ```
 
-## Planned Architecture
+## Architecture
 
 ```
 Ruby DSL (.rb script)
@@ -35,7 +35,7 @@ OCCT geometry kernel        (src/occt/)
 
 ## Key Technology Choices
 
-- **mRuby FFI** — use `mruby-sys` or raw C FFI (not the `mrusty` crate). Wire Ruby classes to Rust via `mrb_define_class` / `mrb_define_method`.
+- **mRuby FFI** — use raw C FFI (chosen; not `mruby-sys` or `mrusty`). Vendored at `vendor/mruby`; glue shim in `src/ruby/glue.c` hides `mrb_value` from Rust. Wire Ruby classes to Rust via `mrb_define_class` / `mrb_define_method`.
 - **OCCT bindings** — use the `cxx` crate with a hand-written C++ bridge. Bind only what is needed incrementally; do not attempt full OCCT coverage. Header: `src/occt/bridge.h`, implementation: `src/occt/bridge.cpp`.
 - **Preview (short-term)** — `axum` HTTP server + WebSocket + Three.js in the browser. OCCT tessellates to glTF via `RWGltf_CafWriter`; `notify` crate watches `.rb` files and pushes reload events over WebSocket.
 - **Preview (long-term)** — `egui` + `wgpu` native viewer once the DSL stabilizes.
