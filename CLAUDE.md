@@ -48,6 +48,11 @@ Live preview               (src/preview/)
 - **Preview (current)** — `axum` HTTP server + WebSocket + Three.js. OCCT tessellates to binary GLB via `RWGltf_CafWriter` (isBinary=true); `notify` watches the `.rb` script; `preview(shape)` writes the GLB and fires a WebSocket reload. Activated with `rrcad --preview <script.rb>`. `preview(shape)` is a no-op outside this mode.
 - **Preview (long-term)** — `egui` + `wgpu` native viewer (Phase 4) once the DSL stabilizes.
 
+## Testing Notes
+
+mRuby is not thread-safe. `.cargo/config.toml` sets `RUST_TEST_THREADS=1` so `cargo test` runs
+all test binaries single-threaded. Do not remove this — parallel mRuby VMs will SIGSEGV.
+
 ## Code Style
 
 Formatting is enforced automatically by hooks in `.claude/settings.json` — no manual step needed.

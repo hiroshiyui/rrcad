@@ -1,0 +1,3 @@
+# mRuby is not thread-safe; run all integration tests single-threaded.
+[env]
+RUST_TEST_THREADS = "1"
