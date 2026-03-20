@@ -283,9 +283,37 @@ Output files are written to `std::env::temp_dir()` (typically `/tmp` on Linux).
 
 ## Code Style
 
-- Rust: standard `rustfmt` formatting; `cargo clippy` must pass clean.
-- C++: keep all bridge code in `namespace rrcad`; throw `std::runtime_error`
-  on failure (cxx converts it to a Rust `Err`).
+### Rust
+
+Standard `rustfmt` formatting; `cargo clippy` must pass clean.
+
+### C++
+
+C++ code is formatted with **clang-format**. The project config is in
+`.clang-format` at the repository root (LLVM base style, 100-column limit,
+4-space indent, left pointer alignment).
+
+**Check formatting (dry run):**
+
+```sh
+clang-format --dry-run -Werror src/occt/bridge.h src/occt/bridge.cpp
+```
+
+**Apply formatting in-place:**
+
+```sh
+clang-format -i src/occt/bridge.h src/occt/bridge.cpp
+```
+
+Install clang-format if missing:
+
+```sh
+sudo apt-get install -y clang-format
+```
+
+**Additional C++ rules:**
+- Keep all bridge code in `namespace rrcad`.
+- Throw `std::runtime_error` on failure — cxx converts it to a Rust `Err`.
 - Every new OCCT binding must check `IsDone()` (or the equivalent return
   status) and throw on failure — do not silently return a null shape.
 - Add a `cargo test` smoke test for every new shape operation.
