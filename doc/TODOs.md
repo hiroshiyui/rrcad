@@ -36,23 +36,21 @@ REPL tab-completion and `help` command. See `tests/phase2_dsl.rs`.
 
 ---
 
-## Phase 3 — Live Preview (Three.js, Plan B)
+## ✓ Phase 3 — Live Preview (complete)
 
-Goal: save `.rb` → see 3D result in browser instantly.
+Spline profiles (`spline_2d`, `spline_3d`) and pipe sweep (`.sweep`) via
+`GeomAPI_Interpolate` + `BRepOffsetAPI_MakePipe`. Sub-shape selectors
+`.faces(:top|:bottom|:side|:all)` and `.edges(:vertical|:horizontal|:all)`
+using `BRepLProp_SLProps` (orientation-aware normals) and
+`TopTools_IndexedMapOfShape` (deduplicated iteration).
 
-- [x] Spline / sweep primitives:
-  - `spline_2d([[r,z], ...])` — closed XZ-plane profile via `GeomAPI_Interpolate` → Face (for `revolve`)
-  - `spline_3d([[x,y,z], ...])` — 3D Wire via `GeomAPI_Interpolate` (for `sweep`)
-  - `.sweep(path)` — pipe sweep via `BRepOffsetAPI_MakePipe` (`TKOffset` linked)
-  - `samples/07_teapot.rb` — Utah Teapot DSL example
-  - See `tests/teapot_dsl.rs`: 7 end-to-end tests passing
-- [ ] Face/edge selectors: `.faces(:top)`, `.edges(:vertical)` returning sub-Shape handles
-- [ ] Tessellation pipeline: `BRepMesh_IncrementalMesh` → glTF (two LOD levels)
-- [ ] `axum` HTTP server serving glTF + static Three.js viewer page
-- [ ] Three.js viewer: `GLTFLoader` + `OrbitControls` + `GridHelper` + edge overlay + axis gizmo
-- [ ] WebSocket channel: server → browser "mesh updated, reload"
-- [ ] `notify` crate watching `.rb` script for changes → re-eval → tessellate → WS notify
-- [ ] `preview part` top-level Ruby method (or CLI flag `--preview`) to launch the server
+Live preview: `rrcad --preview <script.rb>` tessellates to binary glTF (GLB)
+via `export_glb`; `axum` HTTP server serves the GLB and a Three.js viewer
+page (`GLTFLoader` + `OrbitControls` + auto-fit camera); `notify` watches
+the script file and re-evals on save; WebSocket pushes `"reload"` to the
+browser. `preview(shape)` is a no-op when not in `--preview` mode so scripts
+stay portable. See `tests/teapot_dsl.rs` (7 tests), `tests/phase3_selectors.rs`
+(16 tests), `samples/07_teapot.rb`.
 
 ---
 
@@ -102,6 +100,6 @@ OCCT geometry kernel
 The raw pointer lives in the mRuby `RData void*` slot. `dfree` drops it.
 No SlotMap, no cross-language reference counting.
 
-**Rendering (short-term):** OCCT tessellation → glTF → `axum` HTTP → Three.js browser viewer → WebSocket live reload.
+**Rendering (current):** OCCT tessellation → GLB → `axum` HTTP → Three.js browser viewer → WebSocket live reload. Activated with `rrcad --preview <script.rb>`.
 
-**Rendering (long-term):** egui + wgpu native viewer once DSL is stable.
+**Rendering (long-term):** egui + wgpu native viewer (Phase 4) once DSL is stable.

@@ -10,7 +10,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```sh
 cargo build
-cargo run
+cargo run                          # start REPL
+cargo run -- script.rb             # run a script
+cargo run -- --preview script.rb   # live browser preview (auto-reloads on save)
 cargo test
 cargo test <test_name>   # run a single test by name substring
 cargo clippy
@@ -22,23 +24,29 @@ cargo clippy
 Ruby DSL (.rb script)
       │ mRuby VM
 Rust binding layer          (src/ruby/)
-  • mrb_define_class / mrb_define_method
-  • Shape handle: SlotMap<u64, OcctShape>
+  • glue.c: C shim hiding mrb_value from Rust
+  • native.rs: extern "C" entry points
+  • Shape: Box<occt::Shape> raw pointer in mRuby RData void*
   • dfree callback drops shape on GC
       │ cxx bridge (C++ ABI)
 OCCT geometry kernel        (src/occt/)
-  • BRep modeling, tessellation
-  • STEP / STL / glTF export
+  • BRep modeling, splines, tessellation
+  • STEP / STL / glTF (text) / GLB (binary) export
+      │
+Live preview               (src/preview/)
+  • export_glb → /tmp/rrcad_preview.glb
+  • axum HTTP: GET / (Three.js HTML), GET /model.glb, GET /ws (WebSocket)
+  • notify watches .rb script → re-eval → GLB → WS "reload"
 ```
 
-**Memory model:** Rust owns all OCCT shapes via a `SlotMap`. mRuby `RData` holds only a `u64` key; GC triggers a `dfree` callback that removes the key and drops the shape. No cross-language reference counting.
+**Memory model:** Each native `Shape` is a heap-allocated `Box<occt::Shape>`. The raw pointer is stored directly in the mRuby `RData void*` slot — no SlotMap. The `dfree` GC callback drops the Box. No cross-language reference counting.
 
 ## Key Technology Choices
 
 - **mRuby FFI** — use raw C FFI (chosen; not `mruby-sys` or `mrusty`). Vendored at `vendor/mruby`; glue shim in `src/ruby/glue.c` hides `mrb_value` from Rust. Wire Ruby classes to Rust via `mrb_define_class` / `mrb_define_method`.
 - **OCCT bindings** — use the `cxx` crate with a hand-written C++ bridge. Bind only what is needed incrementally; do not attempt full OCCT coverage. Header: `src/occt/bridge.h`, implementation: `src/occt/bridge.cpp`.
-- **Preview (short-term)** — `axum` HTTP server + WebSocket + Three.js in the browser. OCCT tessellates to glTF via `RWGltf_CafWriter`; `notify` crate watches `.rb` files and pushes reload events over WebSocket.
-- **Preview (long-term)** — `egui` + `wgpu` native viewer once the DSL stabilizes.
+- **Preview (current)** — `axum` HTTP server + WebSocket + Three.js. OCCT tessellates to binary GLB via `RWGltf_CafWriter` (isBinary=true); `notify` watches the `.rb` script; `preview(shape)` writes the GLB and fires a WebSocket reload. Activated with `rrcad --preview <script.rb>`. `preview(shape)` is a no-op outside this mode.
+- **Preview (long-term)** — `egui` + `wgpu` native viewer (Phase 4) once the DSL stabilizes.
 
 ## Code Style
 

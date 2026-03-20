@@ -59,7 +59,8 @@ rrcad/
 ├── Cargo.toml              # crate manifest
 ├── build.rs                # three-phase build orchestration
 ├── src/
-│   ├── main.rs             # CLI entry point (REPL + script modes)
+│   ├── lib.rs              # library root (re-exports occt, preview, ruby)
+│   ├── main.rs             # CLI entry point (REPL + script + --preview modes)
 │   ├── ruby/               # mRuby integration
 │   │   ├── mod.rs          # re-exports ffi, vm, native submodules
 │   │   ├── ffi.rs          # extern "C" declarations for libmruby + glue.c
@@ -67,10 +68,14 @@ rrcad/
 │   │   ├── native.rs       # Rust extern "C" fns called from glue.c
 │   │   ├── glue.c          # C shim hiding mrb_value from Rust
 │   │   └── prelude.rb      # DSL prelude embedded via include_str!
-│   └── occt/               # OCCT geometry bindings
-│       ├── mod.rs          # cxx::bridge + safe Shape wrapper + tests
-│       ├── bridge.h        # C++ header: OcctShape class + fn declarations
-│       └── bridge.cpp      # C++ implementation of all OCCT operations
+│   ├── occt/               # OCCT geometry bindings
+│   │   ├── mod.rs          # cxx::bridge + safe Shape wrapper + tests
+│   │   ├── bridge.h        # C++ header: OcctShape class + fn declarations
+│   │   └── bridge.cpp      # C++ implementation of all OCCT operations
+│   └── preview/            # Live browser preview (Phase 3)
+│       ├── mod.rs          # PreviewState, PREVIEW global, start()
+│       ├── server.rs       # axum routes: /, /model.glb, /ws
+│       └── viewer.html     # Three.js viewer (embedded via include_str!)
 ├── samples/                # DSL example scripts
 │   ├── README.md
 │   ├── 01_hello_box.rb … 07_teapot.rb
@@ -80,7 +85,8 @@ rrcad/
 │   ├── prelude_layer.rs    # DSL prelude + native override tests
 │   ├── e2e_dsl.rs          # Phase 1 end-to-end tests
 │   ├── phase2_dsl.rs       # Phase 2 end-to-end tests
-│   └── teapot_dsl.rs       # Phase 3 spline/sweep + teapot e2e tests
+│   ├── teapot_dsl.rs       # Phase 3 spline/sweep + teapot e2e tests
+│   └── phase3_selectors.rs # Phase 3 face/edge sub-shape selector tests
 ├── vendor/
 │   └── mruby/              # git submodule — mRuby 3.4.0
 └── doc/
@@ -163,8 +169,8 @@ No cross-language reference counting.
 2. Evaluates `prelude.rb` (embedded via `include_str!`), which defines
    `Shape`, `Assembly`, and Kernel stub methods.
 3. Calls `rrcad_register_shape_class(mrb)` (in `glue.c`), which overrides the
-   prelude stubs with native C/Rust implementations. Native methods shadow
-   the stubs; stubs remain for Phase 3+ features not yet wired up.
+   prelude stubs with native C/Rust implementations. All Phase 1–3 methods
+   are fully native; stubs remain only for Phase 4+ features not yet wired up.
 
 ---
 
@@ -233,13 +239,18 @@ XZ plane — suitable for `revolve`. `make_spline_3d` returns a bare `Wire`
 `shape_sweep` asserts the path is a `TopAbs_WIRE` then delegates directly to
 `BRepOffsetAPI_MakePipe` (`TKOffset`).
 
-**glTF export pipeline:**
+**glTF / GLB export pipeline:**
 
-glTF export requires three steps that STEP/STL do not:
+Both `export_gltf` (text JSON + companion `.bin`) and `export_glb` (binary,
+single file) share the same three-step pipeline that STEP/STL do not require:
 1. Tessellate with `BRepMesh_IncrementalMesh` (linear deflection controls quality).
 2. Create an XDE document (`XCAFApp_Application::GetApplication()` singleton,
    then `NewDocument("BinXCAF", doc)`).
-3. Add the shape to `XCAFDoc_ShapeTool`, then write with `RWGltf_CafWriter`.
+3. Add the shape to `XCAFDoc_ShapeTool`, then write with `RWGltf_CafWriter`
+   (`isBinary=false` for glTF, `isBinary=true` for GLB).
+
+The live preview uses `export_glb` exclusively — a single `.glb` file is
+served at `GET /model.glb` without needing to coordinate a companion `.bin`.
 
 ---
 
@@ -367,10 +378,11 @@ cargo clippy                      # lints
 | `src/occt/mod.rs` (inline) | OCCT Rust API: box→fillet→STEP, boolean cut |
 | `tests/occt_layer.rs` | All OCCT primitives, booleans, transforms, fillets, export |
 | `tests/vm_layer.rs` | `MrubyVm` eval: types, errors, persistence, multiple VMs |
-| `tests/prelude_layer.rs` | DSL prelude stubs; native overrides for Phase 1–2; Assembly |
+| `tests/prelude_layer.rs` | DSL prelude stubs; native overrides for Phase 1–3; Assembly |
 | `tests/e2e_dsl.rs` | Phase 1 end-to-end: box/cylinder/sphere/fuse/cut/common/export |
 | `tests/phase2_dsl.rs` | Phase 2 end-to-end: transforms, mirror, rect/circle, extrude/revolve |
 | `tests/teapot_dsl.rs` | Phase 3: spline_2d, spline_3d, sweep; full teapot STEP export |
+| `tests/phase3_selectors.rs` | Phase 3: `.faces(:top|:bottom|:side|:all)`, `.edges(:vertical|:horizontal|:all)` |
 
 Output files are written to `std::env::temp_dir()` (typically `/tmp` on Linux).
 

@@ -28,7 +28,7 @@ See [`samples/`](samples/) for more complete examples including the [Utah Teapot
 | DSL | mRuby | Embedded Ruby scripting engine |
 | Glue | Rust | Binding layer, memory ownership, CLI |
 | Geometry | OpenCASCADE (OCCT) | BRep modeling, boolean ops, export |
-| Preview | Three.js + axum | Browser-based live 3D viewer *(planned)* |
+| Preview | Three.js + axum | Browser-based live 3D viewer (`--preview` mode) |
 
 ## Architecture
 
@@ -53,8 +53,9 @@ OCCT geometry kernel
 
 ```sh
 cargo build
-cargo run               # start REPL
-cargo run -- script.rb  # run a .rb script
+cargo run                          # start REPL
+cargo run -- script.rb             # run a .rb script
+cargo run -- --preview script.rb   # live browser preview (auto-reloads on save)
 cargo test
 ```
 
@@ -67,7 +68,7 @@ See [`doc/TODOs.md`](doc/TODOs.md) for the phased implementation plan:
 - **Phase 0** ✓ — OCCT Rust bindings via `cxx` (primitives, boolean ops, fillets, transforms, STEP/STL/glTF export)
 - **Phase 1** ✓ — mRuby embedded; end-to-end Ruby → STEP; REPL with tab-completion and `help`
 - **Phase 2** ✓ — DSL enrichment (transforms, fillets, mirror, assemblies, sketches, extrude/revolve)
-- **Phase 3** (in progress) — Spline profiles + sweep; live browser preview (Three.js + WebSocket file watcher)
+- **Phase 3** ✓ — Spline profiles + sweep; sub-shape selectors (`.faces`, `.edges`); live browser preview (`axum` + Three.js + WebSocket file watcher; `--preview` CLI)
 - **Phase 4** — Native egui + wgpu desktop viewer
 - **Phase 5** — Parametric design and constraints
 

@@ -134,18 +134,34 @@ let spout   = Shape::make_circle_face(0.7)?.sweep(&path)?;
 
 ---
 
+### Sub-shape Selectors
+
+| Method | Description |
+|--------|-------------|
+| `.faces(selector: &str) -> Result<Vec<Shape>>` | All faces matching the selector. Selectors: `"all"`, `"top"` (normal·Z > 0.5), `"bottom"` (normal·Z < −0.5), `"side"` (all others). Face orientation is accounted for. |
+| `.edges(selector: &str) -> Result<Vec<Shape>>` | All unique edges matching the selector (deduplicated via `TopTools_IndexedMapOfShape`). Selectors: `"all"`, `"vertical"` (tangent·Z > 0.5), `"horizontal"` (all others). Degenerate edges are excluded. |
+
+```rust
+let top_faces = part.faces("top")?;
+let vert_edges = part.edges("vertical")?;
+```
+
+---
+
 ### Export
 
 | Method | Description |
 |--------|-------------|
 | `.export_step(path: &str) -> Result<()>` | STEP AP203 boundary-representation file |
 | `.export_stl(path: &str) -> Result<()>` | ASCII STL triangulated mesh |
-| `.export_gltf(path: &str, linear_deflection: f64) -> Result<()>` | glTF 2.0 (text JSON). `linear_deflection` controls tessellation quality (e.g. `0.1` for 0.1 mm). |
+| `.export_gltf(path: &str, linear_deflection: f64) -> Result<()>` | glTF 2.0 (text JSON + companion `.bin`). `linear_deflection` controls tessellation quality (e.g. `0.1` for 0.1 mm). |
+| `.export_glb(path: &str, linear_deflection: f64) -> Result<()>` | Binary glTF (GLB). Single self-contained file; used by the live preview server. |
 
 ```rust
 part.export_step("/tmp/part.step")?;
 part.export_stl("/tmp/part.stl")?;
 part.export_gltf("/tmp/part.gltf", 0.1)?;
+part.export_glb("/tmp/part.glb", 0.1)?;
 ```
 
 ---
@@ -213,10 +229,17 @@ fn shape_extrude(shape: &OcctShape, height: f64)      -> Result<UniquePtr<OcctSh
 fn shape_revolve(shape: &OcctShape, angle_deg: f64)   -> Result<UniquePtr<OcctShape>>;
 fn shape_sweep(profile: &OcctShape, path: &OcctShape) -> Result<UniquePtr<OcctShape>>;
 
+// Sub-shape selectors
+fn shape_faces_count(shape: &OcctShape, selector: &str)              -> Result<i32>;
+fn shape_faces_get(shape: &OcctShape, selector: &str, idx: i32)      -> Result<UniquePtr<OcctShape>>;
+fn shape_edges_count(shape: &OcctShape, selector: &str)              -> Result<i32>;
+fn shape_edges_get(shape: &OcctShape, selector: &str, idx: i32)      -> Result<UniquePtr<OcctShape>>;
+
 // Export
 fn export_step(shape: &OcctShape, path: &str)                         -> Result<()>;
 fn export_stl (shape: &OcctShape, path: &str)                         -> Result<()>;
 fn export_gltf(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
+fn export_glb (shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
 ```
 
 ---
@@ -266,6 +289,7 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `spline_3d([[x,y,z], ...])` | 3D wire path (for `sweep`) |
 | `solid { ... }` | Block returning its last expression |
 | `assembly("name") { \|a\| a.place shape }` | Named assembly |
+| `preview(shape)` | Tessellate and push to live browser preview. No-op when not in `--preview` mode. |
 
 ### Shape instance methods
 
@@ -283,6 +307,8 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `.extrude(h)` | Extrude face/wire along Z |
 | `.revolve(deg=360)` | Revolve around Z axis |
 | `.sweep(path)` | Sweep profile along a `spline_3d` wire |
+| `.faces(:top\|:bottom\|:side\|:all)` | Array of matching face sub-shapes |
+| `.edges(:vertical\|:horizontal\|:all)` | Array of matching edge sub-shapes (deduplicated) |
 | `.export("out.step")` | Write STEP file |
 
 ---
@@ -290,10 +316,13 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 ## CLI
 
 ```sh
-rrcad                   # start REPL (readline, history, tab-completion)
-rrcad --repl            # same as above
-rrcad <script.rb>       # execute a .rb script and exit
+rrcad                            # start REPL (readline, history, tab-completion)
+rrcad --repl                     # same as above
+rrcad <script.rb>                # execute a .rb script and exit
+rrcad --preview <script.rb>      # live browser preview; re-evals on every save
 ```
+
+`--preview` starts an `axum` HTTP server on `http://localhost:3000`, opens the browser, watches the script with `notify`, and calls `preview(shape)` automatically on each re-eval. Ctrl-C to quit.
 
 **REPL commands:**
 
