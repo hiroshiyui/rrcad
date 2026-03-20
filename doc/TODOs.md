@@ -30,6 +30,7 @@ Goal: call `box(10,20,30).export("test.step")` from a Ruby script.
 - [ ] Implement boolean op methods: `.fuse`, `.cut`, `.common`
 - [ ] Execute a `.rb` script file from Rust CLI entrypoint (`rrcad script.rb`)
 - [x] Interpreter / REPL mode (`rrcad` or `rrcad --repl`): readline loop wired to mRuby eval, prints `=> <result>`
+- [x] DSL prelude auto-loaded on startup (`src/ruby/prelude.rb` embedded via `include_str!`): `Shape`, `box`, `cylinder`, `sphere`, `solid`, `preview` are defined immediately — no `require` needed
 - [ ] End-to-end test: `ruby_script → mRuby → Rust → OCCT → STEP file`
 
 ---
