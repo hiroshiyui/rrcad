@@ -69,3 +69,17 @@ See [`doc/TODOs.md`](doc/TODOs.md) for the phased implementation plan:
 - **Phase 3** — Live browser preview (Three.js + WebSocket file watcher)
 - **Phase 4** — Native egui + wgpu desktop viewer
 - **Phase 5** — Parametric design and constraints
+
+## Third-party components
+
+| Component | Version | License |
+|-----------|---------|---------|
+| [mRuby](https://github.com/mruby/mruby) | 3.4.0 | [MIT](https://github.com/mruby/mruby/blob/master/LICENSE) |
+
+## License
+
+rrcad is free software: you can redistribute it and/or modify it under the
+terms of the **GNU General Public License version 3 or later** (GPL-3.0-or-later)
+as published by the Free Software Foundation.
+
+See [`LICENSE`](LICENSE) for the full license text.
