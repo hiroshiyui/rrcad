@@ -2,6 +2,10 @@
 name = "rrcad"
 version = "0.1.0"
 edition = "2024"
+license = "GPL-3.0-or-later"
 
 [dependencies]
 rustyline = "14"
+
+[build-dependencies]
+cc = "1"

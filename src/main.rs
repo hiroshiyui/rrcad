@@ -1,3 +1,6 @@
+mod ruby;
+
+use ruby::vm::MrubyVm;
 use rustyline::{error::ReadlineError, DefaultEditor};
 
 fn main() {
@@ -10,9 +13,10 @@ fn main() {
 }
 
 fn run_repl() {
-    println!("rrcad {}", env!("CARGO_PKG_VERSION"));
+    println!("rrcad {} — mRuby interpreter", env!("CARGO_PKG_VERSION"));
     println!("Type 'exit' or press Ctrl-D to quit.\n");
 
+    let mut vm = MrubyVm::new();
     let mut rl = DefaultEditor::new().expect("failed to initialise readline");
 
     loop {
@@ -26,8 +30,10 @@ fn run_repl() {
                 if line == "exit" || line == "quit" {
                     break;
                 }
-                // TODO(Phase 1): evaluate `line` via mRuby and print result
-                println!("=> (mRuby not yet wired up)");
+                match vm.eval(line) {
+                    Ok(result) => println!("=> {result}"),
+                    Err(e) => eprintln!("Error: {e}"),
+                }
             }
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => break,
             Err(e) => {
@@ -39,7 +45,7 @@ fn run_repl() {
 }
 
 fn run_script(path: &str) {
-    // TODO(Phase 1): load `path`, execute via mRuby
+    // TODO(Phase 1): read `path` and pass to MrubyVm::eval
     eprintln!("error: script execution not yet implemented (got: {path})");
     std::process::exit(1);
 }

@@ -25,15 +25,18 @@ Goal: build a box, do boolean ops, export STEP from Rust.
 
 Goal: call `box(10,20,30).export("test.step")` from a Ruby script.
 
-- [ ] Add mRuby as a C dependency (via `mruby-sys` or manual FFI)
-- [ ] Bootstrap `mrb_open` / `mrb_close` lifecycle in Rust
+- [x] Add mRuby as a C dependency (via `mruby-sys` or manual FFI)
+  - Vendored at `vendor/mruby` (submodule, pinned to 3.4.0); built via `rake` in `build.rs`
+  - Manual FFI in `src/ruby/ffi.rs`; C glue shim in `src/ruby/glue.c` hides `mrb_value` from Rust
+- [x] Bootstrap `mrb_open` / `mrb_close` lifecycle in Rust
+  - `src/ruby/vm.rs`: `MrubyVm` struct with `new()` / `eval()` / `Drop`
 - [ ] Define a `Shape` Ruby class backed by a Rust-side `SlotMap` of OCCT shapes
   - Use opaque u64 handle in mRuby `RData`; `dfree` callback drops from SlotMap
 - [ ] Implement `box`, `cylinder`, `sphere` as top-level Ruby methods
 - [ ] Implement `.export(path)` method on `Shape`
 - [ ] Implement boolean op methods: `.fuse`, `.cut`, `.common`
 - [ ] Execute a `.rb` script file from Rust CLI entrypoint (`rrcad script.rb`)
-- [ ] Interpreter / REPL mode (`rrcad` or `rrcad --repl`): readline loop wired to mRuby eval, prints `=> <result>`
+- [x] Interpreter / REPL mode (`rrcad` or `rrcad --repl`): readline loop wired to mRuby eval, prints `=> <result>`
 - [ ] End-to-end test: `ruby_script → mRuby → Rust → OCCT → STEP file`
 
 ---
