@@ -205,6 +205,12 @@ void export_step(const OcctShape& shape, rust::Str path) {
 }
 
 void export_stl(const OcctShape& shape, rust::Str path) {
+    // Tessellate before writing — StlAPI_Writer requires a pre-meshed shape
+    // in OCCT 7.7+.
+    BRepMesh_IncrementalMesh mesher(shape.get(), 0.1, /*isRelative=*/Standard_False,
+                                    /*angularDeflection=*/0.5);
+    mesher.Perform();
+
     std::string path_str(path.data(), path.size());
     StlAPI_Writer writer;
     Standard_Boolean ok = writer.Write(shape.get(), path_str.c_str());
