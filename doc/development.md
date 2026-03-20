@@ -21,6 +21,7 @@
 | Rust toolchain | stable, edition 2024 | compiler + cargo |
 | Ruby + rake | any modern | builds mRuby |
 | g++ / clang++ | C++17-capable | OCCT bridge |
+| clang-format | any | C++ formatting (enforced via hook) |
 | OCCT dev headers | 7.7+ (7.9 tested) | geometry kernel |
 
 **Ubuntu / Debian:**
@@ -32,6 +33,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # Build tools + OCCT
 sudo apt-get install -y \
   ruby rake \
+  clang-format \
   libocct-foundation-dev \
   libocct-modeling-data-dev \
   libocct-modeling-algorithms-dev \
@@ -283,32 +285,24 @@ Output files are written to `std::env::temp_dir()` (typically `/tmp` on Linux).
 
 ## Code Style
 
+Formatting is **enforced automatically** by hooks in `.claude/settings.json`.
+After every Write or Edit tool call, the hook runs the appropriate formatter
+on the saved file — no manual step is needed.
+
 ### Rust
 
-Standard `rustfmt` formatting; `cargo clippy` must pass clean.
+`rustfmt` runs automatically on every `*.rs` file. `cargo clippy` must also pass clean.
 
 ### C++
 
-C++ code is formatted with **clang-format**. The project config is in
-`.clang-format` at the repository root (LLVM base style, 100-column limit,
-4-space indent, left pointer alignment).
+`clang-format -i` runs automatically on every `*.h` / `*.cpp` file. The
+project config is in `.clang-format` at the repository root (LLVM base
+style, 100-column limit, 4-space indent, left pointer alignment).
 
-**Check formatting (dry run):**
+To check manually (e.g. in CI):
 
 ```sh
 clang-format --dry-run -Werror src/occt/bridge.h src/occt/bridge.cpp
-```
-
-**Apply formatting in-place:**
-
-```sh
-clang-format -i src/occt/bridge.h src/occt/bridge.cpp
-```
-
-Install clang-format if missing:
-
-```sh
-sudo apt-get install -y clang-format
 ```
 
 **Additional C++ rules:**

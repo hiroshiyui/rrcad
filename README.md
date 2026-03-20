@@ -75,6 +75,7 @@ See [`doc/TODOs.md`](doc/TODOs.md) for the phased implementation plan:
 | Component | Version | License |
 |-----------|---------|---------|
 | [mRuby](https://github.com/mruby/mruby) | 3.4.0 | [MIT](https://github.com/mruby/mruby/blob/master/LICENSE) |
+| [OpenCASCADE (OCCT)](https://dev.opencascade.org/) | 7.9 (system) | [LGPL-2.1 with OCCT exception](https://dev.opencascade.org/doc/overview/html/occt__lgpl__exception_8txt.html) |
 
 ## License
 
