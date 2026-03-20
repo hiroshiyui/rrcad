@@ -49,12 +49,57 @@ via `export_glb`; `axum` HTTP server serves the GLB and a Three.js viewer
 page (`GLTFLoader` + `OrbitControls` + auto-fit camera); `notify` watches
 the script file and re-evals on save; WebSocket pushes `"reload"` to the
 browser. `preview(shape)` is a no-op when not in `--preview` mode so scripts
-stay portable. See `tests/teapot_dsl.rs` (7 tests), `tests/phase3_selectors.rs`
-(16 tests), `samples/07_teapot.rb`.
+stay portable. See `tests/teapot_dsl.rs` (7 tests), `tests/phase3_selectors.rs` (16 tests).
 
 ---
 
-## Phase 4 — Native Viewer (egui + wgpu, Plan C)
+## Phase 4 — OCCT Coverage (OpenSCAD / CadQuery parity)
+
+Goal: close the gap between our DSL and what OpenSCAD / CadQuery expose from OCCT.
+
+### Primitives
+- [ ] `cone(r1, r2, h)` — `BRepPrimAPI_MakeCone`
+- [ ] `torus(r1, r2)` — `BRepPrimAPI_MakeTorus`
+- [ ] `wedge(dx, dy, dz, ltx)` — `BRepPrimAPI_MakeWedge`
+
+### Sketch / 2-D profiles
+- [ ] `polygon([[x,y], ...])` — arbitrary closed polygon face (`BRepBuilderAPI_MakeWire` + `MakeFace`)
+- [ ] `ellipse(rx, ry)` — elliptic face (`GC_MakeEllipse`)
+- [ ] `arc(r, start_deg, end_deg)` — circular arc wire for wire-building
+
+### 3-D operations
+- [ ] `loft([profile1, profile2, ...], ruled: false)` — `BRepOffsetAPI_ThruSections`; solves organic shapes (teapot body, blades, …)
+- [ ] `.shell(thickness)` — hollow out a solid; `BRepOffsetAPI_MakeOffset`
+- [ ] `.offset(distance)` — inflate / deflate a solid; `BRepOffsetAPI_MakeOffsetShape`
+- [ ] `.extrude(h, twist_deg: 0, scale: 1.0)` — extend `shape_extrude` with twist and end-scale (`BRepOffsetAPI_MakePipeShell`)
+
+### Transforms
+- [ ] `.scale(sx, sy, sz)` — non-uniform scale; `BRepBuilderAPI_GTransform`
+
+### Selective modifiers
+- [ ] `.fillet(r, selector)` — fillet only edges matching a selector string (reuse existing edge-selector machinery)
+- [ ] `.chamfer(d, selector)` — same for chamfers
+
+### Patterns
+- [ ] `linear_pattern(shape, n, [dx, dy, dz])` — repeat shape n times along a vector
+- [ ] `polar_pattern(shape, n, angle_deg)` — rotate n copies around the Z axis
+
+### Import
+- [ ] `import_step("file.step")` — `STEPControl_Reader`
+- [ ] `import_stl("file.stl")` — `RWStl` / `StlAPI_Reader`
+
+### Query / introspection
+- [ ] `.bounding_box` — returns `{x:, y:, z:, dx:, dy:, dz:}`; `Bnd_Box` + `BRepBndLib`
+- [ ] `.volume` — mass properties; `BRepGProp` + `GProp_GProps`
+- [ ] `.surface_area` — same API as volume
+
+### Sub-shape selectors (extensions)
+- [ ] `vertices` selector on shapes (complement to existing `faces` / `edges`)
+- [ ] Direction-based face selector: `faces(">Z")` / `faces("<X")` (CadQuery style)
+
+---
+
+## Phase 5 — Native Viewer (egui + wgpu)
 
 Goal: replace browser preview with a native desktop viewer with tighter integration.
 
@@ -68,7 +113,7 @@ Goal: replace browser preview with a native desktop viewer with tighter integrat
 
 ---
 
-## Phase 5 — Parametric Design & Constraints
+## Phase 6 — Parametric Design & Constraints
 
 Goal: scripts with parameters, constraints, and design tables.
 

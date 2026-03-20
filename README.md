@@ -19,7 +19,7 @@ teapot = solid { body.fuse(spout) }
 teapot.export("teapot.step")
 ```
 
-See [`samples/`](samples/) for more complete examples including the [Utah Teapot](samples/07_teapot.rb).
+See [`samples/`](samples/) for more complete examples.
 
 ## Stack
 
@@ -69,8 +69,9 @@ See [`doc/TODOs.md`](doc/TODOs.md) for the phased implementation plan:
 - **Phase 1** ✓ — mRuby embedded; end-to-end Ruby → STEP; REPL with tab-completion and `help`
 - **Phase 2** ✓ — DSL enrichment (transforms, fillets, mirror, assemblies, sketches, extrude/revolve)
 - **Phase 3** ✓ — Spline profiles + sweep; sub-shape selectors (`.faces`, `.edges`); live browser preview (`axum` + Three.js + WebSocket file watcher; `--preview` CLI)
-- **Phase 4** — Native egui + wgpu desktop viewer
-- **Phase 5** — Parametric design and constraints
+- **Phase 4** — OCCT coverage: `cone`, `torus`, `loft`, `shell`, `offset`, `polygon`, selective fillet/chamfer, patterns, STEP import, bounding box / volume queries
+- **Phase 5** — Native egui + wgpu desktop viewer
+- **Phase 6** — Parametric design and constraints
 
 ## Third-party components
 

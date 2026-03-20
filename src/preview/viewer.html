@@ -93,6 +93,9 @@ function loadModel() {
     gltf => {
       if (currentModel) scene.remove(currentModel);
       currentModel = gltf.scene;
+      // OCCT exports in Z-up; glTF/Three.js is Y-up.
+      // Rotate -90° around X to convert: OCCT(X,Y,Z) → Three.js(X,Z,-Y)
+      currentModel.rotation.x = -Math.PI / 2;
       currentModel.traverse(node => {
         if (node.isMesh) {
           node.material.side = THREE.DoubleSide;
@@ -101,6 +104,7 @@ function loadModel() {
         }
       });
       scene.add(currentModel);
+      currentModel.updateMatrixWorld(true);
       fitCamera(currentModel);
       status.textContent = 'rrcad preview — live';
     },
