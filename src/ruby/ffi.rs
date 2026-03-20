@@ -25,4 +25,9 @@ unsafe extern "C" {
         code: *const c_char,
         error_out: *mut *const c_char,
     ) -> *const c_char;
+
+    /// Register the native `Shape` class and the `box` / `cylinder` / `sphere`
+    /// top-level methods.  Must be called after the DSL prelude is evaluated so
+    /// that native methods shadow the Ruby stubs.
+    pub fn rrcad_register_shape_class(mrb: *mut MrbState);
 }

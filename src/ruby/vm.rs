@@ -31,6 +31,9 @@ impl MrubyVm {
         let mut vm = Self { mrb };
         vm.eval(PRELUDE)
             .unwrap_or_else(|e| panic!("rrcad prelude failed to load: {e}"));
+        // Register native Shape class and top-level methods *after* the prelude
+        // so native implementations shadow the Ruby stubs.
+        unsafe { ffi::rrcad_register_shape_class(mrb) };
         vm
     }
 

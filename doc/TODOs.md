@@ -23,15 +23,17 @@ Goal: call `box(10,20,30).export("test.step")` from a Ruby script.
   - Manual FFI in `src/ruby/ffi.rs`; C glue shim in `src/ruby/glue.c` hides `mrb_value` from Rust
 - [x] Bootstrap `mrb_open` / `mrb_close` lifecycle in Rust
   - `src/ruby/vm.rs`: `MrubyVm` struct with `new()` / `eval()` / `Drop`
-- [ ] Define a `Shape` Ruby class backed by a Rust-side `SlotMap` of OCCT shapes
-  - Use opaque u64 handle in mRuby `RData`; `dfree` callback drops from SlotMap
-- [ ] Implement `box`, `cylinder`, `sphere` as top-level Ruby methods
-- [ ] Implement `.export(path)` method on `Shape`
-- [ ] Implement boolean op methods: `.fuse`, `.cut`, `.common`
-- [ ] Execute a `.rb` script file from Rust CLI entrypoint (`rrcad script.rb`)
+- [x] Define a `Shape` Ruby class backed by heap-allocated OCCT shapes
+  - Box raw pointer stored in mRuby `RData void*`; `dfree` callback (`rrcad_shape_drop`) drops the Box
+  - Native class registered via `rrcad_register_shape_class` (C glue) after prelude runs
+- [x] Implement `box`, `cylinder`, `sphere` as top-level Ruby methods
+- [x] Implement `.export(path)` method on `Shape` (STEP format)
+- [x] Implement boolean op methods: `.fuse`, `.cut`, `.common`
+- [x] Execute a `.rb` script file from Rust CLI entrypoint (`rrcad script.rb`)
 - [x] Interpreter / REPL mode (`rrcad` or `rrcad --repl`): readline loop wired to mRuby eval, prints `=> <result>`
 - [x] DSL prelude auto-loaded on startup (`src/ruby/prelude.rb` embedded via `include_str!`): `Shape`, `box`, `cylinder`, `sphere`, `solid`, `preview` are defined immediately — no `require` needed
-- [ ] End-to-end test: `ruby_script → mRuby → Rust → OCCT → STEP file`
+- [x] End-to-end test: `ruby_script → mRuby → Rust → OCCT → STEP file`
+  - See `tests/e2e_dsl.rs`: box/cylinder/sphere/fuse/cut/common all verified
 
 ---
 
