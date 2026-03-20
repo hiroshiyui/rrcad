@@ -42,10 +42,11 @@ OCCT geometry kernel        (src/occt/)
 
 ## Code Style
 
-- **Rust** — standard `rustfmt`; `cargo clippy` must pass clean.
-- **C++** — run `clang-format -i` on every C++ file you write or modify before finishing.
+Formatting is enforced automatically by hooks in `.claude/settings.json` — no manual step needed.
+
+- **Rust** — `rustfmt` runs automatically on every `*.rs` file after each write or edit. `cargo clippy` must also pass clean.
+- **C++** — `clang-format -i` runs automatically on every `*.h` / `*.cpp` file after each write or edit.
   Config is in `.clang-format` (LLVM base, 100-col, 4-space indent).
-  Check with: `clang-format --dry-run -Werror src/occt/bridge.h src/occt/bridge.cpp`
 
 ## DSL Style
 
