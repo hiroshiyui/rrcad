@@ -5,6 +5,10 @@ use std::{
 
 use super::ffi;
 
+/// The DSL prelude is embedded at compile time so the binary is self-contained.
+/// It is evaluated once during `MrubyVm::new()` — users never need `require`.
+const PRELUDE: &str = include_str!("prelude.rb");
+
 /// Safe wrapper around a live mRuby interpreter instance.
 ///
 /// Automatically calls `mrb_close` when dropped.
@@ -13,14 +17,21 @@ pub struct MrubyVm {
 }
 
 impl MrubyVm {
-    /// Open a new mRuby interpreter.
+    /// Open a new mRuby interpreter with the rrcad DSL prelude pre-loaded.
+    ///
+    /// All DSL classes and top-level methods (`box`, `cylinder`, `sphere`, …)
+    /// are available immediately — no `require` statement is needed.
     ///
     /// # Panics
-    /// Panics if `mrb_open()` returns null (out of memory).
+    /// Panics if `mrb_open()` returns null (out of memory), or if the
+    /// built-in prelude fails to parse (indicates a bug in prelude.rb).
     pub fn new() -> Self {
         let mrb = unsafe { ffi::mrb_open() };
         assert!(!mrb.is_null(), "mrb_open() failed: out of memory");
-        Self { mrb }
+        let mut vm = Self { mrb };
+        vm.eval(PRELUDE)
+            .unwrap_or_else(|e| panic!("rrcad prelude failed to load: {e}"));
+        vm
     }
 
     /// Evaluate `code` as Ruby source and return the `inspect` string of
@@ -29,8 +40,7 @@ impl MrubyVm {
         let c_code = CString::new(code).map_err(|e| e.to_string())?;
         let mut error_ptr: *const std::ffi::c_char = ptr::null();
 
-        let result_ptr =
-            unsafe { ffi::rrcad_mrb_eval(self.mrb, c_code.as_ptr(), &mut error_ptr) };
+        let result_ptr = unsafe { ffi::rrcad_mrb_eval(self.mrb, c_code.as_ptr(), &mut error_ptr) };
 
         if result_ptr.is_null() {
             let msg = if error_ptr.is_null() {

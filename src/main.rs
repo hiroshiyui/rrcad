@@ -1,6 +1,4 @@
-mod ruby;
-
-use ruby::vm::MrubyVm;
+use rrcad::ruby::vm::MrubyVm;
 use rustyline::{error::ReadlineError, DefaultEditor};
 
 fn main() {
