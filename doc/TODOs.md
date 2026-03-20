@@ -5,19 +5,12 @@ mRuby as the embedded scripting engine, and OCCT as the geometry kernel.
 
 ---
 
-## Phase 0 — OCCT Minimal Rust Bindings
+## ✓ Phase 0 — OCCT Minimal Rust Bindings (complete)
 
-Goal: build a box, do boolean ops, export STEP from Rust.
-
-- [ ] Set up `cxx` crate and OCCT C++ bridge scaffolding
-- [ ] Bind `BRepPrimAPI_MakeBox`, `MakeCylinder`, `MakeSphere`
-- [ ] Bind `BRepAlgoAPI_Fuse`, `Cut`, `Common` (boolean ops)
-- [ ] Bind `BRepFilletAPI_MakeFillet`, `MakeChamfer`
-- [ ] Bind `BRepBuilderAPI_Transform` (translate, rotate, scale)
-- [ ] Bind `STEPControl_Writer` for STEP export
-- [ ] Bind `StlAPI_Writer` for STL export
-- [ ] Bind `RWGltf_CafWriter` for glTF export (OCCT 7.7+)
-- [ ] Write a smoke test: build a filleted box, export to STEP
+`cxx` bridge wired to OCCT 7.9. Primitives (box, cylinder, sphere),
+boolean ops (fuse, cut, common), fillets, chamfers, transforms
+(translate, rotate, scale), and STEP / STL / glTF export are all bound
+and covered by smoke tests. See `src/occt/`.
 
 ---
 
