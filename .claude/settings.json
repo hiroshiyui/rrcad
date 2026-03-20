@@ -8,6 +8,11 @@
             "type": "command",
             "command": "jq -r '.tool_input.file_path' | { read -r f; case \"$f\" in *.h|*.cpp) clang-format -i \"$f\";; esac; } 2>/dev/null || true",
             "statusMessage": "clang-format"
+          },
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path' | { read -r f; case \"$f\" in *.rs) rustfmt \"$f\";; esac; } 2>/dev/null || true",
+            "statusMessage": "rustfmt"
           }
         ]
       }
