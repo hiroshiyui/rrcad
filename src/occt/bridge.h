@@ -67,6 +67,11 @@ std::unique_ptr<OcctShape> make_circle_face(double r);
 std::unique_ptr<OcctShape> shape_extrude(const OcctShape& shape, double height);
 std::unique_ptr<OcctShape> shape_revolve(const OcctShape& shape, double angle_deg);
 
+// --- Phase 3: spline profiles and pipe sweep ---
+std::unique_ptr<OcctShape> make_spline_2d(rust::Slice<const double> pts);
+std::unique_ptr<OcctShape> make_spline_3d(rust::Slice<const double> pts);
+std::unique_ptr<OcctShape> shape_sweep(const OcctShape& profile, const OcctShape& path);
+
 // --- Export ---
 void export_step(const OcctShape& shape, rust::Str path);
 void export_stl(const OcctShape& shape, rust::Str path);

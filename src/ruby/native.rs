@@ -372,3 +372,59 @@ pub unsafe extern "C" fn rrcad_shape_revolve(
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Phase 3: Spline profiles and sweep
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_make_spline_2d(
+    pts: *const f64,
+    n_pts: usize,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let slice = unsafe { std::slice::from_raw_parts(pts, n_pts * 2) };
+    match Shape::make_spline_2d(slice) {
+        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_make_spline_3d(
+    pts: *const f64,
+    n_pts: usize,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let slice = unsafe { std::slice::from_raw_parts(pts, n_pts * 3) };
+    match Shape::make_spline_3d(slice) {
+        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_sweep(
+    profile: *mut c_void,
+    path: *mut c_void,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let sp = unsafe { &*(profile as *const Shape) };
+    let pa = unsafe { &*(path as *const Shape) };
+    match sp.sweep(pa) {
+        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}

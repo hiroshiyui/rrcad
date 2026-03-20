@@ -79,6 +79,12 @@ class Shape
     raise NotImplementedError, "Shape#revolve is not yet implemented (Phase 2)"
   end
 
+  # --- Sweep (pipe) — Phase 3 ---------------------------------------------
+
+  def sweep(_path)
+    raise NotImplementedError, "Shape#sweep is not yet implemented (Phase 3)"
+  end
+
   # --- Face/edge selectors — Phase 3+ -------------------------------------
 
   def faces(_selector)
@@ -148,6 +154,15 @@ module Kernel
 
   def circle(_r)
     raise NotImplementedError, "circle() is not yet implemented (Phase 2)"
+  end
+
+  # Spline profiles — overridden natively after prelude runs.
+  def spline_2d(_points)
+    raise NotImplementedError, "spline_2d() is not yet implemented (Phase 3)"
+  end
+
+  def spline_3d(_points)
+    raise NotImplementedError, "spline_3d() is not yet implemented (Phase 3)"
   end
 
   # `solid do ... end` — evaluates block, returns its result.

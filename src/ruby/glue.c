@@ -7,11 +7,13 @@
  */
 
 #include <mruby.h>
+#include <mruby/array.h>
 #include <mruby/class.h>
 #include <mruby/compile.h>
 #include <mruby/data.h>
 #include <mruby/error.h>
 #include <mruby/string.h>
+#include <stdlib.h>
 
 /* -------------------------------------------------------------------------
  * rrcad_mrb_eval — evaluate Ruby source code and return its inspect string.
@@ -78,6 +80,11 @@ extern void* rrcad_make_rect(double w, double h, const char** error_out);
 extern void* rrcad_make_circle_face(double r, const char** error_out);
 extern void* rrcad_shape_extrude(void* ptr, double height, const char** error_out);
 extern void* rrcad_shape_revolve(void* ptr, double angle_deg, const char** error_out);
+
+/* Phase 3 */
+extern void* rrcad_make_spline_2d(const double* pts, size_t n_pts, const char** error_out);
+extern void* rrcad_make_spline_3d(const double* pts, size_t n_pts, const char** error_out);
+extern void* rrcad_shape_sweep(void* profile, void* path, const char** error_out);
 
 /* mRuby data type descriptor — name appears in TypeError messages. */
 static void shape_dfree(mrb_state* mrb, void* ptr) {
@@ -367,6 +374,91 @@ static mrb_value mrb_rrcad_shape_revolve(mrb_state* mrb, mrb_value self) {
     return shape_from_ptr(mrb, result);
 }
 
+/* -------------------------------------------------------------------------
+ * Phase 3: Spline constructors and sweep
+ * -------------------------------------------------------------------------
+ */
+
+/* Extract a flat double array from a Ruby Array of 2-element inner Arrays.
+ * Returns a malloc'd buffer of n * stride doubles.  Caller must free().
+ * Raises on type errors after freeing the buffer. */
+static double* extract_point_array(mrb_state* mrb, mrb_value arr, int stride, int* n_out) {
+    int n = (int)RARRAY_LEN(arr);
+    *n_out = n;
+    double* pts = (double*)malloc((size_t)(n * stride) * sizeof(double));
+    if (!pts)
+        mrb_raise(mrb, E_RUNTIME_ERROR, "out of memory");
+
+    for (int i = 0; i < n; i++) {
+        mrb_value inner = mrb_ary_ref(mrb, arr, i);
+        if (!mrb_array_p(inner) || (int)RARRAY_LEN(inner) < stride) {
+            free(pts);
+            mrb_raisef(mrb, E_ARGUMENT_ERROR,
+                       "each point must be an Array of %d numbers (got element %d)", stride, i);
+        }
+        for (int j = 0; j < stride; j++) {
+            mrb_value v = mrb_ary_ref(mrb, inner, j);
+            if (mrb_float_p(v)) {
+                pts[i * stride + j] = (double)mrb_float(v);
+            } else if (mrb_integer_p(v)) {
+                pts[i * stride + j] = (double)mrb_integer(v);
+            } else {
+                free(pts);
+                mrb_raise(mrb, E_ARGUMENT_ERROR, "point coordinates must be numbers");
+            }
+        }
+    }
+    return pts;
+}
+
+static mrb_value mrb_rrcad_spline_2d(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value arr;
+    mrb_get_args(mrb, "A", &arr);
+
+    int n = 0;
+    double* pts = extract_point_array(mrb, arr, 2, &n);
+
+    const char* err = NULL;
+    void* ptr = rrcad_make_spline_2d(pts, (size_t)n, &err);
+    free(pts);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, ptr);
+}
+
+static mrb_value mrb_rrcad_spline_3d(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value arr;
+    mrb_get_args(mrb, "A", &arr);
+
+    int n = 0;
+    double* pts = extract_point_array(mrb, arr, 3, &n);
+
+    const char* err = NULL;
+    void* ptr = rrcad_make_spline_3d(pts, (size_t)n, &err);
+    free(pts);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, ptr);
+}
+
+static mrb_value mrb_rrcad_shape_sweep(mrb_state* mrb, mrb_value self) {
+    mrb_value path_val;
+    mrb_get_args(mrb, "o", &path_val);
+
+    void* profile = DATA_PTR(self);
+    require_native_ptr(mrb, profile);
+    void* path = shape_ptr(mrb, path_val);
+    require_native_ptr(mrb, path);
+
+    const char* err = NULL;
+    void* result = rrcad_shape_sweep(profile, path, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
 /* =========================================================================
  * rrcad_register_shape_class
  *
@@ -407,4 +499,9 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     /* Phase 2: Sketch constructors */
     mrb_define_method(mrb, mrb->kernel_module, "rect", mrb_rrcad_rect, MRB_ARGS_REQ(2));
     mrb_define_method(mrb, mrb->kernel_module, "circle", mrb_rrcad_circle, MRB_ARGS_REQ(1));
+
+    /* Phase 3: Spline constructors and sweep */
+    mrb_define_method(mrb, mrb->kernel_module, "spline_2d", mrb_rrcad_spline_2d, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, mrb->kernel_module, "spline_3d", mrb_rrcad_spline_3d, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "sweep", mrb_rrcad_shape_sweep, MRB_ARGS_REQ(1));
 }

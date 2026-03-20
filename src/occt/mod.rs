@@ -43,6 +43,11 @@ mod ffi {
         fn shape_extrude(shape: &OcctShape, height: f64) -> Result<UniquePtr<OcctShape>>;
         fn shape_revolve(shape: &OcctShape, angle_deg: f64) -> Result<UniquePtr<OcctShape>>;
 
+        // --- Phase 3: splines and sweep ---
+        fn make_spline_2d(pts: &[f64]) -> Result<UniquePtr<OcctShape>>;
+        fn make_spline_3d(pts: &[f64]) -> Result<UniquePtr<OcctShape>>;
+        fn shape_sweep(profile: &OcctShape, path: &OcctShape) -> Result<UniquePtr<OcctShape>>;
+
         // --- Export ---
         fn export_step(shape: &OcctShape, path: &str) -> Result<()>;
         fn export_stl(shape: &OcctShape, path: &str) -> Result<()>;
@@ -158,6 +163,26 @@ impl Shape {
 
     pub fn revolve(&self, angle_deg: f64) -> Result<Shape, String> {
         ffi::shape_revolve(&self.inner, angle_deg)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    // --- Phase 3: splines and sweep ---
+
+    pub fn make_spline_2d(pts: &[f64]) -> Result<Self, String> {
+        ffi::make_spline_2d(pts)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn make_spline_3d(pts: &[f64]) -> Result<Self, String> {
+        ffi::make_spline_3d(pts)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn sweep(&self, path: &Shape) -> Result<Shape, String> {
+        ffi::shape_sweep(&self.inner, &path.inner)
             .map(|p| Shape { inner: p })
             .map_err(|e| e.to_string())
     }

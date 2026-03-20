@@ -62,6 +62,7 @@ fn main() {
         "TKBool",
         "TKBO",
         "TKFillet",
+        "TKOffset",
         "TKShHealing",
         "TKMesh",
         "TKCDF",

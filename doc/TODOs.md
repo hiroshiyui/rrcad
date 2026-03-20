@@ -58,6 +58,12 @@ Goal: expressive Ruby DSL with transforms, fillets, chamfers, and assemblies.
 
 Goal: save `.rb` → see 3D result in browser instantly.
 
+- [x] Spline / sweep primitives (added as part of Utah Teapot TDD session):
+  - `spline_2d([[r,z], ...])` — closed profile in XZ plane via `GeomAPI_Interpolate` → Face
+  - `spline_3d([[x,y,z], ...])` — 3D Wire path via `GeomAPI_Interpolate`
+  - `.sweep(path)` — pipe sweep via `BRepOffsetAPI_MakePipe` (`TKOffset` linked)
+  - `examples/teapot.rb` — Utah Teapot DSL example (body, lid, knob, spout, handle)
+  - See `tests/teapot_dsl.rs`: 7 end-to-end tests all passing
 - [ ] Tessellation pipeline: `BRepMesh_IncrementalMesh` → `Poly_Triangulation` → glTF
   - Two LOD levels: coarse for interaction, fine for final view
 - [ ] `axum` HTTP server serving the glTF file and a static Three.js viewer page

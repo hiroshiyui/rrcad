@@ -23,6 +23,8 @@ Primitives (3D solids)
 Sketch faces (2D, for extrude/revolve)
   rect(w, h)                rectangular face in XY plane
   circle(r)                 circular face in XY plane
+  spline_2d([[r,z], ...])   closed profile in XZ plane (for revolve)
+  spline_3d([[x,y,z], ...]) 3D wire path (for sweep)
 
 Transforms                   (return a new Shape)
   s.translate(x, y, z)      move
@@ -35,6 +37,7 @@ Modifiers
   s.chamfer(d)              bevel all edges
   s.extrude(h)              extrude face/profile by height
   s.revolve(deg=360)        revolve around Z axis
+  s.sweep(path)             sweep profile along 3D wire path
 
 Boolean operations           (return a new Shape)
   a.fuse(b)                 union of a and b
@@ -62,12 +65,41 @@ REPL controls
 /// Top-level identifiers available in the rrcad DSL REPL.
 const TOP_LEVEL: &[&str] = &[
     // DSL primitives
-    "box", "cylinder", "sphere", // DSL sketch faces
-    "rect", "circle", // DSL builders
-    "solid", "assembly", "preview", // REPL control
-    "help", "exit", "quit", // Ruby keywords
-    "do", "end", "if", "else", "elsif", "unless", "while", "until", "for", "def", "class",
-    "module", "return", "nil", "true", "false", "puts", "p", "pp", "raise", "begin", "rescue",
+    "box",
+    "cylinder",
+    "sphere", // DSL sketch faces
+    "rect",
+    "circle",
+    "spline_2d",
+    "spline_3d", // DSL builders
+    "solid",
+    "assembly",
+    "preview", // REPL control
+    "help",
+    "exit",
+    "quit", // Ruby keywords
+    "do",
+    "end",
+    "if",
+    "else",
+    "elsif",
+    "unless",
+    "while",
+    "until",
+    "for",
+    "def",
+    "class",
+    "module",
+    "return",
+    "nil",
+    "true",
+    "false",
+    "puts",
+    "p",
+    "pp",
+    "raise",
+    "begin",
+    "rescue",
 ];
 
 /// Methods available on Shape objects.
@@ -86,6 +118,8 @@ const SHAPE_METHODS: &[&str] = &[
     "mirror",
     "extrude",
     "revolve",
+    // Phase 3 — native
+    "sweep",
     // Phase 3+ — stubs
     "faces",
     "edges",
