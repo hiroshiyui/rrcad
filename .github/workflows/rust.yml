@@ -12,14 +12,33 @@ env:
 jobs:
   build:
 
+    # GitHub-hosted runners are Ubuntu-only; the actual build environment is
+    # controlled by the container below. We use Debian Sid because it ships
+    # OCCT 7.9, which provides the TKDESTEP/TKDESTL/TKDEGLTF libraries that
+    # this project requires. Ubuntu 24.04's apt only has an older OCCT version
+    # that lacks these libraries.
     runs-on: ubuntu-latest
+    container: debian:sid-slim
 
     steps:
+    - name: Install system dependencies
+      run: |
+        apt-get update
+        apt-get install -y \
+          curl git ruby rake clang-format \
+          libocct-foundation-dev \
+          libocct-modeling-data-dev \
+          libocct-modeling-algorithms-dev \
+          libocct-data-exchange-dev \
+          libocct-ocaf-dev \
+          gcc make pkg-config ca-certificates
+    - name: Install Rust toolchain
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+        echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
     - uses: actions/checkout@v4
       with:
         submodules: true
-    - name: Install dependencies
-      run: sudo apt-get update && sudo apt-get install -y ruby rake clang-format libocct-foundation-dev libocct-modeling-data-dev libocct-modeling-algorithms-dev libocct-data-exchange-dev libocct-ocaf-dev
     - name: Build
       run: cargo build --verbose
     - name: Run tests
