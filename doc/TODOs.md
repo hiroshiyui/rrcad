@@ -32,7 +32,8 @@ Goal: call `box(10,20,30).export("test.step")` from a Ruby script.
 - [ ] Implement `box`, `cylinder`, `sphere` as top-level Ruby methods
 - [ ] Implement `.export(path)` method on `Shape`
 - [ ] Implement boolean op methods: `.fuse`, `.cut`, `.common`
-- [ ] Execute a `.rb` script file from Rust CLI entrypoint
+- [ ] Execute a `.rb` script file from Rust CLI entrypoint (`rrcad script.rb`)
+- [ ] Interpreter / REPL mode (`rrcad` or `rrcad --repl`): readline loop wired to mRuby eval, prints `=> <result>`
 - [ ] End-to-end test: `ruby_script → mRuby → Rust → OCCT → STEP file`
 
 ---
