@@ -124,6 +124,58 @@ Goal: scripts with parameters, constraints, and design tables.
 
 ---
 
+## Utah Teapot Sample (deferred)
+
+A faithful `samples/07_teapot.rb` requires `loft` (Phase 4) to model the body
+properly — the current `spline_2d + revolve` approach cannot reproduce the
+Newell silhouette without BSpline oscillation.
+
+### Reference data
+
+- **Primary source** — original Newell Bezier patch data and measurements:
+  <https://users.cs.utah.edu/~dejohnso/models/teapot.html>
+- **Bezier patches** (raw vertex + patch index file):
+  <https://users.cs.utah.edu/~dejohnso/models/teapot_bezier>
+
+### Coordinate system (Newell)
+
+- **Y = height axis**; total body height ≈ 3.0 units (rim at Y ≈ 2.25,
+  knob tip at Y ≈ 3.15)
+- **Max body radius** = 2.0 at Y ≈ 0.9 (40 % of body height)
+
+### Scaling to OCCT (Z-up, body height = 7.5)
+
+| Newell | OCCT | factor |
+|--------|------|--------|
+| Y (height) | Z | × 3.333 |
+| X/Z (radius) | X/Y | × 3.5 |
+
+### Key geometry (Newell units → OCCT)
+
+| Feature | Newell | OCCT |
+|---------|--------|------|
+| Body bottom | Y=0, r=0 | Z=0, r=0 |
+| Foot ring | Y=0.15, r=1.5 | Z=0.50, r=5.25 |
+| **Widest** | Y=0.90, r=2.0 | **Z=3.00, r=7.00** |
+| Shoulder | Y=1.35, r=1.75 | Z=4.50, r=6.13 |
+| Neck | Y=1.65, r=1.40 | Z=5.50, r=4.90 |
+| Rim opening | Y=2.25, r=1.40 | Z=7.50, r=4.90 |
+| Spout junction | Y≈0.45, X≈1.70 | Z≈1.50, X≈5.95 |
+| Spout tip | Y≈2.40, X≈3.50 | Z≈8.00, X≈12.25 |
+| Handle bottom | Y≈0.45, X≈−1.50 | Z≈1.50, X≈−5.25 |
+| Handle top | Y≈2.10, X≈−1.50 | Z≈7.00, X≈−5.25 |
+| Handle max extent | Y≈1.35, X≈−3.00 | Z≈4.50, X≈−10.50 |
+
+### Recommended implementation approach (post Phase 4)
+
+1. Body — `loft` through 6–8 cross-section circles at the Z heights above
+2. Spout — `circle(1.2).sweep(spline_3d([...]))` along the 4-point centerline
+3. Handle — `circle(1.0).sweep(spline_3d([...]))` along the 5-point centerline
+4. Lid — `spline_2d + revolve`, translated to Z=6.0 (rim opening)
+5. Knob — `sphere(0.5).translate(0, 0, 7.6)`
+
+---
+
 ## Architecture Notes
 
 ```
