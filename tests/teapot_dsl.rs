@@ -98,7 +98,8 @@ fn circle_sweep_exports_step() {
 #[test]
 fn teapot_script_produces_step_file() {
     let mut vm = MrubyVm::new();
-    let script = std::fs::read_to_string("examples/teapot.rb").expect("examples/teapot.rb missing");
+    let script =
+        std::fs::read_to_string("samples/07_teapot.rb").expect("samples/07_teapot.rb missing");
     let out = std::env::temp_dir().join("rrcad_teapot.step");
     // Redirect the export to a temp-dir path so the test is hermetic.
     let script = script.replace("teapot.step", out.to_str().unwrap());
