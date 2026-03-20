@@ -8,7 +8,7 @@
 - [Architecture](#architecture)
 - [Layer-by-layer Walkthrough](#layer-by-layer-walkthrough)
 - [Adding New OCCT Bindings](#adding-new-occt-bindings)
-- [Adding New Ruby Bindings (Phase 1)](#adding-new-ruby-bindings-phase-1)
+- [Adding New Ruby DSL Methods](#adding-new-ruby-dsl-methods)
 - [Testing](#testing)
 - [Code Style](#code-style)
 
@@ -61,14 +61,26 @@ rrcad/
 ├── src/
 │   ├── main.rs             # CLI entry point (REPL + script modes)
 │   ├── ruby/               # mRuby integration
-│   │   ├── mod.rs          # re-exports ffi + vm submodules
-│   │   ├── ffi.rs          # extern "C" bindings to libmruby + glue.c
+│   │   ├── mod.rs          # re-exports ffi, vm, native submodules
+│   │   ├── ffi.rs          # extern "C" declarations for libmruby + glue.c
 │   │   ├── vm.rs           # MrubyVm: safe RAII wrapper
-│   │   └── glue.c          # C shim that hides mrb_value from Rust
+│   │   ├── native.rs       # Rust extern "C" fns called from glue.c
+│   │   ├── glue.c          # C shim hiding mrb_value from Rust
+│   │   └── prelude.rb      # DSL prelude embedded via include_str!
 │   └── occt/               # OCCT geometry bindings
 │       ├── mod.rs          # cxx::bridge + safe Shape wrapper + tests
 │       ├── bridge.h        # C++ header: OcctShape class + fn declarations
 │       └── bridge.cpp      # C++ implementation of all OCCT operations
+├── samples/                # DSL example scripts
+│   ├── README.md
+│   ├── 01_hello_box.rb … 07_teapot.rb
+├── tests/                  # integration test suites
+│   ├── occt_layer.rs       # OCCT Rust API smoke tests
+│   ├── vm_layer.rs         # MrubyVm eval smoke tests
+│   ├── prelude_layer.rs    # DSL prelude + native override tests
+│   ├── e2e_dsl.rs          # Phase 1 end-to-end tests
+│   ├── phase2_dsl.rs       # Phase 2 end-to-end tests
+│   └── teapot_dsl.rs       # Phase 3 spline/sweep + teapot e2e tests
 ├── vendor/
 │   └── mruby/              # git submodule — mRuby 3.4.0
 └── doc/
@@ -92,8 +104,8 @@ Checks for `vendor/mruby/build/host/lib/libmruby.a`. If missing, runs
 ### 2 — C glue shim
 
 Compiles `src/ruby/glue.c` via the `cc` crate. The shim wraps
-`mrb_load_string` and hides `mrb_value` from Rust, keeping the FFI surface
-minimal.
+`mrb_load_string` and registers the native Shape class; it hides `mrb_value`
+from Rust, keeping the FFI surface minimal.
 
 ### 3 — OCCT C++ bridge
 
@@ -113,8 +125,8 @@ adds the cxx runtime headers (`rust/cxx.h`) to the include path.
 **Linked OCCT libraries:**
 `TKernel` · `TKMath` · `TKG2d` · `TKG3d` · `TKBRep` · `TKGeomBase` ·
 `TKGeomAlgo` · `TKTopAlgo` · `TKPrim` · `TKBool` · `TKBO` · `TKFillet` ·
-`TKShHealing` · `TKMesh` · `TKCDF` · `TKCAF` · `TKLCAF` · `TKXCAF` ·
-`TKXSBase` · `TKDESTEP` · `TKDESTL` · `TKDEGLTF` · `TKRWMesh`
+`TKOffset` · `TKShHealing` · `TKMesh` · `TKCDF` · `TKCAF` · `TKLCAF` ·
+`TKXCAF` · `TKXSBase` · `TKDESTEP` · `TKDESTL` · `TKDEGLTF` · `TKRWMesh`
 
 ---
 
@@ -125,26 +137,34 @@ Ruby DSL (.rb script)
       │
    mRuby VM  (vendor/mruby — pinned to 3.4.0)
       │
+   src/ruby/prelude.rb      ← DSL prelude (embedded via include_str!)
    src/ruby/glue.c          ← C shim; hides mrb_value from Rust
-   src/ruby/ffi.rs          ← extern "C" bindings
+   src/ruby/native.rs       ← extern "C" entry points (called from glue.c)
+   src/ruby/ffi.rs          ← extern "C" declarations on the Rust side
    src/ruby/vm.rs           ← MrubyVm: safe RAII wrapper
-      │
-   [Phase 1 TODO: Shape Ruby class + SlotMap<u64, OcctShape>]
       │
    src/occt/mod.rs          ← cxx::bridge + Shape wrapper
    src/occt/bridge.h        ← OcctShape class declaration
    src/occt/bridge.cpp      ← OCCT C++ implementations
       │
    OCCT 7.9 (system-installed)
-   BRep modeling · boolean ops · tessellation
+   BRep modeling · boolean ops · splines · tessellation
    STEP / STL / glTF export
 ```
 
-**Memory ownership rule:** Rust owns all OCCT shapes. In Phase 1, a
-`SlotMap<u64, UniquePtr<OcctShape>>` will be the single source of truth.
-mRuby `RData` holds only a `u64` key; the `dfree` GC callback removes the
-key from the map, dropping the C++ shape automatically. No cross-language
-reference counting.
+**Memory ownership:** Each native `Shape` is a heap-allocated `Box<occt::Shape>`.
+The raw pointer is stored directly in the mRuby `RData void*` slot —
+there is **no SlotMap**. When mRuby's GC collects a `Shape` object it calls
+`shape_dfree` → `rrcad_shape_drop` → `drop(Box::from_raw(ptr))`.
+No cross-language reference counting.
+
+**Startup sequence:**
+1. `MrubyVm::new()` opens `mrb_state`.
+2. Evaluates `prelude.rb` (embedded via `include_str!`), which defines
+   `Shape`, `Assembly`, and Kernel stub methods.
+3. Calls `rrcad_register_shape_class(mrb)` (in `glue.c`), which overrides the
+   prelude stubs with native C/Rust implementations. Native methods shadow
+   the stubs; stubs remain for Phase 3+ features not yet wired up.
 
 ---
 
@@ -152,21 +172,27 @@ reference counting.
 
 ### mRuby layer (`src/ruby/`)
 
-`glue.c` is the seam between C and Rust. It exposes one function:
+`glue.c` is the seam between C and Rust. It exposes:
 
 ```c
+// Evaluate Ruby source — returns inspected result or NULL + error message.
 const char *rrcad_mrb_eval(mrb_state *mrb, const char *code,
                             const char **error_out);
+
+// Register native Shape class and all DSL methods.
+// Called once per MrubyVm after the prelude runs.
+void rrcad_register_shape_class(mrb_state *mrb);
 ```
 
-On success it returns a pointer to the mRuby-GC-owned inspected result
-string and sets `*error_out = NULL`. On exception it returns `NULL` and
-sets `*error_out` to the inspected exception string. Both pointers are
-owned by mRuby's GC — callers must copy before the next eval or GC cycle.
+Each native DSL method in `glue.c` extracts arguments with `mrb_get_args`,
+calls the corresponding `extern "C"` function declared in `native.rs`, wraps
+the resulting raw pointer with `shape_from_ptr`, and returns the new `mrb_value`.
 
-`ffi.rs` wraps this with raw `extern "C"` declarations. `vm.rs` wraps
-those in a safe `MrubyVm` struct that manages the `mrb_state *` lifetime
-via `Drop`.
+Errors flow back through an `*error_out` parameter: Rust writes a pointer to
+a thread-local `CString`; the C handler checks it and calls `mrb_raise`.
+
+`ffi.rs` wraps the C declarations. `vm.rs` wraps those in a safe `MrubyVm`
+struct that manages the `mrb_state *` lifetime via `Drop`.
 
 ### OCCT layer (`src/occt/`)
 
@@ -192,6 +218,20 @@ for (; exp.More(); exp.Next())
 
 The `TopoDS::Edge()` downcast is required — `exp.Current()` returns
 `TopoDS_Shape`.
+
+**Spline construction (Phase 3):**
+
+`make_spline_2d` and `make_spline_3d` both use `GeomAPI_Interpolate` with a
+`TColgp_HArray1OfPnt` to fit a BSpline through the given control points.
+`make_spline_2d` additionally closes the profile with a straight edge (if
+endpoints differ) and builds a `Face` via `BRepBuilderAPI_MakeFace` on the
+XZ plane — suitable for `revolve`. `make_spline_3d` returns a bare `Wire`
+— suitable for `sweep`.
+
+**Pipe sweep (Phase 3):**
+
+`shape_sweep` asserts the path is a `TopAbs_WIRE` then delegates directly to
+`BRepOffsetAPI_MakePipe` (`TKOffset`).
 
 **glTF export pipeline:**
 
@@ -225,8 +265,8 @@ std::unique_ptr<OcctShape> shape_shell(const OcctShape& s, double offset) {
 ```
 
 Add the required OCCT `#include` at the top of `bridge.cpp`. If it comes
-from a new TK library, add `println!("cargo:rustc-link-lib=TKOffset");`
-(or the appropriate name) to the `build.rs` link list.
+from a new TK library, add `println!("cargo:rustc-link-lib=TKTheLib");` to
+the link list in `build.rs`.
 
 **3. Declare in the `cxx::bridge` block in `src/occt/mod.rs`:**
 
@@ -248,18 +288,68 @@ pub fn shell(&self, offset: f64) -> Result<Shape, String> {
 
 ---
 
-## Adding New Ruby Bindings (Phase 1)
+## Adding New Ruby DSL Methods
 
-> This section describes the *planned* pattern for Phase 1.
+To wire a new OCCT binding into the Ruby DSL:
 
-1. Define a `Shape` Ruby class in Rust using `mrb_define_class`.
-2. Register methods via `mrb_define_method` pointing to C callbacks.
-3. Use `mrb_data_object_alloc` to store a `u64` SlotMap key in mRuby's
-   `RData`, with a `dfree` callback that removes the key and drops the
-   OCCT shape.
-4. C callbacks retrieve the `u64` key from `RData`, look up the shape in
-   the SlotMap, call the appropriate `src/occt` function, and store the
-   new shape key back.
+**1. Add an `extern "C"` entry point in `src/ruby/native.rs`:**
+
+```rust
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_shell(
+    ptr: *mut c_void,
+    offset: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.shell(offset) {
+        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
+        Err(e) => { unsafe { set_err(error_out, &e) }; std::ptr::null_mut() }
+    }
+}
+```
+
+**2. Forward-declare the function in `src/ruby/glue.c`:**
+
+```c
+extern void* rrcad_shape_shell(void* ptr, double offset, const char** error_out);
+```
+
+**3. Add a C handler in `glue.c`:**
+
+```c
+static mrb_value mrb_rrcad_shape_shell(mrb_state* mrb, mrb_value self) {
+    mrb_float offset;
+    mrb_get_args(mrb, "f", &offset);
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    void* result = rrcad_shape_shell(ptr, (double)offset, &err);
+    if (err) mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+```
+
+**4. Register the method in `rrcad_register_shape_class`:**
+
+```c
+mrb_define_method(mrb, shape_class, "shell", mrb_rrcad_shape_shell, MRB_ARGS_REQ(1));
+```
+
+**5. Add a prelude stub in `src/ruby/prelude.rb`** (for documentation and
+graceful failure before the native override runs):
+
+```ruby
+def shell(_offset)
+  raise NotImplementedError, "Shape#shell is not yet implemented"
+end
+```
+
+**6. Add to the `SHAPE_METHODS` completion list in `src/main.rs` and update
+`HELP_TEXT`.**
+
+**7. Write a test.**
 
 ---
 
@@ -267,17 +357,20 @@ pub fn shell(&self, offset: f64) -> Result<Shape, String> {
 
 ```sh
 cargo test                        # all tests
-cargo test smoke                  # OCCT smoke tests only
-cargo test <name_substring>       # single test by name
+cargo test --test teapot_dsl      # single integration test file
+cargo test smoke                  # name-filter: OCCT smoke tests
 cargo clippy                      # lints
 ```
 
-Current tests live in `src/occt/mod.rs`:
-
-| Test | What it checks |
-|------|----------------|
-| `smoke_filleted_box_to_step` | `make_box` → `fillet` → `export_step`; verifies STEP header |
-| `smoke_boolean_cut` | `make_box` → `cut(cylinder)` → `export_step` |
+| Test file | What it covers |
+|-----------|----------------|
+| `src/occt/mod.rs` (inline) | OCCT Rust API: box→fillet→STEP, boolean cut |
+| `tests/occt_layer.rs` | All OCCT primitives, booleans, transforms, fillets, export |
+| `tests/vm_layer.rs` | `MrubyVm` eval: types, errors, persistence, multiple VMs |
+| `tests/prelude_layer.rs` | DSL prelude stubs; native overrides for Phase 1–2; Assembly |
+| `tests/e2e_dsl.rs` | Phase 1 end-to-end: box/cylinder/sphere/fuse/cut/common/export |
+| `tests/phase2_dsl.rs` | Phase 2 end-to-end: transforms, mirror, rect/circle, extrude/revolve |
+| `tests/teapot_dsl.rs` | Phase 3: spline_2d, spline_3d, sweep; full teapot STEP export |
 
 Output files are written to `std::env::temp_dir()` (typically `/tmp` on Linux).
 

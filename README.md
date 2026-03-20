@@ -7,17 +7,19 @@
 A 3D CAD language expressed in Ruby. Write `.rb` scripts to describe solid geometry; the engine evaluates them through an embedded mRuby VM, builds exact BRep models with OpenCASCADE (OCCT), and exports to STEP, STL, or glTF.
 
 ```ruby
-part = solid do
-  box 10, 20, 30
-  fillet 2, edges: :vertical
-  cut do
-    cylinder r: 5, h: 40, at: [5, 10, 0]
-  end
-end
+body = spline_2d([
+  [0.0, 0.0], [2.8, 0.3], [3.5, 1.2], [4.2, 3.5],
+  [3.8, 6.0], [3.2, 7.2], [2.8, 7.8], [0.0, 7.8],
+]).revolve(360)
 
-part.export("part.step")
-preview part   # opens live browser viewer
+spout_path = spline_3d([[4.0,0.0,2.5],[5.5,0.0,3.5],[8.5,0.0,7.0]])
+spout = circle(0.7).sweep(spout_path)
+
+teapot = solid { body.fuse(spout) }
+teapot.export("teapot.step")
 ```
+
+See [`samples/`](samples/) for more complete examples including the [Utah Teapot](samples/07_teapot.rb).
 
 ## Stack
 
@@ -26,7 +28,7 @@ preview part   # opens live browser viewer
 | DSL | mRuby | Embedded Ruby scripting engine |
 | Glue | Rust | Binding layer, memory ownership, CLI |
 | Geometry | OpenCASCADE (OCCT) | BRep modeling, boolean ops, export |
-| Preview | Three.js + axum | Browser-based live 3D viewer |
+| Preview | Three.js + axum | Browser-based live 3D viewer *(planned)* |
 
 ## Architecture
 
@@ -34,9 +36,10 @@ preview part   # opens live browser viewer
 Ruby DSL (.rb script)
       │ mRuby VM
 Rust binding layer
-  • Shape handle: SlotMap<u64, OcctShape>
-  • mrb_define_class / mrb_define_method
-  • dfree callback drops shape on GC
+  • native.rs: extern "C" entry points called from glue.c
+  • glue.c: C shim hiding mrb_value from Rust
+  • Shape: Box<occt::Shape> raw pointer stored in mRuby RData void*
+  • dfree callback drops the Box when mRuby GC collects the object
       │ cxx bridge (C++ ABI)
 OCCT geometry kernel
   • BRep modeling & boolean ops
@@ -44,16 +47,14 @@ OCCT geometry kernel
   • STEP / STL / glTF export
 ```
 
-**Memory model:** Rust owns all OCCT shapes via a `SlotMap`. mRuby `RData` holds only a `u64` key; GC triggers `dfree` which removes the key and drops the shape. No cross-language reference counting.
-
-**Live preview:** On `preview part`, rrcad tessellates the model to glTF, starts an `axum` HTTP server, and opens a Three.js viewer in the browser. A `notify` watcher re-evaluates the script on every save and pushes the new mesh over WebSocket.
+**Memory model:** Each native `Shape` value wraps a heap-allocated `Box<occt::Shape>`. The raw pointer is stored directly in the mRuby `RData void*` slot. The `dfree` GC callback calls `rrcad_shape_drop` to run `drop(Box::from_raw(ptr))`. No SlotMap, no cross-language reference counting.
 
 ## Building
 
 ```sh
 cargo build
-cargo run -- script.rb
-cargo run -- --preview script.rb
+cargo run               # start REPL
+cargo run -- script.rb  # run a .rb script
 cargo test
 ```
 
@@ -64,9 +65,9 @@ Requires OCCT 7.7+ headers and libraries, and mRuby built as a static library. S
 See [`doc/TODOs.md`](doc/TODOs.md) for the phased implementation plan:
 
 - **Phase 0** ✓ — OCCT Rust bindings via `cxx` (primitives, boolean ops, fillets, transforms, STEP/STL/glTF export)
-- **Phase 1** — mRuby embedded; end-to-end Ruby → STEP
-- **Phase 2** — DSL enrichment (fillets, assemblies, sketches, extrude/revolve)
-- **Phase 3** — Live browser preview (Three.js + WebSocket file watcher)
+- **Phase 1** ✓ — mRuby embedded; end-to-end Ruby → STEP; REPL with tab-completion and `help`
+- **Phase 2** ✓ — DSL enrichment (transforms, fillets, mirror, assemblies, sketches, extrude/revolve)
+- **Phase 3** (in progress) — Spline profiles + sweep; live browser preview (Three.js + WebSocket file watcher)
 - **Phase 4** — Native egui + wgpu desktop viewer
 - **Phase 5** — Parametric design and constraints
 
