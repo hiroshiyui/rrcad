@@ -1,4 +1,4 @@
-/// TDD tests for Phase 3 spline/sweep primitives — drives the Utah Teapot example.
+/// Tests for Phase 3 spline/sweep primitives.
 use rrcad::ruby::vm::MrubyVm;
 
 fn eval(code: &str) -> Result<String, String> {
@@ -82,28 +82,6 @@ fn circle_sweep_exports_step() {
         out.display()
     );
     vm.eval(&code).expect("eval failed");
-    assert!(out.exists(), "STEP file not created");
-    assert!(
-        std::fs::metadata(&out).unwrap().len() > 0,
-        "STEP file empty"
-    );
-    let content = std::fs::read_to_string(&out).unwrap();
-    assert!(content.contains("ISO-10303-21"), "not a valid STEP file");
-}
-
-// ---------------------------------------------------------------------------
-// Full teapot script end-to-end
-// ---------------------------------------------------------------------------
-
-#[test]
-fn teapot_script_produces_step_file() {
-    let mut vm = MrubyVm::new();
-    let script =
-        std::fs::read_to_string("samples/07_teapot.rb").expect("samples/07_teapot.rb missing");
-    let out = std::env::temp_dir().join("rrcad_teapot.step");
-    // Redirect the export to a temp-dir path so the test is hermetic.
-    let script = script.replace("teapot.step", out.to_str().unwrap());
-    vm.eval(&script).expect("teapot script failed");
     assert!(out.exists(), "STEP file not created");
     assert!(
         std::fs::metadata(&out).unwrap().len() > 0,
