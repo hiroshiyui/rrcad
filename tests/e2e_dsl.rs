@@ -124,3 +124,42 @@ fn e2e_shape_assigned_to_global_and_reused() {
         .unwrap();
     assert_valid_step(&out);
 }
+
+// ---------------------------------------------------------------------------
+// Import round-trips
+// ---------------------------------------------------------------------------
+
+#[test]
+fn e2e_import_step_roundtrip() {
+    // Export a box to STEP then import it back; the result must be a Shape.
+    let step = tmp("rrcad_e2e_import_step.step");
+    let mut vm = MrubyVm::new();
+    vm.eval(&format!(
+        "box(10.0, 10.0, 10.0).export('{}')",
+        step.display()
+    ))
+    .expect("export failed");
+    assert_valid_step(&step);
+
+    let result = vm
+        .eval(&format!("import_step('{}').class", step.display()))
+        .expect("import_step failed");
+    assert!(result.contains("Shape"), "expected Shape, got: {result}");
+}
+
+#[test]
+fn e2e_import_stl_roundtrip() {
+    // Write a sphere to STL via the Rust API, then import it through the DSL.
+    let stl = tmp("rrcad_e2e_import_stl.stl");
+    rrcad::occt::Shape::make_sphere(5.0)
+        .unwrap()
+        .export_stl(stl.to_str().unwrap())
+        .unwrap();
+    assert!(stl.exists(), "STL file not created");
+
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(&format!("import_stl('{}').class", stl.display()))
+        .expect("import_stl failed");
+    assert!(result.contains("Shape"), "expected Shape, got: {result}");
+}

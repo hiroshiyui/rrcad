@@ -148,6 +148,54 @@ pub unsafe extern "C" fn rrcad_shape_drop(ptr: *mut c_void) {
 }
 
 // ---------------------------------------------------------------------------
+// Import
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_import_step(
+    path: *const c_char,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let path_str = match unsafe { std::ffi::CStr::from_ptr(path) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "path is not valid UTF-8") };
+            return std::ptr::null_mut();
+        }
+    };
+    match Shape::import_step(path_str) {
+        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_import_stl(
+    path: *const c_char,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let path_str = match unsafe { std::ffi::CStr::from_ptr(path) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "path is not valid UTF-8") };
+            return std::ptr::null_mut();
+        }
+    };
+    match Shape::import_stl(path_str) {
+        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Export
 // ---------------------------------------------------------------------------
 

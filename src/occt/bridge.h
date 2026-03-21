@@ -89,6 +89,10 @@ std::unique_ptr<OcctShape> shape_faces_get(const OcctShape& shape, rust::Str sel
 int32_t shape_edges_count(const OcctShape& shape, rust::Str selector);
 std::unique_ptr<OcctShape> shape_edges_get(const OcctShape& shape, rust::Str selector, int32_t idx);
 
+// --- Import ---
+std::unique_ptr<OcctShape> import_step(rust::Str path);
+std::unique_ptr<OcctShape> import_stl(rust::Str path);
+
 // --- Export ---
 void export_step(const OcctShape& shape, rust::Str path);
 void export_stl(const OcctShape& shape, rust::Str path);

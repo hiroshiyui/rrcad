@@ -67,12 +67,15 @@
 // --- OCCT: tessellation (required before glTF export) ---
 #include <BRepMesh_IncrementalMesh.hxx>
 
-// --- OCCT: STEP export ---
+// --- OCCT: STEP import / export ---
 #include <IFSelect_ReturnStatus.hxx>
+#include <STEPControl_Reader.hxx>
 #include <STEPControl_StepModelType.hxx>
 #include <STEPControl_Writer.hxx>
 
-// --- OCCT: STL export ---
+// --- OCCT: STL import / export ---
+#include <BRep_Builder.hxx>
+#include <RWStl.hxx>
 #include <StlAPI_Writer.hxx>
 
 // --- OCCT: glTF export (XDE pipeline) ---
@@ -595,6 +598,35 @@ std::unique_ptr<OcctShape> shape_edges_get(const OcctShape& shape, rust::Str sel
     if (i >= edges.size())
         throw std::runtime_error("shape_edges_get: index out of range");
     return wrap(edges[i]);
+}
+
+// ---------------------------------------------------------------------------
+// Import
+// ---------------------------------------------------------------------------
+
+std::unique_ptr<OcctShape> import_step(rust::Str path) {
+    std::string path_str(path.data(), path.size());
+    STEPControl_Reader reader;
+    IFSelect_ReturnStatus status = reader.ReadFile(path_str.c_str());
+    if (status != IFSelect_RetDone)
+        throw std::runtime_error("STEPControl_Reader::ReadFile failed for: " + path_str);
+    reader.TransferRoots();
+    TopoDS_Shape shape = reader.OneShape();
+    if (shape.IsNull())
+        throw std::runtime_error("import_step: no shapes found in: " + path_str);
+    return wrap(shape);
+}
+
+std::unique_ptr<OcctShape> import_stl(rust::Str path) {
+    std::string path_str(path.data(), path.size());
+    Handle(Poly_Triangulation) tri = RWStl::ReadFile(path_str.c_str(), Message_ProgressRange());
+    if (tri.IsNull())
+        throw std::runtime_error("RWStl::ReadFile failed or file is empty: " + path_str);
+    TopoDS_Face face;
+    BRep_Builder builder;
+    builder.MakeFace(face);
+    builder.UpdateFace(face, tri);
+    return wrap(face);
 }
 
 // ---------------------------------------------------------------------------

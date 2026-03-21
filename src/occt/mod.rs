@@ -68,6 +68,10 @@ mod ffi {
             idx: i32,
         ) -> Result<UniquePtr<OcctShape>>;
 
+        // --- Import ---
+        fn import_step(path: &str) -> Result<UniquePtr<OcctShape>>;
+        fn import_stl(path: &str) -> Result<UniquePtr<OcctShape>>;
+
         // --- Export ---
         fn export_step(shape: &OcctShape, path: &str) -> Result<()>;
         fn export_stl(shape: &OcctShape, path: &str) -> Result<()>;
@@ -266,6 +270,20 @@ impl Shape {
                     .map_err(|e| e.to_string())
             })
             .collect()
+    }
+
+    // --- Import ---
+
+    pub fn import_step(path: &str) -> Result<Self, String> {
+        ffi::import_step(path)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn import_stl(path: &str) -> Result<Self, String> {
+        ffi::import_stl(path)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
     }
 
     // --- Export ---

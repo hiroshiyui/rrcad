@@ -65,6 +65,8 @@ extern void* rrcad_make_cone(double r1, double r2, double h, const char** error_
 extern void* rrcad_make_torus(double r1, double r2, const char** error_out);
 extern void* rrcad_make_wedge(double dx, double dy, double dz, double ltx, const char** error_out);
 extern void rrcad_shape_drop(void* ptr);
+extern void* rrcad_import_step(const char* path, const char** error_out);
+extern void* rrcad_import_stl(const char* path, const char** error_out);
 extern void rrcad_shape_export_step(void* ptr, const char* path, const char** error_out);
 extern void* rrcad_shape_fuse(void* a, void* b, const char** error_out);
 extern void* rrcad_shape_cut(void* a, void* b, const char** error_out);
@@ -556,6 +558,33 @@ static mrb_value mrb_rrcad_arc(mrb_state* mrb, mrb_value self) {
 }
 
 /* -------------------------------------------------------------------------
+ * Phase 4: Import — import_step / import_stl
+ * -------------------------------------------------------------------------
+ */
+
+static mrb_value mrb_rrcad_import_step(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    const char* path;
+    mrb_get_args(mrb, "z", &path);
+    const char* err = NULL;
+    void* ptr = rrcad_import_step(path, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, ptr);
+}
+
+static mrb_value mrb_rrcad_import_stl(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    const char* path;
+    mrb_get_args(mrb, "z", &path);
+    const char* err = NULL;
+    void* ptr = rrcad_import_stl(path, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, ptr);
+}
+
+/* -------------------------------------------------------------------------
  * Phase 3: Live preview — preview(shape)
  *
  * Tessellates the shape to a temp GLB file and signals WebSocket clients
@@ -696,4 +725,10 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     /* Phase 3: Sub-shape selectors */
     mrb_define_method(mrb, shape_class, "faces", mrb_rrcad_shape_faces, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "edges", mrb_rrcad_shape_edges, MRB_ARGS_REQ(1));
+
+    /* Phase 4: Import */
+    mrb_define_method(mrb, mrb->kernel_module, "import_step", mrb_rrcad_import_step,
+                      MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, mrb->kernel_module, "import_stl", mrb_rrcad_import_stl,
+                      MRB_ARGS_REQ(1));
 }

@@ -80,8 +80,8 @@ Completed: primitives `cone`, `torus`, `wedge`; 2D profiles `polygon`, `ellipse`
 - [ ] `polar_pattern(shape, n, angle_deg)` — rotate n copies around the Z axis
 
 ### Import
-- [ ] `import_step("file.step")` — `STEPControl_Reader`
-- [ ] `import_stl("file.stl")` — `RWStl::ReadFile` (returns `Handle(Poly_Triangulation)`)
+- [x] `import_step("file.step")` — `STEPControl_Reader`
+- [x] `import_stl("file.stl")` — `RWStl::ReadFile` (returns `Handle(Poly_Triangulation)`)
 
 ### Query / introspection
 - [ ] `.bounding_box` — returns `{x:, y:, z:, dx:, dy:, dz:}`; use `BRepBndLib::AddOptimal` (tighter than `BRepBndLib::Add`) + `Bnd_Box`
