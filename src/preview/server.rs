@@ -15,11 +15,13 @@ use axum::{
 use tokio::sync::broadcast;
 
 const VIEWER_HTML: &str = include_str!("viewer.html");
+const LOGO_PNG: &[u8] = include_bytes!("../../doc/images/rrcad-logo.png");
 
 pub async fn serve(port: u16) {
     let app = Router::new()
         .route("/", get(handler_root))
         .route("/model.glb", get(handler_model))
+        .route("/logo.png", get(handler_logo))
         .route("/ws", get(handler_ws));
 
     let addr = format!("127.0.0.1:{port}");
@@ -50,6 +52,10 @@ async fn handler_model() -> Response {
             .into_response(),
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
+}
+
+async fn handler_logo() -> Response {
+    ([(header::CONTENT_TYPE, "image/png")], LOGO_PNG).into_response()
 }
 
 async fn handler_ws(ws: WebSocketUpgrade) -> Response {

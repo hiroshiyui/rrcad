@@ -11,6 +11,12 @@
       color: #6b7280; font: 12px/1.5 monospace;
       pointer-events: none;
     }
+    #logo {
+      position: fixed; bottom: 16px; right: 16px;
+      height: 36px; width: auto;
+      opacity: 0.75;
+      pointer-events: none;
+    }
   </style>
   <script type="importmap">
   {
@@ -23,6 +29,7 @@
 </head>
 <body>
 <div id="status">rrcad preview — connecting…</div>
+<img id="logo" src="/logo.png" alt="rrcad">
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader }    from 'three/addons/loaders/GLTFLoader.js';
