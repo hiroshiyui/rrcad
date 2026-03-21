@@ -82,56 +82,139 @@ All 3-D operations shipped. Completed: `loft`, `.shell`, `.offset`, `.extrude(tw
 ## OCCT API Improvements (existing code)
 
 Targeted improvements to the current `bridge.cpp` implementation using newer OCCT APIs.
+Items marked `[ ]` are ready to implement (pure C++ changes, no DSL surface change).
+Items marked `(phase 5)` require DSL/API design work and belong in Phase 5.
 
-### Boolean operations — robustness and performance
-Use the builder-style API instead of the two-argument constructors (`BRepAlgoAPI_Fuse(a,b)`):
+### [ ] Boolean operations — robustness and performance
+
+**File:** `src/occt/bridge.cpp` — `shape_fuse`, `shape_cut`, `shape_common`
+
+**Problem:** The current 2-argument constructors (`BRepAlgoAPI_Fuse(a, b)`) build
+immediately with default settings. This silently fails on near-coincident faces
+(e.g. two boxes sharing a wall), a common user mistake.
+
+**Fix:** Switch to the builder-style API — set arguments/tools explicitly, then
+configure before calling `Build()`:
+
 ```cpp
-op.SetRunParallel(Standard_True);  // multi-threaded; OCCT 7.4+
-op.SetFuzzyValue(1e-6);            // handles near-coincident faces; prevents spurious failures
+TopTools_ListOfShape args, tools;
+args.Append(a.get());
+tools.Append(b.get());
+BRepAlgoAPI_Fuse op;
+op.SetArguments(args);
+op.SetTools(tools);
+op.SetRunParallel(Standard_True); // OCCT 7.4+: use TBB thread pool
+op.SetFuzzyValue(1e-6);           // tolerance for near-coincident geometry
+op.Build();
+if (!op.IsDone())
+    throw std::runtime_error("BRepAlgoAPI_Fuse failed");
 ```
-Apply to all three of `shape_fuse`, `shape_cut`, `shape_common`.
 
-### Tessellation — parallel meshing
-`BRepMesh_IncrementalMesh` accepts a parallel flag (OCCT 7.4+); speeds up complex shapes:
+Apply the same pattern to `shape_cut` (`BRepAlgoAPI_Cut`) and `shape_common`
+(`BRepAlgoAPI_Common`). `TopTools_ListOfShape` is already included.
+No header changes needed.
+
+---
+
+### [ ] Tessellation — parallel meshing
+
+**File:** `src/occt/bridge.cpp` — `export_stl` and `make_xde_doc` (shared by glTF/GLB/OBJ)
+
+**Problem:** `BRepMesh_IncrementalMesh` runs single-threaded by default. On complex
+shapes (teapot, lofted bodies) tessellation is the dominant export cost.
+
+**Fix:** Pass `/*isParallel=*/Standard_True` as the 5th constructor argument (OCCT 7.4+):
+
 ```cpp
-BRepMesh_IncrementalMesh mesher(shape, deflection, /*isRelative=*/false, 0.5,
+BRepMesh_IncrementalMesh mesher(shape.get(), deflection,
+                                /*isRelative=*/Standard_False,
+                                /*angularDeflection=*/0.5,
                                 /*isParallel=*/Standard_True);
 ```
-Apply in `export_stl`, `export_gltf`, `export_glb`.
 
-### Spline tangent constraints
-`GeomAPI_Interpolate::Load(startTangent, endTangent)` produces smoother BSplines with
-user-specified end tangents. Currently `make_spline_2d` / `make_spline_3d` use natural
-boundary conditions, which can cause oscillation near endpoints (visible on teapot sweep paths).
-Expose as optional `tangents:` array argument in the DSL.
+Two call sites: the one in `export_stl` and the one in `make_xde_doc`.
 
-### GLB transform format
-`RWGltf_CafWriter::SetTransformationFormat(RWGltf_WriterTrsfFormat_TRS)` (OCCT 7.7+)
-emits TRS components instead of a 4×4 matrix — the glTF spec default, better for Three.js.
-Add to `export_glb` before `Perform`.
+---
 
-### GLB color/material support
-Before calling `RWGltf_CafWriter::Perform`, attach colors via `XCAFDoc_ColorTool`:
+### [ ] GLB transform format — TRS instead of 4×4 matrix
+
+**File:** `src/occt/bridge.cpp` — `export_glb`
+
+**Problem:** `RWGltf_CafWriter` defaults to `RWGltf_WriterTrsfFormat_Compact`, which
+emits a 4×4 matrix for node transforms. The glTF 2.0 spec recommends TRS
+(translation/rotation/scale) decomposition; Three.js handles both but TRS is
+lighter and more interoperable with animation tools.
+
+**Fix:** One line before `writer.Perform`:
+
 ```cpp
-Handle(XCAFDoc_ColorTool) colorTool = XCAFDoc_DocumentTool::ColorTool(doc->Main());
-colorTool->SetColor(shapeLabel, Quantity_Color(r, g, b, Quantity_TOC_sRGB),
-                   XCAFDoc_ColorSurf);
+#include <RWGltf_WriterTrsfFormat.hxx>  // already pulled in via RWGltf_CafWriter.hxx
+writer.SetTransformationFormat(RWGltf_WriterTrsfFormat_TRS);
 ```
-Needed for multi-part assemblies where parts should render in different colors.
 
-### Shape validity check before export
-Add `BRepCheck_Analyzer` to `export_step` / `export_glb` for actionable error messages
-instead of silent writer failures:
+Confirmed available in the installed OCCT 7.9 headers.
+Apply only to `export_glb` (the live-preview path); `export_gltf` can follow
+the same pattern but is less critical.
+
+---
+
+### [ ] Shape validity check before export
+
+**File:** `src/occt/bridge.cpp` — `export_step` and `export_glb`
+
+**Problem:** When OCCT geometry operations produce a topologically invalid shape
+(degenerate faces, open shells, self-intersecting edges), the STEP/GLB writers
+silently write a corrupt file with no diagnostic. Users see an empty or broken
+model with no error message.
+
+**Fix:** Run `BRepCheck_Analyzer` before writing and throw with a clear message:
+
 ```cpp
 #include <BRepCheck_Analyzer.hxx>
-BRepCheck_Analyzer checker(shape);
+BRepCheck_Analyzer checker(shape.get());
 if (!checker.IsValid())
-    throw std::runtime_error("shape is topologically invalid — check for degenerate faces");
+    throw std::runtime_error(
+        "shape is topologically invalid (degenerate faces or open shells) "
+        "— check upstream boolean operations or fillet radii");
 ```
 
-### Feature removal (`BRepAlgoAPI_Defeaturing`, OCCT 7.4+)
-Removes small features (holes, fillets) for simplified export-for-simulation meshes.
-Not urgent, but useful for a future `.simplify(min_feature_size)` DSL method.
+Add at the top of `export_step` and `export_glb`. The check is fast for typical
+CAD models (milliseconds). No new library dependency — `BRepCheck` is in `TKBRep`
+which is already linked.
+
+---
+
+### (phase 5) Spline tangent constraints
+
+**File:** `src/occt/bridge.cpp` — `make_spline_2d`, `make_spline_3d`
+
+**Problem:** Natural boundary conditions can cause endpoint oscillation on short
+splines (visible on the teapot spout sweep path).
+
+**Fix:** `GeomAPI_Interpolate::Load(startTangent, endTangent)` sets explicit end
+tangents before `Perform()`. Requires exposing a `tangents:` keyword argument
+in the DSL — a Phase 5 concern.
+
+---
+
+### (phase 5) GLB color/material support
+
+**File:** `src/occt/bridge.cpp` — `make_xde_doc` or `export_glb`
+
+**Problem:** All shapes export with the default grey material. Multi-part
+assemblies need per-part colors for useful preview.
+
+**Fix:** Attach colors to XDE shape labels via `XCAFDoc_ColorTool` before
+`RWGltf_CafWriter::Perform`. Requires a new DSL method (`.color(r, g, b)`) to
+carry color metadata through to the export path — a Phase 5 concern.
+
+---
+
+### (phase 5) Feature removal — `.simplify`
+
+`BRepAlgoAPI_Defeaturing` (OCCT 7.4+) removes small holes/fillets for
+simplified simulation meshes. Not urgent; defer to Phase 5 as
+`.simplify(min_feature_size)`.
 
 ---
 
