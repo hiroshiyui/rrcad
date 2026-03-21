@@ -206,6 +206,86 @@ pub unsafe extern "C" fn rrcad_shape_export_step(
     }
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_export_stl(
+    ptr: *mut c_void,
+    path: *const c_char,
+    error_out: *mut *const c_char,
+) {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let path_str = match unsafe { std::ffi::CStr::from_ptr(path) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "path is not valid UTF-8") };
+            return;
+        }
+    };
+    if let Err(e) = shape.export_stl(path_str) {
+        unsafe { set_err(error_out, &e) };
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_export_gltf(
+    ptr: *mut c_void,
+    path: *const c_char,
+    error_out: *mut *const c_char,
+) {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let path_str = match unsafe { std::ffi::CStr::from_ptr(path) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "path is not valid UTF-8") };
+            return;
+        }
+    };
+    if let Err(e) = shape.export_gltf(path_str, 0.1) {
+        unsafe { set_err(error_out, &e) };
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_export_glb(
+    ptr: *mut c_void,
+    path: *const c_char,
+    error_out: *mut *const c_char,
+) {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let path_str = match unsafe { std::ffi::CStr::from_ptr(path) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "path is not valid UTF-8") };
+            return;
+        }
+    };
+    if let Err(e) = shape.export_glb(path_str, 0.1) {
+        unsafe { set_err(error_out, &e) };
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_export_obj(
+    ptr: *mut c_void,
+    path: *const c_char,
+    error_out: *mut *const c_char,
+) {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let path_str = match unsafe { std::ffi::CStr::from_ptr(path) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "path is not valid UTF-8") };
+            return;
+        }
+    };
+    if let Err(e) = shape.export_obj(path_str, 0.1) {
+        unsafe { set_err(error_out, &e) };
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Boolean operations
 // ---------------------------------------------------------------------------
@@ -632,6 +712,67 @@ pub unsafe extern "C" fn rrcad_shape_edges_get(
                 Box::into_raw(Box::new(v.swap_remove(i))) as *mut c_void
             } else {
                 unsafe { set_err(error_out, "edge index out of range") };
+                std::ptr::null_mut()
+            }
+        }
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4: Vertices selector
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_vertices_count(
+    ptr: *mut c_void,
+    selector: *const c_char,
+    error_out: *mut *const c_char,
+) -> i32 {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let sel = match unsafe { std::ffi::CStr::from_ptr(selector) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "selector is not valid UTF-8") };
+            return 0;
+        }
+    };
+    match shape.vertices(sel) {
+        Ok(v) => v.len() as i32,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            0
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_vertices_get(
+    ptr: *mut c_void,
+    selector: *const c_char,
+    idx: i32,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let sel = match unsafe { std::ffi::CStr::from_ptr(selector) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "selector is not valid UTF-8") };
+            return std::ptr::null_mut();
+        }
+    };
+    match shape.vertices(sel) {
+        Ok(mut v) => {
+            let i = idx as usize;
+            if i < v.len() {
+                Box::into_raw(Box::new(v.swap_remove(i))) as *mut c_void
+            } else {
+                unsafe { set_err(error_out, "vertex index out of range") };
                 std::ptr::null_mut()
             }
         }

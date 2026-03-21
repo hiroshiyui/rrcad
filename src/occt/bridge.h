@@ -141,12 +141,19 @@ std::unique_ptr<OcctShape> shape_sweep(const OcctShape& profile, const OcctShape
 
 // --- Phase 3: sub-shape selectors ---
 // Face selectors: "all", "top", "bottom", "side"
+//   Direction-based (Phase 4): ">X", "<X", ">Y", "<Y", ">Z", "<Z"
+//   (">Z" = faces whose outward normal has a positive Z component > 0.5,
+//    "<Z" = negative Z component < -0.5, and so on for X and Y axes.)
 // Edge selectors: "all", "vertical", "horizontal"
+// Vertex selector: "all"
 // Throws std::runtime_error for unknown selector strings.
 int32_t shape_faces_count(const OcctShape& shape, rust::Str selector);
 std::unique_ptr<OcctShape> shape_faces_get(const OcctShape& shape, rust::Str selector, int32_t idx);
 int32_t shape_edges_count(const OcctShape& shape, rust::Str selector);
 std::unique_ptr<OcctShape> shape_edges_get(const OcctShape& shape, rust::Str selector, int32_t idx);
+int32_t shape_vertices_count(const OcctShape& shape, rust::Str selector);
+std::unique_ptr<OcctShape> shape_vertices_get(const OcctShape& shape, rust::Str selector,
+                                              int32_t idx);
 
 // --- Patterns ---
 // Both functions return a TopoDS_Compound containing n translated/rotated copies
@@ -173,5 +180,7 @@ void export_stl(const OcctShape& shape, rust::Str path);
 void export_gltf(const OcctShape& shape, rust::Str path, double linear_deflection);
 // Binary glTF (GLB) — single-file format, suitable for HTTP serving.
 void export_glb(const OcctShape& shape, rust::Str path, double linear_deflection);
+// OBJ — Wavefront OBJ text format via RWObj_CafWriter (OCCT 7.6+).
+void export_obj(const OcctShape& shape, rust::Str path, double linear_deflection);
 
 } // namespace rrcad

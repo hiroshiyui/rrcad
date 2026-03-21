@@ -98,9 +98,10 @@
 #include <RWStl.hxx>
 #include <StlAPI_Writer.hxx>
 
-// --- OCCT: glTF export (XDE pipeline) ---
+// --- OCCT: glTF / OBJ export (XDE pipeline) ---
 #include <Message_ProgressRange.hxx>
 #include <RWGltf_CafWriter.hxx>
+#include <RWObj_CafWriter.hxx>
 #include <TColStd_IndexedDataMapOfStringString.hxx>
 #include <TCollection_AsciiString.hxx>
 #include <TCollection_ExtendedString.hxx>
@@ -683,11 +684,33 @@ std::unique_ptr<OcctShape> shape_sweep(const OcctShape& profile, const OcctShape
 // Phase 3: Sub-shape selectors
 // ---------------------------------------------------------------------------
 
+// Parse a direction-based face selector like ">Z", "<X", ">Y".
+// Returns true on success and fills *axis (0=X,1=Y,2=Z) and *positive.
+static bool parse_dir_selector(const std::string& sel, int* axis, bool* positive) {
+    if (sel.size() != 2)
+        return false;
+    char sign = sel[0];
+    char ax = sel[1];
+    if (sign != '>' && sign != '<')
+        return false;
+    if (ax != 'X' && ax != 'Y' && ax != 'Z')
+        return false;
+    *positive = (sign == '>');
+    *axis = (ax == 'X') ? 0 : (ax == 'Y') ? 1 : 2;
+    return true;
+}
+
 // Returns true if face matches the given selector.
 // BRepLProp_SLProps returns the geometric surface normal; we must flip it
-// when the face orientation is TopAbs_REVERSED so dz reflects the outward
-// (shell-facing) direction rather than the underlying surface direction.
+// when the face orientation is TopAbs_REVERSED so the normal reflects the
+// outward (shell-facing) direction rather than the underlying surface direction.
+// Supports both named selectors (all/top/bottom/side) and direction-based
+// selectors (>X, <X, >Y, <Y, >Z, <Z).
 static bool face_matches(const TopoDS_Face& face, const std::string& sel) {
+    // Named shorthand selectors that don't need a normal computation.
+    if (sel == "all")
+        return true;
+
     BRepAdaptor_Surface adaptor(face);
     double umid = 0.5 * (adaptor.FirstUParameter() + adaptor.LastUParameter());
     double vmid = 0.5 * (adaptor.FirstVParameter() + adaptor.LastVParameter());
@@ -699,19 +722,26 @@ static bool face_matches(const TopoDS_Face& face, const std::string& sel) {
     if (face.Orientation() == TopAbs_REVERSED)
         normal.Reverse();
 
-    const double dz = normal.Z();
     const double threshold = 0.5;
+    const double dz = normal.Z();
 
-    if (sel == "all")
-        return true;
     if (sel == "top")
         return dz > threshold;
     if (sel == "bottom")
         return dz < -threshold;
     if (sel == "side")
         return std::fabs(dz) <= threshold;
+
+    // Direction-based selectors: ">Z", "<X", etc.
+    int axis;
+    bool positive;
+    if (parse_dir_selector(sel, &axis, &positive)) {
+        double component = (axis == 0) ? normal.X() : (axis == 1) ? normal.Y() : normal.Z();
+        return positive ? component > threshold : component < -threshold;
+    }
+
     throw std::runtime_error(std::string("faces: unknown selector ':") + sel +
-                             "' — use :all, :top, :bottom, or :side");
+                             "' — use :all, :top, :bottom, :side, or a direction like :>Z or :<X");
 }
 
 // Returns true if edge matches the given selector.
@@ -744,9 +774,13 @@ static bool edge_matches(const TopoDS_Edge& edge, const std::string& sel) {
 int32_t shape_faces_count(const OcctShape& shape, rust::Str selector) {
     std::string sel(selector.data(), selector.size());
     // Validate selector upfront before iterating.
-    if (sel != "all" && sel != "top" && sel != "bottom" && sel != "side")
-        throw std::runtime_error(std::string("faces: unknown selector ':") + sel +
-                                 "' — use :all, :top, :bottom, or :side");
+    int dir_axis;
+    bool dir_positive;
+    if (sel != "all" && sel != "top" && sel != "bottom" && sel != "side" &&
+        !parse_dir_selector(sel, &dir_axis, &dir_positive))
+        throw std::runtime_error(
+            std::string("faces: unknown selector ':") + sel +
+            "' — use :all, :top, :bottom, :side, or a direction like :>Z or :<X");
     int32_t count = 0;
     TopExp_Explorer exp(shape.get(), TopAbs_FACE);
     for (; exp.More(); exp.Next()) {
@@ -807,6 +841,43 @@ std::unique_ptr<OcctShape> shape_edges_get(const OcctShape& shape, rust::Str sel
     if (i >= edges.size())
         throw std::runtime_error("shape_edges_get: index out of range");
     return wrap(edges[i]);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4: Vertices selector
+// ---------------------------------------------------------------------------
+
+// Only selector currently supported is "all" — a positional / direction
+// filter on vertices is not meaningful in the same way as faces/edges.
+// The API is symmetric with faces/edges so callers can iterate all vertices
+// without special-casing.
+int32_t shape_vertices_count(const OcctShape& shape, rust::Str selector) {
+    std::string sel(selector.data(), selector.size());
+    if (sel != "all")
+        throw std::runtime_error(std::string("vertices: unknown selector ':") + sel +
+                                 "' — only :all is supported");
+
+    // Use IndexedMapOfShape for deduplication (shared vertices appear once).
+    TopTools_IndexedMapOfShape vertex_map;
+    TopExp::MapShapes(shape.get(), TopAbs_VERTEX, vertex_map);
+    return static_cast<int32_t>(vertex_map.Extent());
+}
+
+std::unique_ptr<OcctShape> shape_vertices_get(const OcctShape& shape, rust::Str selector,
+                                              int32_t idx) {
+    std::string sel(selector.data(), selector.size());
+    if (sel != "all")
+        throw std::runtime_error(std::string("vertices: unknown selector ':") + sel +
+                                 "' — only :all is supported");
+
+    TopTools_IndexedMapOfShape vertex_map;
+    TopExp::MapShapes(shape.get(), TopAbs_VERTEX, vertex_map);
+
+    // IndexedMapOfShape is 1-based; idx is 0-based from the caller.
+    int one_based = idx + 1;
+    if (one_based < 1 || one_based > vertex_map.Extent())
+        throw std::runtime_error("shape_vertices_get: index out of range");
+    return wrap(vertex_map(one_based));
 }
 
 // ---------------------------------------------------------------------------
@@ -1000,6 +1071,19 @@ void export_glb(const OcctShape& shape, rust::Str path, double linear_deflection
     Message_ProgressRange progress;
     if (!writer.Perform(doc, metadata, progress))
         throw std::runtime_error("RWGltf_CafWriter::Perform (GLB) failed for: " + path_str);
+}
+
+// OBJ export via RWObj_CafWriter (OCCT 7.6+).
+// Uses the same XDE pipeline as glTF/GLB so material handling is consistent.
+void export_obj(const OcctShape& shape, rust::Str path, double linear_deflection) {
+    Handle(TDocStd_Document) doc = make_xde_doc(shape, linear_deflection, "OBJ export");
+    std::string path_str(path.data(), path.size());
+    TCollection_AsciiString obj_path(path_str.c_str());
+    RWObj_CafWriter writer(obj_path);
+    TColStd_IndexedDataMapOfStringString metadata;
+    Message_ProgressRange progress;
+    if (!writer.Perform(doc, metadata, progress))
+        throw std::runtime_error("RWObj_CafWriter::Perform failed for: " + path_str);
 }
 
 } // namespace rrcad

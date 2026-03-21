@@ -15,6 +15,7 @@
 #include <mruby/hash.h>
 #include <mruby/string.h>
 #include <stdlib.h>
+#include <string.h>
 
 /* -------------------------------------------------------------------------
  * rrcad_mrb_eval — evaluate Ruby source code and return its inspect string.
@@ -129,6 +130,17 @@ extern void* rrcad_shape_linear_pattern(void* ptr, int n, double dx, double dy, 
                                         const char** error_out);
 extern void* rrcad_shape_polar_pattern(void* ptr, int n, double angle_deg,
                                        const char** error_out);
+
+/* Phase 4 — vertices selector */
+extern int rrcad_shape_vertices_count(void* ptr, const char* selector, const char** error_out);
+extern void* rrcad_shape_vertices_get(void* ptr, const char* selector, int idx,
+                                      const char** error_out);
+
+/* Phase 4 — additional exports (stl, gltf, glb, obj) */
+extern void rrcad_shape_export_stl(void* ptr, const char* path, const char** error_out);
+extern void rrcad_shape_export_gltf(void* ptr, const char* path, const char** error_out);
+extern void rrcad_shape_export_glb(void* ptr, const char* path, const char** error_out);
+extern void rrcad_shape_export_obj(void* ptr, const char* path, const char** error_out);
 
 /* mRuby data type descriptor — name appears in TypeError messages. */
 static void shape_dfree(mrb_state* mrb, void* ptr) {
@@ -256,6 +268,13 @@ static mrb_value mrb_rrcad_shape_inspect(mrb_state* mrb, mrb_value self) {
     return mrb_str_new_cstr(mrb, "#<Shape>");
 }
 
+/* .export("path") — dispatches by file extension:
+ *   .step / .stp  → STEP AP203
+ *   .stl          → ASCII STL
+ *   .glb          → binary glTF (GLB)
+ *   .gltf         → text glTF
+ *   .obj          → Wavefront OBJ
+ * Defaults to STEP for any unrecognised extension. */
 static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     const char* path;
     mrb_get_args(mrb, "z", &path);
@@ -263,8 +282,22 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
 
+    /* Find the last '.' to determine the extension. */
+    const char* dot = strrchr(path, '.');
     const char* err = NULL;
-    rrcad_shape_export_step(ptr, path, &err);
+
+    if (dot && (strcasecmp(dot, ".stl") == 0)) {
+        rrcad_shape_export_stl(ptr, path, &err);
+    } else if (dot && (strcasecmp(dot, ".glb") == 0)) {
+        rrcad_shape_export_glb(ptr, path, &err);
+    } else if (dot && (strcasecmp(dot, ".gltf") == 0)) {
+        rrcad_shape_export_gltf(ptr, path, &err);
+    } else if (dot && (strcasecmp(dot, ".obj") == 0)) {
+        rrcad_shape_export_obj(ptr, path, &err);
+    } else {
+        /* Default: STEP (.step, .stp, or unknown extension) */
+        rrcad_shape_export_step(ptr, path, &err);
+    }
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return self;
@@ -775,10 +808,22 @@ static mrb_value mrb_rrcad_preview(mrb_state* mrb, mrb_value self) {
  * -------------------------------------------------------------------------
  */
 
+/* .faces(selector) — selector is a Symbol (:all, :top, :bottom, :side) or a
+ * String for direction-based selectors (">Z", "<X", etc.). */
 static mrb_value mrb_rrcad_shape_faces(mrb_state* mrb, mrb_value self) {
-    mrb_sym sel_sym;
-    mrb_get_args(mrb, "n", &sel_sym);
-    const char* sel = mrb_sym_name(mrb, sel_sym);
+    mrb_value sel_val;
+    mrb_get_args(mrb, "o", &sel_val);
+
+    const char* sel;
+    if (mrb_symbol_p(sel_val)) {
+        sel = mrb_sym_name(mrb, mrb_symbol(sel_val));
+    } else if (mrb_string_p(sel_val)) {
+        sel = mrb_str_to_cstr(mrb, sel_val);
+    } else {
+        mrb_raise(mrb, E_TYPE_ERROR,
+                  "faces: selector must be a Symbol (:all/:top/:bottom/:side) "
+                  "or a String (\">Z\", \"<X\", etc.)");
+    }
 
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
@@ -819,6 +864,38 @@ static mrb_value mrb_rrcad_shape_edges(mrb_state* mrb, mrb_value self) {
         if (err)
             mrb_raise(mrb, E_RUNTIME_ERROR, err);
         mrb_ary_push(mrb, result, shape_from_ptr(mrb, edge_ptr));
+    }
+    return result;
+}
+
+/* -------------------------------------------------------------------------
+ * Phase 4: Vertices selector
+ *
+ * .vertices(:all) — returns an Array of Shape objects, each wrapping one
+ * unique vertex.  Uses TopTools_IndexedMapOfShape for deduplication.
+ * -------------------------------------------------------------------------
+ */
+
+static mrb_value mrb_rrcad_shape_vertices(mrb_state* mrb, mrb_value self) {
+    mrb_sym sel_sym;
+    mrb_get_args(mrb, "n", &sel_sym);
+    const char* sel = mrb_sym_name(mrb, sel_sym);
+
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+
+    const char* err = NULL;
+    int count = rrcad_shape_vertices_count(ptr, sel, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+
+    mrb_value result = mrb_ary_new_capa(mrb, count);
+    for (int i = 0; i < count; i++) {
+        err = NULL;
+        void* vertex_ptr = rrcad_shape_vertices_get(ptr, sel, i, &err);
+        if (err)
+            mrb_raise(mrb, E_RUNTIME_ERROR, err);
+        mrb_ary_push(mrb, result, shape_from_ptr(mrb, vertex_ptr));
     }
     return result;
 }
@@ -1001,6 +1078,7 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     /* Phase 3: Sub-shape selectors */
     mrb_define_method(mrb, shape_class, "faces", mrb_rrcad_shape_faces, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "edges", mrb_rrcad_shape_edges, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "vertices", mrb_rrcad_shape_vertices, MRB_ARGS_REQ(1));
 
     /* Phase 4: Import */
     mrb_define_method(mrb, mrb->kernel_module, "import_step", mrb_rrcad_import_step,

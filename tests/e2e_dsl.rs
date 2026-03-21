@@ -430,3 +430,110 @@ fn e2e_pattern_then_fuse() {
     .expect("polar_pattern fuse test failed");
     assert!(out.exists());
 }
+
+// ---------------------------------------------------------------------------
+// Phase 4: vertices selector, direction-based face selector, OBJ export
+// ---------------------------------------------------------------------------
+
+#[test]
+fn e2e_vertices_count_box() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("box(5.0, 5.0, 5.0).vertices(:all).length")
+        .expect("vertices(:all) failed");
+    assert_eq!(result.trim(), "8", "expected 8 vertices on a box, got: {result}");
+}
+
+#[test]
+fn e2e_vertices_bad_selector_returns_error() {
+    let mut vm = MrubyVm::new();
+    let result = vm.eval("box(5.0, 5.0, 5.0).vertices(:top)");
+    assert!(result.is_err(), "expected error for unsupported selector");
+}
+
+#[test]
+fn e2e_faces_direction_gt_z() {
+    // faces(">Z") should return only the top face of a box.
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("box(10.0, 10.0, 10.0).faces(\">Z\").length")
+        .expect("faces(\">Z\") failed");
+    assert_eq!(result.trim(), "1", "expected 1 top face, got: {result}");
+}
+
+#[test]
+fn e2e_faces_direction_lt_z() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("box(10.0, 10.0, 10.0).faces(\"<Z\").length")
+        .expect("faces(\"<Z\") failed");
+    assert_eq!(result.trim(), "1", "expected 1 bottom face, got: {result}");
+}
+
+#[test]
+fn e2e_faces_direction_gt_x() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("box(10.0, 10.0, 10.0).faces(\">X\").length")
+        .expect("faces(\">X\") failed");
+    assert_eq!(result.trim(), "1", "expected 1 +X face, got: {result}");
+}
+
+#[test]
+fn e2e_faces_symbol_and_direction_same_count() {
+    // faces(:top) and faces(">Z") should give the same count on a box.
+    let mut vm = MrubyVm::new();
+    let sym_count = vm
+        .eval("box(8.0, 8.0, 8.0).faces(:top).length")
+        .expect("faces(:top) failed");
+    let dir_count = vm
+        .eval("box(8.0, 8.0, 8.0).faces(\">Z\").length")
+        .expect("faces(\">Z\") failed");
+    assert_eq!(
+        sym_count.trim(),
+        dir_count.trim(),
+        "faces(:top) and faces(\">Z\") should return the same count"
+    );
+}
+
+#[test]
+fn e2e_export_obj() {
+    let out = tmp("e2e_export.obj");
+    let mut vm = MrubyVm::new();
+    vm.eval(&format!(
+        "box(10.0, 10.0, 10.0).export(\"{}\")",
+        out.display()
+    ))
+    .expect("export .obj failed");
+    assert!(out.exists(), "OBJ file was not created");
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(content.contains('v') || content.contains('f'),
+            "file does not look like an OBJ: {}", &content[..content.len().min(200)]);
+}
+
+#[test]
+fn e2e_export_stl() {
+    let out = tmp("e2e_export.stl");
+    let mut vm = MrubyVm::new();
+    vm.eval(&format!(
+        "box(5.0, 5.0, 5.0).export(\"{}\")",
+        out.display()
+    ))
+    .expect("export .stl failed");
+    assert!(out.exists());
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(content.contains("solid") || content.len() > 0);
+}
+
+#[test]
+fn e2e_export_glb() {
+    let out = tmp("e2e_export.glb");
+    let mut vm = MrubyVm::new();
+    vm.eval(&format!(
+        "sphere(4.0).export(\"{}\")",
+        out.display()
+    ))
+    .expect("export .glb failed");
+    assert!(out.exists());
+    assert!(std::fs::metadata(&out).unwrap().len() > 0);
+}

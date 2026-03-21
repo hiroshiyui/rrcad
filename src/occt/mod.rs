@@ -104,6 +104,12 @@ mod ffi {
             selector: &str,
             idx: i32,
         ) -> Result<UniquePtr<OcctShape>>;
+        fn shape_vertices_count(shape: &OcctShape, selector: &str) -> Result<i32>;
+        fn shape_vertices_get(
+            shape: &OcctShape,
+            selector: &str,
+            idx: i32,
+        ) -> Result<UniquePtr<OcctShape>>;
 
         // --- Patterns ---
         fn shape_linear_pattern(
@@ -133,6 +139,7 @@ mod ffi {
         fn export_stl(shape: &OcctShape, path: &str) -> Result<()>;
         fn export_gltf(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
         fn export_glb(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
+        fn export_obj(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
     }
 }
 
@@ -389,6 +396,18 @@ impl Shape {
             .collect()
     }
 
+    /// Returns all unique vertices matching the selector (currently only `"all"`).
+    pub fn vertices(&self, selector: &str) -> Result<Vec<Shape>, String> {
+        let n = ffi::shape_vertices_count(&self.inner, selector).map_err(|e| e.to_string())?;
+        (0..n)
+            .map(|i| {
+                ffi::shape_vertices_get(&self.inner, selector, i)
+                    .map(|p| Shape { inner: p })
+                    .map_err(|e| e.to_string())
+            })
+            .collect()
+    }
+
     // --- Query / introspection ---
 
     /// Returns `[xmin, ymin, zmin, xmax, ymax, zmax]`.
@@ -456,6 +475,12 @@ impl Shape {
     /// Export to binary glTF (GLB). Single-file format suitable for HTTP serving.
     pub fn export_glb(&self, path: &str, linear_deflection: f64) -> Result<(), String> {
         ffi::export_glb(&self.inner, path, linear_deflection).map_err(|e| e.to_string())
+    }
+
+    /// Export to Wavefront OBJ. Tessellates with `linear_deflection` and writes
+    /// the `.obj` file plus a companion `.mtl` material file in the same directory.
+    pub fn export_obj(&self, path: &str, linear_deflection: f64) -> Result<(), String> {
+        ffi::export_obj(&self.inner, path, linear_deflection).map_err(|e| e.to_string())
     }
 }
 
@@ -589,6 +614,77 @@ mod tests {
         assert!(
             (orig_dx - pat_dx).abs() < 1e-4,
             "n=1 pattern should match original x-extent"
+        );
+    }
+
+    #[test]
+    fn vertices_count_box() {
+        // A box has exactly 8 corners.
+        let b = Shape::make_box(5.0, 5.0, 5.0).unwrap();
+        let verts = b.vertices("all").expect("vertices failed");
+        assert_eq!(
+            verts.len(),
+            8,
+            "expected 8 vertices on a box, got {}",
+            verts.len()
+        );
+    }
+
+    #[test]
+    fn vertices_bad_selector_returns_error() {
+        let b = Shape::make_box(5.0, 5.0, 5.0).unwrap();
+        let result = b.vertices("top");
+        assert!(
+            result.is_err(),
+            "expected error for unsupported selector 'top'"
+        );
+    }
+
+    #[test]
+    fn faces_direction_selector_top() {
+        // A box has exactly 1 top face (normal pointing in +Z).
+        let b = Shape::make_box(10.0, 10.0, 10.0).unwrap();
+        let top_faces = b.faces(">Z").expect("faces(>Z) failed");
+        assert_eq!(
+            top_faces.len(),
+            1,
+            "expected 1 top face, got {}",
+            top_faces.len()
+        );
+    }
+
+    #[test]
+    fn faces_direction_selector_bottom() {
+        let b = Shape::make_box(10.0, 10.0, 10.0).unwrap();
+        let bottom_faces = b.faces("<Z").expect("faces(<Z) failed");
+        assert_eq!(
+            bottom_faces.len(),
+            1,
+            "expected 1 bottom face, got {}",
+            bottom_faces.len()
+        );
+    }
+
+    #[test]
+    fn faces_direction_selector_x_sides() {
+        // A box has 2 faces with normals along the X axis.
+        let b = Shape::make_box(10.0, 10.0, 10.0).unwrap();
+        let pos_x = b.faces(">X").expect("faces(>X) failed");
+        let neg_x = b.faces("<X").expect("faces(<X) failed");
+        assert_eq!(pos_x.len(), 1, "expected 1 +X face");
+        assert_eq!(neg_x.len(), 1, "expected 1 -X face");
+    }
+
+    #[test]
+    fn export_obj_creates_file() {
+        let b = Shape::make_box(5.0, 5.0, 5.0).unwrap();
+        let out = std::env::temp_dir().join("rrcad_test_export.obj");
+        b.export_obj(out.to_str().unwrap(), 0.1)
+            .expect("export_obj failed");
+        assert!(out.exists(), "OBJ file was not created");
+        assert!(
+            std::fs::metadata(&out).unwrap().len() > 0,
+            "OBJ file is empty"
         );
     }
 }

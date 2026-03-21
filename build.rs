@@ -73,6 +73,7 @@ fn main() {
         "TKDESTEP",
         "TKDESTL",
         "TKDEGLTF",
+        "TKDEOBJ", // RWObj_CafWriter — Wavefront OBJ export
         "TKRWMesh",
     ] {
         println!("cargo:rustc-link-lib={lib}");
