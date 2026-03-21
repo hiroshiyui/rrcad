@@ -199,6 +199,9 @@ std::unique_ptr<OcctShape> shape_common(const OcctShape& a, const OcctShape& b) 
 // Fillets and chamfers
 // ---------------------------------------------------------------------------
 
+// Forward declaration — collect_edges is defined in the selectors section below.
+static std::vector<TopoDS_Edge> collect_edges(const OcctShape& shape, const std::string& sel);
+
 std::unique_ptr<OcctShape> shape_fillet(const OcctShape& s, double radius) {
     BRepFilletAPI_MakeFillet builder(s.get());
 
@@ -226,6 +229,42 @@ std::unique_ptr<OcctShape> shape_chamfer(const OcctShape& s, double dist) {
     builder.Build();
     if (!builder.IsDone())
         throw std::runtime_error("BRepFilletAPI_MakeChamfer failed");
+    return wrap(builder.Shape());
+}
+
+// Selective fillet: only edges matching the edge selector are rounded.
+// Reuses collect_edges for deduplication and validation.
+std::unique_ptr<OcctShape> shape_fillet_sel(const OcctShape& s, double radius, rust::Str selector) {
+    std::string sel(selector.data(), selector.size());
+    auto edges = collect_edges(s, sel);
+    if (edges.empty())
+        throw std::runtime_error("fillet: no edges match selector ':" + sel + "'");
+
+    BRepFilletAPI_MakeFillet builder(s.get());
+    for (const auto& edge : edges)
+        builder.Add(radius, edge);
+
+    builder.Build();
+    if (!builder.IsDone())
+        throw std::runtime_error("BRepFilletAPI_MakeFillet (selective) failed — "
+                                 "check for degenerate edges or too-large radius");
+    return wrap(builder.Shape());
+}
+
+// Selective chamfer: only edges matching the edge selector are bevelled.
+std::unique_ptr<OcctShape> shape_chamfer_sel(const OcctShape& s, double dist, rust::Str selector) {
+    std::string sel(selector.data(), selector.size());
+    auto edges = collect_edges(s, sel);
+    if (edges.empty())
+        throw std::runtime_error("chamfer: no edges match selector ':" + sel + "'");
+
+    BRepFilletAPI_MakeChamfer builder(s.get());
+    for (const auto& edge : edges)
+        builder.Add(dist, edge);
+
+    builder.Build();
+    if (!builder.IsDone())
+        throw std::runtime_error("BRepFilletAPI_MakeChamfer (selective) failed");
     return wrap(builder.Shape());
 }
 

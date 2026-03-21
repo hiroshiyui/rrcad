@@ -83,6 +83,10 @@ extern void* rrcad_shape_scale_xyz(void* ptr, double sx, double sy, double sz,
                                    const char** error_out);
 extern void* rrcad_shape_fillet(void* ptr, double radius, const char** error_out);
 extern void* rrcad_shape_chamfer(void* ptr, double dist, const char** error_out);
+extern void* rrcad_shape_fillet_sel(void* ptr, double radius, const char* selector,
+                                    const char** error_out);
+extern void* rrcad_shape_chamfer_sel(void* ptr, double dist, const char* selector,
+                                     const char** error_out);
 extern void* rrcad_shape_mirror(void* ptr, const char* plane, const char** error_out);
 extern void* rrcad_make_rect(double w, double h, const char** error_out);
 extern void* rrcad_make_circle_face(double r, const char** error_out);
@@ -360,25 +364,48 @@ static mrb_value mrb_rrcad_shape_scale(mrb_state* mrb, mrb_value self) {
     return shape_from_ptr(mrb, result);
 }
 
+/* fillet(r)            — round all edges
+ * fillet(r, :selector) — round only edges matching selector
+ *                        (:all, :vertical, :horizontal) */
 static mrb_value mrb_rrcad_shape_fillet(mrb_state* mrb, mrb_value self) {
     mrb_float r;
-    mrb_get_args(mrb, "f", &r);
+    mrb_value sel_val = mrb_nil_value();
+    mrb_get_args(mrb, "f|o", &r, &sel_val);
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
     const char* err = NULL;
-    void* result = rrcad_shape_fillet(ptr, (double)r, &err);
+    void* result;
+    if (mrb_nil_p(sel_val)) {
+        result = rrcad_shape_fillet(ptr, (double)r, &err);
+    } else {
+        if (!mrb_symbol_p(sel_val))
+            mrb_raise(mrb, E_TYPE_ERROR, "fillet selector must be a Symbol (:all, :vertical, :horizontal)");
+        const char* sel = mrb_sym_name(mrb, mrb_symbol(sel_val));
+        result = rrcad_shape_fillet_sel(ptr, (double)r, sel, &err);
+    }
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
 }
 
+/* chamfer(d)            — bevel all edges
+ * chamfer(d, :selector) — bevel only edges matching selector */
 static mrb_value mrb_rrcad_shape_chamfer(mrb_state* mrb, mrb_value self) {
     mrb_float d;
-    mrb_get_args(mrb, "f", &d);
+    mrb_value sel_val = mrb_nil_value();
+    mrb_get_args(mrb, "f|o", &d, &sel_val);
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
     const char* err = NULL;
-    void* result = rrcad_shape_chamfer(ptr, (double)d, &err);
+    void* result;
+    if (mrb_nil_p(sel_val)) {
+        result = rrcad_shape_chamfer(ptr, (double)d, &err);
+    } else {
+        if (!mrb_symbol_p(sel_val))
+            mrb_raise(mrb, E_TYPE_ERROR, "chamfer selector must be a Symbol (:all, :vertical, :horizontal)");
+        const char* sel = mrb_sym_name(mrb, mrb_symbol(sel_val));
+        result = rrcad_shape_chamfer_sel(ptr, (double)d, sel, &err);
+    }
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
@@ -869,9 +896,9 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     mrb_define_method(mrb, shape_class, "scale", mrb_rrcad_shape_scale,
                       MRB_ARGS_REQ(1) | MRB_ARGS_OPT(2));
     mrb_define_method(mrb, shape_class, "fillet", mrb_rrcad_shape_fillet,
-                      MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
+                      MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1)); /* (r[, :selector]) */
     mrb_define_method(mrb, shape_class, "chamfer", mrb_rrcad_shape_chamfer,
-                      MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
+                      MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1)); /* (d[, :selector]) */
     mrb_define_method(mrb, shape_class, "mirror", mrb_rrcad_shape_mirror, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "extrude", mrb_rrcad_shape_extrude,
                       MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));

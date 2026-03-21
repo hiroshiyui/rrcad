@@ -18,9 +18,19 @@ mod ffi {
         fn shape_cut(a: &OcctShape, b: &OcctShape) -> Result<UniquePtr<OcctShape>>;
         fn shape_common(a: &OcctShape, b: &OcctShape) -> Result<UniquePtr<OcctShape>>;
 
-        // --- Fillets and chamfers (applied to all edges) ---
+        // --- Fillets and chamfers ---
         fn shape_fillet(shape: &OcctShape, radius: f64) -> Result<UniquePtr<OcctShape>>;
         fn shape_chamfer(shape: &OcctShape, dist: f64) -> Result<UniquePtr<OcctShape>>;
+        fn shape_fillet_sel(
+            shape: &OcctShape,
+            radius: f64,
+            selector: &str,
+        ) -> Result<UniquePtr<OcctShape>>;
+        fn shape_chamfer_sel(
+            shape: &OcctShape,
+            dist: f64,
+            selector: &str,
+        ) -> Result<UniquePtr<OcctShape>>;
 
         // --- Transforms (immutable; return new shapes) ---
         fn shape_translate(
@@ -188,6 +198,20 @@ impl Shape {
 
     pub fn chamfer(&self, dist: f64) -> Result<Shape, String> {
         ffi::shape_chamfer(&self.inner, dist)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Fillet only edges matching `selector` (`:all` / `:vertical` / `:horizontal`).
+    pub fn fillet_sel(&self, radius: f64, selector: &str) -> Result<Shape, String> {
+        ffi::shape_fillet_sel(&self.inner, radius, selector)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Chamfer only edges matching `selector` (`:all` / `:vertical` / `:horizontal`).
+    pub fn chamfer_sel(&self, dist: f64, selector: &str) -> Result<Shape, String> {
+        ffi::shape_chamfer_sel(&self.inner, dist, selector)
             .map(|p| Shape { inner: p })
             .map_err(|e| e.to_string())
     }
@@ -438,6 +462,37 @@ mod tests {
         let out = std::env::temp_dir().join("rrcad_smoke_cut.step");
         result.export_step(out.to_str().unwrap()).unwrap();
         assert!(out.exists());
+    }
+
+    #[test]
+    fn fillet_sel_vertical_only() {
+        // A box has 4 vertical + 8 horizontal edges.
+        // Filleting only :vertical edges should succeed and produce more edges
+        // than the unfilleted box (each rounded edge becomes an arc).
+        let b = Shape::make_box(10.0, 10.0, 10.0).unwrap();
+        let original_edge_count = b.edges("all").unwrap().len();
+        let filleted = b
+            .fillet_sel(1.0, "vertical")
+            .expect("fillet_sel vertical failed");
+        let new_edge_count = filleted.edges("all").unwrap().len();
+        assert!(
+            new_edge_count > original_edge_count,
+            "expected more edges after selective fillet, got {new_edge_count} vs {original_edge_count}"
+        );
+    }
+
+    #[test]
+    fn chamfer_sel_horizontal_only() {
+        let b = Shape::make_box(10.0, 10.0, 10.0).unwrap();
+        let original_edge_count = b.edges("all").unwrap().len();
+        let chamfered = b
+            .chamfer_sel(1.0, "horizontal")
+            .expect("chamfer_sel horizontal failed");
+        let new_edge_count = chamfered.edges("all").unwrap().len();
+        assert!(
+            new_edge_count > original_edge_count,
+            "expected more edges after selective chamfer, got {new_edge_count} vs {original_edge_count}"
+        );
     }
 
     #[test]

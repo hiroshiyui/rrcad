@@ -307,6 +307,44 @@ pub unsafe extern "C" fn rrcad_shape_chamfer(
     unsafe { shape_result_to_ptr(shape.chamfer(dist), error_out) }
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_fillet_sel(
+    ptr: *mut c_void,
+    radius: f64,
+    selector: *const c_char,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let sel = match unsafe { std::ffi::CStr::from_ptr(selector) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "selector is not valid UTF-8") };
+            return std::ptr::null_mut();
+        }
+    };
+    unsafe { shape_result_to_ptr(shape.fillet_sel(radius, sel), error_out) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_chamfer_sel(
+    ptr: *mut c_void,
+    dist: f64,
+    selector: *const c_char,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let sel = match unsafe { std::ffi::CStr::from_ptr(selector) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "selector is not valid UTF-8") };
+            return std::ptr::null_mut();
+        }
+    };
+    unsafe { shape_result_to_ptr(shape.chamfer_sel(dist, sel), error_out) }
+}
+
 // ---------------------------------------------------------------------------
 // Mirror (Phase 2)
 // ---------------------------------------------------------------------------

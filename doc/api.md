@@ -328,7 +328,9 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `.scale(sx, sy, sz)` | Non-uniform scale — independent factor per axis |
 | `.mirror(:xy\|:xz\|:yz)` | Mirror about a coordinate plane |
 | `.fillet(r)` | Round all edges |
+| `.fillet(r, :selector)` | Round only edges matching selector (`:all` / `:vertical` / `:horizontal`) |
 | `.chamfer(d)` | Bevel all edges |
+| `.chamfer(d, :selector)` | Bevel only edges matching selector |
 | `.extrude(h)` | Extrude face/wire along Z |
 | `.extrude(h, twist_deg: 0, scale: 1.0)` | Extrude with optional twist (degrees) and end-scale; uses `ThruSections` when twist/scale are non-default |
 | `.revolve(deg=360)` | Revolve around Z axis |

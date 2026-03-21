@@ -54,9 +54,15 @@ std::unique_ptr<OcctShape> shape_fuse(const OcctShape& a, const OcctShape& b);
 std::unique_ptr<OcctShape> shape_cut(const OcctShape& a, const OcctShape& b);
 std::unique_ptr<OcctShape> shape_common(const OcctShape& a, const OcctShape& b);
 
-// --- Fillets and chamfers (applied to all edges) ---
+// --- Fillets and chamfers ---
+// All-edge forms (no selector).
 std::unique_ptr<OcctShape> shape_fillet(const OcctShape& shape, double radius);
 std::unique_ptr<OcctShape> shape_chamfer(const OcctShape& shape, double dist);
+// Selective forms: only edges matching the edge selector (:all / :vertical / :horizontal).
+std::unique_ptr<OcctShape> shape_fillet_sel(const OcctShape& shape, double radius,
+                                            rust::Str selector);
+std::unique_ptr<OcctShape> shape_chamfer_sel(const OcctShape& shape, double dist,
+                                             rust::Str selector);
 
 // --- Transforms (return new shapes; inputs are unchanged) ---
 std::unique_ptr<OcctShape> shape_translate(const OcctShape& shape, double dx, double dy, double dz);

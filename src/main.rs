@@ -34,8 +34,9 @@ Transforms                   (return a new Shape)
   s.mirror(:xy|:xz|:yz)     mirror about a plane
 
 Modifiers
-  s.fillet(r)               round all edges
-  s.chamfer(d)              bevel all edges
+  s.fillet(r[, :sel])       round all (or selected) edges
+  s.chamfer(d[, :sel])      bevel all (or selected) edges
+                            sel: :all, :vertical, :horizontal
   s.extrude(h)              extrude face/profile by height
   s.revolve(deg=360)        revolve around Z axis
   s.sweep(path)             sweep profile along 3D wire path

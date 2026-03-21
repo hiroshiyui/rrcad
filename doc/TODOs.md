@@ -63,8 +63,8 @@ All 3-D operations shipped. Completed: `loft`, `.shell`, `.offset`, `.extrude(tw
 - [x] `.scale(sx, sy, sz)` — non-uniform scale; `BRepBuilderAPI_GTransform` with `gp_GTrsf`
 
 ### Selective modifiers
-- [ ] `.fillet(r, selector)` — fillet only edges matching a selector string (reuse existing edge-selector machinery)
-- [ ] `.chamfer(d, selector)` — same for chamfers
+- [x] `.fillet(r, selector)` — fillet only edges matching a selector string
+- [x] `.chamfer(d, selector)` — same for chamfers
 
 ### Patterns
 - [ ] `linear_pattern(shape, n, [dx, dy, dz])` — repeat shape n times along a vector

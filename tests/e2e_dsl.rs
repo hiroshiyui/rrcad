@@ -254,3 +254,69 @@ fn e2e_import_stl_roundtrip() {
         .expect("import_stl failed");
     assert!(result.contains("Shape"), "expected Shape, got: {result}");
 }
+
+// ---------------------------------------------------------------------------
+// Selective fillet / chamfer
+// ---------------------------------------------------------------------------
+
+#[test]
+fn e2e_fillet_selective_vertical() {
+    // fillet(r, :vertical) — only the 4 vertical edges of a box are rounded.
+    let out = tmp("rrcad_e2e_fillet_sel_vertical.step");
+    let mut vm = MrubyVm::new();
+    vm.eval(&format!(
+        "box(10.0, 10.0, 10.0).fillet(1.0, :vertical).export('{}')",
+        out.display()
+    ))
+    .expect("fillet(:vertical) failed");
+    assert_valid_step(&out);
+}
+
+#[test]
+fn e2e_fillet_selective_horizontal() {
+    let out = tmp("rrcad_e2e_fillet_sel_horizontal.step");
+    let mut vm = MrubyVm::new();
+    vm.eval(&format!(
+        "box(10.0, 10.0, 10.0).fillet(1.0, :horizontal).export('{}')",
+        out.display()
+    ))
+    .expect("fillet(:horizontal) failed");
+    assert_valid_step(&out);
+}
+
+#[test]
+fn e2e_chamfer_selective_vertical() {
+    let out = tmp("rrcad_e2e_chamfer_sel_vertical.step");
+    let mut vm = MrubyVm::new();
+    vm.eval(&format!(
+        "box(10.0, 10.0, 10.0).chamfer(1.0, :vertical).export('{}')",
+        out.display()
+    ))
+    .expect("chamfer(:vertical) failed");
+    assert_valid_step(&out);
+}
+
+#[test]
+fn e2e_fillet_selector_all_matches_no_arg() {
+    // fillet(:all) should produce the same shape as fillet() with no selector.
+    let mut vm = MrubyVm::new();
+    let v_all = vm
+        .eval("box(10.0, 10.0, 10.0).fillet(1.0, :all).volume")
+        .expect("fillet(:all) failed");
+    let v_none = vm
+        .eval("box(10.0, 10.0, 10.0).fillet(1.0).volume")
+        .expect("fillet() failed");
+    // Volumes should match to within 0.01% — compare the numeric strings loosely.
+    assert_eq!(
+        v_all.split('.').next(),
+        v_none.split('.').next(),
+        "fillet(:all) volume {v_all} differs from fillet() volume {v_none}"
+    );
+}
+
+#[test]
+fn e2e_fillet_bad_selector_returns_error() {
+    let mut vm = MrubyVm::new();
+    let result = vm.eval("box(5.0, 5.0, 5.0).fillet(1.0, :diagonal)");
+    assert!(result.is_err(), "expected error for bad selector, got: {result:?}");
+}
