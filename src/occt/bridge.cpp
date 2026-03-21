@@ -813,6 +813,57 @@ std::unique_ptr<OcctShape> shape_edges_get(const OcctShape& shape, rust::Str sel
 // Import
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Patterns
+// ---------------------------------------------------------------------------
+
+// Returns a compound of n translated copies.
+// Copy i sits at i*[dx, dy, dz] relative to the input shape's position.
+std::unique_ptr<OcctShape> shape_linear_pattern(const OcctShape& s, int32_t n, double dx, double dy,
+                                                double dz) {
+    if (n < 1)
+        throw std::runtime_error("linear_pattern: n must be >= 1");
+
+    TopoDS_Compound compound;
+    BRep_Builder builder;
+    builder.MakeCompound(compound);
+
+    for (int32_t i = 0; i < n; i++) {
+        gp_Trsf trsf;
+        trsf.SetTranslation(gp_Vec(i * dx, i * dy, i * dz));
+        BRepBuilderAPI_Transform xform(s.get(), trsf, /*copy=*/Standard_True);
+        builder.Add(compound, xform.Shape());
+    }
+    return wrap(compound);
+}
+
+// Returns a compound of n copies rotated around the Z axis.
+// Copy i is rotated by i * (angle_deg / n) degrees.
+// e.g. polar_pattern(shape, 6, 360) places 6 copies every 60° around a full circle.
+std::unique_ptr<OcctShape> shape_polar_pattern(const OcctShape& s, int32_t n, double angle_deg) {
+    if (n < 1)
+        throw std::runtime_error("polar_pattern: n must be >= 1");
+
+    const double step_rad = (angle_deg / n) * (M_PI / 180.0);
+
+    TopoDS_Compound compound;
+    BRep_Builder builder;
+    builder.MakeCompound(compound);
+
+    const gp_Ax1 z_axis(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1));
+    for (int32_t i = 0; i < n; i++) {
+        gp_Trsf trsf;
+        trsf.SetRotation(z_axis, i * step_rad);
+        BRepBuilderAPI_Transform xform(s.get(), trsf, /*copy=*/Standard_True);
+        builder.Add(compound, xform.Shape());
+    }
+    return wrap(compound);
+}
+
+// ---------------------------------------------------------------------------
+// Import
+// ---------------------------------------------------------------------------
+
 std::unique_ptr<OcctShape> import_step(rust::Str path) {
     std::string path_str(path.data(), path.size());
     STEPControl_Reader reader;

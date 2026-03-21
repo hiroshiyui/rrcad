@@ -124,6 +124,12 @@ extern void* rrcad_shape_offset(void* ptr, double distance, const char** error_o
 extern void* rrcad_shape_extrude_ex(void* ptr, double height, double twist_deg, double scale,
                                     const char** error_out);
 
+/* Phase 4 — patterns */
+extern void* rrcad_shape_linear_pattern(void* ptr, int n, double dx, double dy, double dz,
+                                        const char** error_out);
+extern void* rrcad_shape_polar_pattern(void* ptr, int n, double angle_deg,
+                                       const char** error_out);
+
 /* mRuby data type descriptor — name appears in TypeError messages. */
 static void shape_dfree(mrb_state* mrb, void* ptr) {
     (void)mrb;
@@ -870,6 +876,69 @@ static mrb_value mrb_rrcad_shape_surface_area(mrb_state* mrb, mrb_value self) {
     return mrb_float_value(mrb, area);
 }
 
+/* -------------------------------------------------------------------------
+ * Phase 4: Patterns — linear_pattern / polar_pattern
+ *
+ * Both are top-level Kernel methods that return a Compound of n copies.
+ *
+ *   linear_pattern(shape, n, [dx, dy, dz])
+ *     — copy i is translated by i * [dx, dy, dz]; i=0 is the original.
+ *
+ *   polar_pattern(shape, n, angle_deg)
+ *     — copy i is rotated by i * (angle_deg / n) degrees around Z; i=0 is
+ *       the original.  A total of 360 gives evenly-spaced full-circle copies.
+ * -------------------------------------------------------------------------
+ */
+
+/* linear_pattern(shape, n, [dx, dy, dz]) */
+static mrb_value mrb_rrcad_linear_pattern(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value shape_val, vec_val;
+    mrb_int n;
+    mrb_get_args(mrb, "oiA", &shape_val, &n, &vec_val);
+
+    void* ptr = shape_ptr(mrb, shape_val);
+    require_native_ptr(mrb, ptr);
+
+    if ((int)RARRAY_LEN(vec_val) < 3)
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "linear_pattern: vector must have 3 elements [dx,dy,dz]");
+
+    double dx = 0.0, dy = 0.0, dz = 0.0;
+    for (int j = 0; j < 3; j++) {
+        mrb_value v = mrb_ary_ref(mrb, vec_val, j);
+        double d = mrb_float_p(v)   ? (double)mrb_float(v)
+                   : mrb_integer_p(v) ? (double)mrb_integer(v)
+                                      : 0.0;
+        if (j == 0) dx = d;
+        else if (j == 1) dy = d;
+        else dz = d;
+    }
+
+    const char* err = NULL;
+    void* result = rrcad_shape_linear_pattern(ptr, (int)n, dx, dy, dz, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* polar_pattern(shape, n, angle_deg) */
+static mrb_value mrb_rrcad_polar_pattern(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value shape_val;
+    mrb_int n;
+    mrb_float angle_deg;
+    mrb_get_args(mrb, "oif", &shape_val, &n, &angle_deg);
+
+    void* ptr = shape_ptr(mrb, shape_val);
+    require_native_ptr(mrb, ptr);
+
+    const char* err = NULL;
+    void* result = rrcad_shape_polar_pattern(ptr, (int)n, (double)angle_deg, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
 /* =========================================================================
  * rrcad_register_shape_class
  *
@@ -944,6 +1013,12 @@ void rrcad_register_shape_class(mrb_state* mrb) {
                       MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
     mrb_define_method(mrb, shape_class, "shell", mrb_rrcad_shape_shell, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "offset", mrb_rrcad_shape_offset, MRB_ARGS_REQ(1));
+
+    /* Phase 4: Patterns */
+    mrb_define_method(mrb, mrb->kernel_module, "linear_pattern", mrb_rrcad_linear_pattern,
+                      MRB_ARGS_REQ(3));
+    mrb_define_method(mrb, mrb->kernel_module, "polar_pattern", mrb_rrcad_polar_pattern,
+                      MRB_ARGS_REQ(3));
 
     /* Phase 4: Query / introspection */
     mrb_define_method(mrb, shape_class, "bounding_box", mrb_rrcad_shape_bounding_box,

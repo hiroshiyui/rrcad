@@ -105,6 +105,20 @@ mod ffi {
             idx: i32,
         ) -> Result<UniquePtr<OcctShape>>;
 
+        // --- Patterns ---
+        fn shape_linear_pattern(
+            shape: &OcctShape,
+            n: i32,
+            dx: f64,
+            dy: f64,
+            dz: f64,
+        ) -> Result<UniquePtr<OcctShape>>;
+        fn shape_polar_pattern(
+            shape: &OcctShape,
+            n: i32,
+            angle_deg: f64,
+        ) -> Result<UniquePtr<OcctShape>>;
+
         // --- Import ---
         fn import_step(path: &str) -> Result<UniquePtr<OcctShape>>;
         fn import_stl(path: &str) -> Result<UniquePtr<OcctShape>>;
@@ -392,6 +406,24 @@ impl Shape {
         ffi::shape_surface_area(&self.inner).map_err(|e| e.to_string())
     }
 
+    // --- Patterns ---
+
+    /// `n` translated copies of the shape at positions `i * [dx, dy, dz]` (i = 0..n-1).
+    /// Returns a `TopoDS_Compound` — fuse explicitly if a merged solid is needed.
+    pub fn linear_pattern(&self, n: i32, dx: f64, dy: f64, dz: f64) -> Result<Shape, String> {
+        ffi::shape_linear_pattern(&self.inner, n, dx, dy, dz)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    /// `n` copies rotated around Z by `i * (angle_deg / n)` (i = 0..n-1).
+    /// Returns a `TopoDS_Compound`.
+    pub fn polar_pattern(&self, n: i32, angle_deg: f64) -> Result<Shape, String> {
+        ffi::shape_polar_pattern(&self.inner, n, angle_deg)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
     // --- Import ---
 
     pub fn import_step(path: &str) -> Result<Self, String> {
@@ -506,5 +538,57 @@ mod tests {
         assert!((dx - 2.0).abs() < 1e-6, "expected dx=2, got {dx}");
         assert!((dy - 3.0).abs() < 1e-6, "expected dy=3, got {dy}");
         assert!((dz - 4.0).abs() < 1e-6, "expected dz=4, got {dz}");
+    }
+
+    #[test]
+    fn linear_pattern_copies_along_axis() {
+        // 3 copies of a 2×2×2 box spaced 5 units apart along X should have
+        // a bounding box that spans [0, 0+5+5+2] = [0, 12] in X.
+        let b = Shape::make_box(2.0, 2.0, 2.0).unwrap();
+        let pattern = b
+            .linear_pattern(3, 5.0, 0.0, 0.0)
+            .expect("linear_pattern failed");
+        let bb = pattern.bounding_box().expect("bounding_box failed");
+        let dx = bb[3] - bb[0]; // xmax - xmin
+        assert!(
+            (dx - 12.0).abs() < 1e-4,
+            "expected x-extent of 12, got {dx}"
+        );
+    }
+
+    #[test]
+    fn polar_pattern_fills_circle() {
+        // 4 copies at 360° — each rotated 90° further — should span roughly
+        // the same extents in X and Y.
+        let b = Shape::make_box(1.0, 1.0, 5.0)
+            .unwrap()
+            .translate(3.0, 0.0, 0.0)
+            .unwrap();
+        let pattern = b.polar_pattern(4, 360.0).expect("polar_pattern failed");
+        let bb = pattern.bounding_box().expect("bounding_box failed");
+        let dx = bb[3] - bb[0];
+        let dy = bb[4] - bb[1];
+        // With 4 copies at 90° intervals, the compound should be roughly symmetric.
+        assert!(
+            (dx - dy).abs() < 0.5,
+            "expected symmetric extents, got dx={dx}, dy={dy}"
+        );
+    }
+
+    #[test]
+    fn linear_pattern_n1_returns_original_shape() {
+        // n=1 should produce a single-copy compound with the same bounding box.
+        let b = Shape::make_box(3.0, 4.0, 5.0).unwrap();
+        let bb_orig = b.bounding_box().unwrap();
+        let pattern = b
+            .linear_pattern(1, 10.0, 0.0, 0.0)
+            .expect("linear_pattern n=1 failed");
+        let bb_pat = pattern.bounding_box().unwrap();
+        let orig_dx = bb_orig[3] - bb_orig[0];
+        let pat_dx = bb_pat[3] - bb_pat[0];
+        assert!(
+            (orig_dx - pat_dx).abs() < 1e-4,
+            "n=1 pattern should match original x-extent"
+        );
     }
 }

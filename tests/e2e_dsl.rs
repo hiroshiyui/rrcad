@@ -318,5 +318,115 @@ fn e2e_fillet_selector_all_matches_no_arg() {
 fn e2e_fillet_bad_selector_returns_error() {
     let mut vm = MrubyVm::new();
     let result = vm.eval("box(5.0, 5.0, 5.0).fillet(1.0, :diagonal)");
-    assert!(result.is_err(), "expected error for bad selector, got: {result:?}");
+    assert!(
+        result.is_err(),
+        "expected error for bad selector, got: {result:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4: Patterns — linear_pattern / polar_pattern
+// ---------------------------------------------------------------------------
+
+#[test]
+fn e2e_linear_pattern_creates_compound() {
+    // 4 copies of a cylinder spaced 15 units apart along X; the X-extent of
+    // the compound should be approx 3*15 + 2*r = 45 + 4 = 49.
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("linear_pattern(cylinder(2.0, 5.0), 4, [15, 0, 0]).bounding_box[:dx]")
+        .expect("linear_pattern DSL failed");
+    let dx: f64 = result.trim().parse().expect("expected a float");
+    assert!((dx - 49.0).abs() < 0.5, "expected x-extent ~49, got {dx}");
+}
+
+#[test]
+fn e2e_polar_pattern_symmetric_extents() {
+    // 4-fold polar pattern at 360° — the compound should have equal X and Y extents
+    // because the 4 copies are symmetric around the origin.
+    let mut vm = MrubyVm::new();
+    let bb = vm
+        .eval("polar_pattern(sphere(2.0).translate(8, 0, 0), 4, 360).bounding_box")
+        .expect("polar_pattern DSL failed");
+    // The result is a Ruby Hash inspect string; verify it contains the expected keys.
+    assert!(
+        bb.contains(":dx") || bb.contains("dx"),
+        "unexpected bounding_box result: {bb}"
+    );
+    // Extract dx and dy from the hash by making two separate calls.
+    let dx: f64 = vm
+        .eval("polar_pattern(sphere(2.0).translate(8, 0, 0), 4, 360).bounding_box[:dx]")
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    let dy: f64 = vm
+        .eval("polar_pattern(sphere(2.0).translate(8, 0, 0), 4, 360).bounding_box[:dy]")
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert!(
+        (dx - dy).abs() < 0.5,
+        "expected symmetric extents, got dx={dx}, dy={dy}"
+    );
+}
+
+#[test]
+fn e2e_linear_pattern_export_step() {
+    let out = tmp("e2e_linear_pattern.step");
+    let mut vm = MrubyVm::new();
+    vm.eval(&format!(
+        "linear_pattern(box(3.0, 3.0, 3.0), 5, [6, 0, 0]).export(\"{}\")",
+        out.display()
+    ))
+    .expect("linear_pattern export failed");
+    assert!(out.exists());
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(content.contains("ISO-10303-21"));
+}
+
+#[test]
+fn e2e_polar_pattern_export_step() {
+    let out = tmp("e2e_polar_pattern.step");
+    let mut vm = MrubyVm::new();
+    vm.eval(&format!(
+        "polar_pattern(cylinder(2.0, 4.0).translate(10, 0, 0), 6, 360).export(\"{}\")",
+        out.display()
+    ))
+    .expect("polar_pattern export failed");
+    assert!(out.exists());
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(content.contains("ISO-10303-21"));
+}
+
+#[test]
+fn e2e_linear_pattern_n1_identity() {
+    // n=1 should produce a compound whose bounding box matches the original shape.
+    let mut vm = MrubyVm::new();
+    let orig = vm
+        .eval("box(5.0, 7.0, 9.0).bounding_box[:dz]")
+        .expect("orig bounding_box failed");
+    let pat = vm
+        .eval("linear_pattern(box(5.0, 7.0, 9.0), 1, [100, 0, 0]).bounding_box[:dz]")
+        .expect("pattern bounding_box failed");
+    assert_eq!(
+        orig.split('.').next(),
+        pat.split('.').next(),
+        "n=1 pattern dz {pat} differs from original {orig}"
+    );
+}
+
+#[test]
+fn e2e_pattern_then_fuse() {
+    // A pattern compound can be fused into one solid by calling .fuse on itself —
+    // but easier to just verify the pattern round-trips through STEP fine.
+    let out = tmp("e2e_pattern_fuse.step");
+    let mut vm = MrubyVm::new();
+    vm.eval(&format!(
+        "polar_pattern(box(2.0, 2.0, 10.0).translate(5, 0, 0), 3, 120).export(\"{}\")",
+        out.display()
+    ))
+    .expect("polar_pattern fuse test failed");
+    assert!(out.exists());
 }

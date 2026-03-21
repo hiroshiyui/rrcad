@@ -148,6 +148,15 @@ std::unique_ptr<OcctShape> shape_faces_get(const OcctShape& shape, rust::Str sel
 int32_t shape_edges_count(const OcctShape& shape, rust::Str selector);
 std::unique_ptr<OcctShape> shape_edges_get(const OcctShape& shape, rust::Str selector, int32_t idx);
 
+// --- Patterns ---
+// Both functions return a TopoDS_Compound containing n translated/rotated copies
+// of the input shape. Copies include i=0 (original position).
+// linear_pattern: copy i is translated by i*[dx,dy,dz].
+// polar_pattern:  copy i is rotated by i*(angle_deg/n) degrees around the Z axis.
+std::unique_ptr<OcctShape> shape_linear_pattern(const OcctShape& shape, int32_t n, double dx,
+                                                double dy, double dz);
+std::unique_ptr<OcctShape> shape_polar_pattern(const OcctShape& shape, int32_t n, double angle_deg);
+
 // --- Import ---
 std::unique_ptr<OcctShape> import_step(rust::Str path);
 std::unique_ptr<OcctShape> import_stl(rust::Str path);

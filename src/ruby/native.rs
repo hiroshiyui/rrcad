@@ -346,6 +346,36 @@ pub unsafe extern "C" fn rrcad_shape_chamfer_sel(
 }
 
 // ---------------------------------------------------------------------------
+// Patterns (Phase 4)
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_linear_pattern(
+    ptr: *mut c_void,
+    n: std::ffi::c_int,
+    dx: f64,
+    dy: f64,
+    dz: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    unsafe { shape_result_to_ptr(shape.linear_pattern(n, dx, dy, dz), error_out) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_polar_pattern(
+    ptr: *mut c_void,
+    n: std::ffi::c_int,
+    angle_deg: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    unsafe { shape_result_to_ptr(shape.polar_pattern(n, angle_deg), error_out) }
+}
+
+// ---------------------------------------------------------------------------
 // Mirror (Phase 2)
 // ---------------------------------------------------------------------------
 
