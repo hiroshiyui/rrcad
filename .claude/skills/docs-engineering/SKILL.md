@@ -9,6 +9,7 @@ When performing documentation engineering, always follow these steps:
    - `README.md` — features list, prerequisites, acknowledgements
    - `CLAUDE.md` — stack, architecture, key gotchas, project conventions
    - `doc/` — `development.md`, `api.md`, `troubleshooting.md`, `TODOs.md`
+   - Code comments for human developers
 
 2. **Revise and update** any documentation that is stale, incomplete, or inconsistent with the current code. Ensure new features, removed dependencies, behavioral changes, and architectural decisions are reflected accurately.
 

@@ -1,4 +1,4 @@
-<p align="center"><img src="doc/rrcad-logo.png" alt="rrcad logo" width="400"></p>
+<p align="center"><img src="doc/images/rrcad-logo.png" alt="rrcad logo" width="400"></p>
 
 # rrcad
 
@@ -20,6 +20,8 @@ teapot.export("teapot.step")
 ```
 
 See [`samples/`](samples/) for more complete examples.
+
+![Web-based preview of rendered object](doc/images/Screenshot%202026-03-21%20at%2010-59-34%20rrcad%20preview.png)
 
 ## Stack
 
