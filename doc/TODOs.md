@@ -53,18 +53,11 @@ stay portable. See `tests/teapot_dsl.rs` (6 tests), `tests/phase3_selectors.rs` 
 
 ---
 
-## Phase 4 — OCCT Coverage (OpenSCAD / CadQuery parity) — in progress
+## Phase 4 — OCCT Coverage (OpenSCAD / CadQuery parity) — complete
 
 Goal: close the gap between our DSL and what OpenSCAD / CadQuery expose from OCCT.
 
-Completed: primitives `cone`, `torus`, `wedge`; 2D profiles `polygon`, `ellipse`, `arc`; import `import_step`, `import_stl`; query `.bounding_box`, `.volume`, `.surface_area`.
-
-### 3-D operations
-- [x] `loft([profile1, profile2, ...], ruled: false)` — `BRepOffsetAPI_ThruSections`; solves organic shapes (teapot body, blades, …)
-- [x] `.shell(thickness)` — hollow out a solid; `BRepOffsetAPI_MakeThickSolid::MakeThickSolidByJoin` (auto-removes topmost face as the opening)
-- [x] `.offset(distance)` — inflate / deflate a solid; `BRepOffsetAPI_MakeOffsetShape`
-- [x] `.extrude(h, twist_deg: 0, scale: 1.0)` — extended extrude with twist and end-scale; uses
-  `BRepOffsetAPI_ThruSections` discretised into N sections when twist/scale are nonzero
+All 3-D operations shipped. Completed: `loft`, `.shell`, `.offset`, `.extrude(twist/scale)`; primitives `cone`, `torus`, `wedge`; 2D profiles `polygon`, `ellipse`, `arc`; import `import_step`, `import_stl`; query `.bounding_box`, `.volume`, `.surface_area`.
 
 ### Transforms
 - [ ] `.scale(sx, sy, sz)` — non-uniform scale; `BRepBuilderAPI_GTransform` with `gp_GTrsf`
@@ -77,15 +70,6 @@ Completed: primitives `cone`, `torus`, `wedge`; 2D profiles `polygon`, `ellipse`
 ### Patterns
 - [ ] `linear_pattern(shape, n, [dx, dy, dz])` — repeat shape n times along a vector
 - [ ] `polar_pattern(shape, n, angle_deg)` — rotate n copies around the Z axis
-
-### Import
-- [x] `import_step("file.step")` — `STEPControl_Reader`
-- [x] `import_stl("file.stl")` — `RWStl::ReadFile` (returns `Handle(Poly_Triangulation)`)
-
-### Query / introspection
-- [x] `.bounding_box` — returns `{x:, y:, z:, dx:, dy:, dz:}`; `BRepBndLib::AddOptimal` + `Bnd_Box`
-- [x] `.volume` — mass properties; `BRepGProp::VolumeProperties` + `GProp_GProps`
-- [x] `.surface_area` — `BRepGProp::SurfaceProperties` + `GProp_GProps`
 
 ### Sub-shape selectors (extensions)
 - [ ] `vertices` selector on shapes (complement to existing `faces` / `edges`)

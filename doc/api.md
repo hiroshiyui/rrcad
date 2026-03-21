@@ -308,6 +308,9 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `arc(r, start_deg, end_deg)` | Circular arc wire in XY plane (counterclockwise) |
 | `spline_2d([[r,z], ...])` | Closed XZ-plane profile (for `revolve`) |
 | `spline_3d([[x,y,z], ...])` | 3D wire path (for `sweep`) |
+| `loft([profile1, profile2, ...])` | Loft through a sequence of circle/sketch profiles; `ruled: false` (default) gives smooth blending |
+| `import_step("file.step")` | Import a STEP file as a Shape |
+| `import_stl("file.stl")` | Import an STL file as a triangulated Shape |
 | `solid { ... }` | Block returning its last expression |
 | `assembly("name") { \|a\| a.place shape }` | Named assembly |
 | `preview(shape)` | Tessellate and push to live browser preview. No-op when not in `--preview` mode. |
@@ -326,10 +329,16 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `.fillet(r)` | Round all edges |
 | `.chamfer(d)` | Bevel all edges |
 | `.extrude(h)` | Extrude face/wire along Z |
+| `.extrude(h, twist_deg: 0, scale: 1.0)` | Extrude with optional twist (degrees) and end-scale; uses `ThruSections` when twist/scale are non-default |
 | `.revolve(deg=360)` | Revolve around Z axis |
 | `.sweep(path)` | Sweep profile along a `spline_3d` wire |
+| `.shell(thickness)` | Hollow out a solid by removing the topmost face and offsetting walls inward |
+| `.offset(distance)` | Inflate (positive) or deflate (negative) a solid uniformly |
 | `.faces(:top\|:bottom\|:side\|:all)` | Array of matching face sub-shapes |
 | `.edges(:vertical\|:horizontal\|:all)` | Array of matching edge sub-shapes (deduplicated) |
+| `.bounding_box` | Returns `{x:, y:, z:, dx:, dy:, dz:}` — origin corner and extents |
+| `.volume` | Volume of the solid (float) |
+| `.surface_area` | Total surface area (float) |
 | `.export("out.step")` | Write STEP file |
 
 ---
@@ -344,6 +353,15 @@ rrcad --preview <script.rb>      # live browser preview; re-evals on every save
 ```
 
 `--preview` starts an `axum` HTTP server on `http://localhost:3000`, opens the browser, watches the script with `notify`, and calls `preview(shape)` automatically on each re-eval. Ctrl-C to quit.
+
+**Preview server routes:**
+
+| Route | Description |
+|-------|-------------|
+| `GET /` | Three.js viewer HTML |
+| `GET /model.glb` | Current tessellated shape (binary glTF) |
+| `GET /logo.png` | rrcad logo (served from embedded bytes) |
+| `GET /ws` | WebSocket; server pushes `"reload"` when the model updates |
 
 **REPL commands:**
 
