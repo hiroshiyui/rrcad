@@ -85,6 +85,57 @@ pub unsafe extern "C" fn rrcad_make_sphere(
     }
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_make_cone(
+    r1: f64,
+    r2: f64,
+    h: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    match Shape::make_cone(r1, r2, h) {
+        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_make_torus(
+    r1: f64,
+    r2: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    match Shape::make_torus(r1, r2) {
+        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_make_wedge(
+    dx: f64,
+    dy: f64,
+    dz: f64,
+    ltx: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    match Shape::make_wedge(dx, dy, dz, ltx) {
+        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Destructor (called from mRuby dfree)
 // ---------------------------------------------------------------------------

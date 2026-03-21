@@ -40,6 +40,9 @@ inline std::unique_ptr<OcctShape> wrap(TopoDS_Shape s) {
 std::unique_ptr<OcctShape> make_box(double dx, double dy, double dz);
 std::unique_ptr<OcctShape> make_cylinder(double radius, double height);
 std::unique_ptr<OcctShape> make_sphere(double radius);
+std::unique_ptr<OcctShape> make_cone(double r1, double r2, double height);
+std::unique_ptr<OcctShape> make_torus(double r1, double r2);
+std::unique_ptr<OcctShape> make_wedge(double dx, double dy, double dz, double ltx);
 
 // --- Boolean operations ---
 std::unique_ptr<OcctShape> shape_fuse(const OcctShape& a, const OcctShape& b);

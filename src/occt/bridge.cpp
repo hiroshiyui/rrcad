@@ -15,8 +15,11 @@
 
 // --- OCCT: primitives ---
 #include <BRepPrimAPI_MakeBox.hxx>
+#include <BRepPrimAPI_MakeCone.hxx>
 #include <BRepPrimAPI_MakeCylinder.hxx>
 #include <BRepPrimAPI_MakeSphere.hxx>
+#include <BRepPrimAPI_MakeTorus.hxx>
+#include <BRepPrimAPI_MakeWedge.hxx>
 
 // --- OCCT: boolean ops ---
 #include <BRepAlgoAPI_Common.hxx>
@@ -110,6 +113,30 @@ std::unique_ptr<OcctShape> make_sphere(double radius) {
     builder.Build();
     if (!builder.IsDone())
         throw std::runtime_error("BRepPrimAPI_MakeSphere failed");
+    return wrap(builder.Shape());
+}
+
+std::unique_ptr<OcctShape> make_cone(double r1, double r2, double height) {
+    BRepPrimAPI_MakeCone builder(r1, r2, height);
+    builder.Build();
+    if (!builder.IsDone())
+        throw std::runtime_error("BRepPrimAPI_MakeCone failed");
+    return wrap(builder.Shape());
+}
+
+std::unique_ptr<OcctShape> make_torus(double r1, double r2) {
+    BRepPrimAPI_MakeTorus builder(r1, r2);
+    builder.Build();
+    if (!builder.IsDone())
+        throw std::runtime_error("BRepPrimAPI_MakeTorus failed");
+    return wrap(builder.Shape());
+}
+
+std::unique_ptr<OcctShape> make_wedge(double dx, double dy, double dz, double ltx) {
+    BRepPrimAPI_MakeWedge builder(dx, dy, dz, ltx);
+    builder.Build();
+    if (!builder.IsDone())
+        throw std::runtime_error("BRepPrimAPI_MakeWedge failed");
     return wrap(builder.Shape());
 }
 

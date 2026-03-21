@@ -58,9 +58,9 @@ stay portable. See `tests/teapot_dsl.rs` (7 tests), `tests/phase3_selectors.rs` 
 Goal: close the gap between our DSL and what OpenSCAD / CadQuery expose from OCCT.
 
 ### Primitives
-- [ ] `cone(r1, r2, h)` — `BRepPrimAPI_MakeCone`
-- [ ] `torus(r1, r2)` — `BRepPrimAPI_MakeTorus`
-- [ ] `wedge(dx, dy, dz, ltx)` — `BRepPrimAPI_MakeWedge`
+- [x] `cone(r1, r2, h)` — `BRepPrimAPI_MakeCone`
+- [x] `torus(r1, r2)` — `BRepPrimAPI_MakeTorus`
+- [x] `wedge(dx, dy, dz, ltx)` — `BRepPrimAPI_MakeWedge`
 
 ### Sketch / 2-D profiles
 - [ ] `polygon([[x,y], ...])` — arbitrary closed polygon face (`BRepBuilderAPI_MakePolygon` + `BRepBuilderAPI_MakeFace`)

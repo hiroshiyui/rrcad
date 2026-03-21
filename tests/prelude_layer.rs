@@ -108,6 +108,24 @@ fn native_sphere_returns_shape() {
 }
 
 #[test]
+fn native_cone_returns_shape() {
+    let mut vm = MrubyVm::new();
+    assert_contains(&mut vm, "cone(3.0, 1.0, 10.0).class", "Shape");
+}
+
+#[test]
+fn native_torus_returns_shape() {
+    let mut vm = MrubyVm::new();
+    assert_contains(&mut vm, "torus(5.0, 1.5).class", "Shape");
+}
+
+#[test]
+fn native_wedge_returns_shape() {
+    let mut vm = MrubyVm::new();
+    assert_contains(&mut vm, "wedge(10.0, 8.0, 6.0, 4.0).class", "Shape");
+}
+
+#[test]
 fn native_shape_inspect_returns_shape_string() {
     let mut vm = MrubyVm::new();
     assert_contains(&mut vm, "box(1.0, 2.0, 3.0).inspect", "#<Shape>");

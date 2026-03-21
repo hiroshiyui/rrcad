@@ -9,6 +9,9 @@ mod ffi {
         fn make_box(dx: f64, dy: f64, dz: f64) -> Result<UniquePtr<OcctShape>>;
         fn make_cylinder(radius: f64, height: f64) -> Result<UniquePtr<OcctShape>>;
         fn make_sphere(radius: f64) -> Result<UniquePtr<OcctShape>>;
+        fn make_cone(r1: f64, r2: f64, height: f64) -> Result<UniquePtr<OcctShape>>;
+        fn make_torus(r1: f64, r2: f64) -> Result<UniquePtr<OcctShape>>;
+        fn make_wedge(dx: f64, dy: f64, dz: f64, ltx: f64) -> Result<UniquePtr<OcctShape>>;
 
         // --- Boolean operations ---
         fn shape_fuse(a: &OcctShape, b: &OcctShape) -> Result<UniquePtr<OcctShape>>;
@@ -94,6 +97,24 @@ impl Shape {
 
     pub fn make_sphere(radius: f64) -> Result<Self, String> {
         ffi::make_sphere(radius)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn make_cone(r1: f64, r2: f64, height: f64) -> Result<Self, String> {
+        ffi::make_cone(r1, r2, height)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn make_torus(r1: f64, r2: f64) -> Result<Self, String> {
+        ffi::make_torus(r1, r2)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn make_wedge(dx: f64, dy: f64, dz: f64, ltx: f64) -> Result<Self, String> {
+        ffi::make_wedge(dx, dy, dz, ltx)
             .map(|p| Shape { inner: p })
             .map_err(|e| e.to_string())
     }

@@ -61,6 +61,9 @@ const char* rrcad_mrb_eval(mrb_state* mrb, const char* code, const char** error_
 extern void* rrcad_make_box(double dx, double dy, double dz, const char** error_out);
 extern void* rrcad_make_cylinder(double r, double h, const char** error_out);
 extern void* rrcad_make_sphere(double r, const char** error_out);
+extern void* rrcad_make_cone(double r1, double r2, double h, const char** error_out);
+extern void* rrcad_make_torus(double r1, double r2, const char** error_out);
+extern void* rrcad_make_wedge(double dx, double dy, double dz, double ltx, const char** error_out);
 extern void rrcad_shape_drop(void* ptr);
 extern void rrcad_shape_export_step(void* ptr, const char* path, const char** error_out);
 extern void* rrcad_shape_fuse(void* a, void* b, const char** error_out);
@@ -172,6 +175,42 @@ static mrb_value mrb_rrcad_sphere(mrb_state* mrb, mrb_value self) {
 
     const char* err = NULL;
     void* ptr = rrcad_make_sphere((double)r, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, ptr);
+}
+
+static mrb_value mrb_rrcad_cone(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_float r1, r2, h;
+    mrb_get_args(mrb, "fff", &r1, &r2, &h);
+
+    const char* err = NULL;
+    void* ptr = rrcad_make_cone((double)r1, (double)r2, (double)h, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, ptr);
+}
+
+static mrb_value mrb_rrcad_torus(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_float r1, r2;
+    mrb_get_args(mrb, "ff", &r1, &r2);
+
+    const char* err = NULL;
+    void* ptr = rrcad_make_torus((double)r1, (double)r2, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, ptr);
+}
+
+static mrb_value mrb_rrcad_wedge(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_float dx, dy, dz, ltx;
+    mrb_get_args(mrb, "ffff", &dx, &dy, &dz, &ltx);
+
+    const char* err = NULL;
+    void* ptr = rrcad_make_wedge((double)dx, (double)dy, (double)dz, (double)ltx, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, ptr);
@@ -587,6 +626,9 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     mrb_define_method(mrb, mrb->kernel_module, "box", mrb_rrcad_box, MRB_ARGS_REQ(3));
     mrb_define_method(mrb, mrb->kernel_module, "cylinder", mrb_rrcad_cylinder, MRB_ARGS_REQ(2));
     mrb_define_method(mrb, mrb->kernel_module, "sphere", mrb_rrcad_sphere, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, mrb->kernel_module, "cone", mrb_rrcad_cone, MRB_ARGS_REQ(3));
+    mrb_define_method(mrb, mrb->kernel_module, "torus", mrb_rrcad_torus, MRB_ARGS_REQ(2));
+    mrb_define_method(mrb, mrb->kernel_module, "wedge", mrb_rrcad_wedge, MRB_ARGS_REQ(4));
 
     /* Phase 2: Sketch constructors */
     mrb_define_method(mrb, mrb->kernel_module, "rect", mrb_rrcad_rect, MRB_ARGS_REQ(2));
