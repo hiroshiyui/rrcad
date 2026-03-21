@@ -79,12 +79,15 @@ let part  = base.cut(&hole)?;
 
 ### Fillets and Chamfers
 
-Both operations apply to **all edges** of the shape.
+Both operations apply to **all edges** by default, or only to edges matching a
+selector string.
 
 | Method | Description |
 |--------|-------------|
 | `.fillet(radius) -> Result<Shape>` | Round every edge to the given radius |
+| `.fillet_sel(radius, selector: &str) -> Result<Shape>` | Round only edges matching the selector (`"all"`, `"vertical"`, `"horizontal"`) |
 | `.chamfer(dist) -> Result<Shape>` | Bevel every edge by the given distance |
+| `.chamfer_sel(dist, selector: &str) -> Result<Shape>` | Bevel only edges matching the selector |
 
 ```rust
 let rounded = part.fillet(2.0)?;
@@ -104,6 +107,7 @@ All transforms are immutable — each returns a new `Shape`.
 | `.translate(dx, dy, dz) -> Result<Shape>` | Move by the given vector |
 | `.rotate(ax, ay, az, angle_deg) -> Result<Shape>` | Rotate around axis `(ax,ay,az)` by `angle_deg` degrees |
 | `.scale(factor) -> Result<Shape>` | Uniform scale about the origin |
+| `.scale_xyz(sx, sy, sz) -> Result<Shape>` | Non-uniform scale — independent factor per axis; uses `gp_GTrsf` |
 | `.mirror(plane: &str) -> Result<Shape>` | Mirror about a coordinate plane. `plane` is `"xy"`, `"xz"`, or `"yz"` |
 
 ```rust
@@ -153,6 +157,29 @@ let spout   = Shape::make_circle_face(0.7)?.sweep(&path)?;
 ```rust
 let top_faces = part.faces("top")?;
 let vert_edges = part.edges("vertical")?;
+```
+
+---
+
+### Patterns
+
+Both functions return a `TopoDS_Compound` containing `n` copies. Copy `i=0`
+is the original (un-translated / un-rotated) position. The compound can be
+used directly in boolean operations or exported as-is.
+
+| Method | Description |
+|--------|-------------|
+| `.linear_pattern(n, dx, dy, dz) -> Result<Shape>` | Copy `i` is translated by `i * (dx, dy, dz)`. `n` must be ≥ 1. |
+| `.polar_pattern(n, angle_deg) -> Result<Shape>` | Copy `i` is rotated around the Z axis by `i * (angle_deg / n)` degrees. Use `angle_deg = 360` for evenly-spaced full-circle copies. `n` must be ≥ 1. |
+
+```rust
+// 5 bolts spaced 20 mm apart along X
+let bolt = Shape::make_cylinder(2.0, 10.0)?;
+let row  = bolt.linear_pattern(5, 20.0, 0.0, 0.0)?;
+
+// 6 holes equally spaced around a 30 mm bolt circle
+let hole    = Shape::make_cylinder(3.0, 15.0)?.translate(30.0, 0.0, 0.0)?;
+let pattern = hole.polar_pattern(6, 360.0)?;
 ```
 
 ---
@@ -227,8 +254,10 @@ fn shape_cut   (a: &OcctShape, b: &OcctShape)         -> Result<UniquePtr<OcctSh
 fn shape_common(a: &OcctShape, b: &OcctShape)         -> Result<UniquePtr<OcctShape>>;
 
 // Fillets / chamfers
-fn shape_fillet (shape: &OcctShape, radius: f64)      -> Result<UniquePtr<OcctShape>>;
-fn shape_chamfer(shape: &OcctShape, dist: f64)        -> Result<UniquePtr<OcctShape>>;
+fn shape_fillet    (shape: &OcctShape, radius: f64)              -> Result<UniquePtr<OcctShape>>;
+fn shape_chamfer   (shape: &OcctShape, dist: f64)                -> Result<UniquePtr<OcctShape>>;
+fn shape_fillet_sel(shape: &OcctShape, radius: f64, sel: &str)   -> Result<UniquePtr<OcctShape>>;
+fn shape_chamfer_sel(shape: &OcctShape, dist: f64, sel: &str)    -> Result<UniquePtr<OcctShape>>;
 
 // Transforms
 fn shape_translate(shape: &OcctShape,
@@ -236,7 +265,9 @@ fn shape_translate(shape: &OcctShape,
 fn shape_rotate(shape: &OcctShape,
                 axis_x: f64, axis_y: f64, axis_z: f64,
                 angle_deg: f64)                        -> Result<UniquePtr<OcctShape>>;
-fn shape_scale(shape: &OcctShape, factor: f64)        -> Result<UniquePtr<OcctShape>>;
+fn shape_scale    (shape: &OcctShape, factor: f64)    -> Result<UniquePtr<OcctShape>>;
+fn shape_scale_xyz(shape: &OcctShape,
+                   sx: f64, sy: f64, sz: f64)         -> Result<UniquePtr<OcctShape>>;
 fn shape_mirror(shape: &OcctShape, plane: &str)       -> Result<UniquePtr<OcctShape>>;
 
 // Sketch operations
@@ -249,6 +280,12 @@ fn shape_faces_count(shape: &OcctShape, selector: &str)              -> Result<i
 fn shape_faces_get(shape: &OcctShape, selector: &str, idx: i32)      -> Result<UniquePtr<OcctShape>>;
 fn shape_edges_count(shape: &OcctShape, selector: &str)              -> Result<i32>;
 fn shape_edges_get(shape: &OcctShape, selector: &str, idx: i32)      -> Result<UniquePtr<OcctShape>>;
+
+// Patterns
+fn shape_linear_pattern(shape: &OcctShape, n: i32,
+                         dx: f64, dy: f64, dz: f64)   -> Result<UniquePtr<OcctShape>>;
+fn shape_polar_pattern (shape: &OcctShape, n: i32,
+                         angle_deg: f64)               -> Result<UniquePtr<OcctShape>>;
 
 // Export
 fn export_step(shape: &OcctShape, path: &str)                         -> Result<()>;
@@ -311,6 +348,8 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `loft([profile1, profile2, ...])` | Loft through a sequence of circle/sketch profiles; `ruled: false` (default) gives smooth blending |
 | `import_step("file.step")` | Import a STEP file as a Shape |
 | `import_stl("file.stl")` | Import an STL file as a triangulated Shape |
+| `linear_pattern(shape, n, [dx, dy, dz])` | `n` copies of `shape` translated along vector; copy `i` at `i*[dx,dy,dz]`. Returns a Compound. |
+| `polar_pattern(shape, n, angle_deg)` | `n` copies of `shape` rotated around Z; copy `i` at `i*(angle_deg/n)` degrees. Returns a Compound. |
 | `solid { ... }` | Block returning its last expression |
 | `assembly("name") { \|a\| a.place shape }` | Named assembly |
 | `preview(shape)` | Tessellate and push to live browser preview. No-op when not in `--preview` mode. |

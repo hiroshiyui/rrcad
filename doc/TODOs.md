@@ -67,8 +67,8 @@ All 3-D operations shipped. Completed: `loft`, `.shell`, `.offset`, `.extrude(tw
 - [x] `.chamfer(d, selector)` — same for chamfers
 
 ### Patterns
-- [ ] `linear_pattern(shape, n, [dx, dy, dz])` — repeat shape n times along a vector
-- [ ] `polar_pattern(shape, n, angle_deg)` — rotate n copies around the Z axis
+- [x] `linear_pattern(shape, n, [dx, dy, dz])` — repeat shape n times along a vector
+- [x] `polar_pattern(shape, n, angle_deg)` — rotate n copies around the Z axis
 
 ### Sub-shape selectors (extensions)
 - [ ] `vertices` selector on shapes (complement to existing `faces` / `edges`)

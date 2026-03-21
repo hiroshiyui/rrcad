@@ -49,6 +49,10 @@ Boolean operations           (return a new Shape)
 Export
   shape.export(\"out.step\")  write STEP file
 
+Patterns
+  linear_pattern(s,n,[dx,dy,dz]) n copies translated along vector
+  polar_pattern(s, n, angle_deg) n copies rotated around Z axis
+
 Builders
   solid do ... end          block returning last shape
   assembly(\"name\") do |a|
@@ -76,7 +80,9 @@ const TOP_LEVEL: &[&str] = &[
     "spline_3d", // DSL builders
     "solid",
     "assembly",
-    "preview", // REPL control
+    "preview",
+    "linear_pattern",
+    "polar_pattern", // REPL control
     "help",
     "exit",
     "quit", // Ruby keywords
