@@ -29,7 +29,8 @@ Sketch faces (2D, for extrude/revolve)
 Transforms                   (return a new Shape)
   s.translate(x, y, z)      move
   s.rotate(ax, ay, az, deg) rotate around axis by degrees
-  s.scale(factor)           uniform scale
+  s.scale(factor)           uniform scale (all axes)
+  s.scale(sx, sy, sz)       non-uniform scale
   s.mirror(:xy|:xz|:yz)     mirror about a plane
 
 Modifiers

@@ -37,6 +37,12 @@ mod ffi {
             angle_deg: f64,
         ) -> Result<UniquePtr<OcctShape>>;
         fn shape_scale(shape: &OcctShape, factor: f64) -> Result<UniquePtr<OcctShape>>;
+        fn shape_scale_xyz(
+            shape: &OcctShape,
+            sx: f64,
+            sy: f64,
+            sz: f64,
+        ) -> Result<UniquePtr<OcctShape>>;
 
         fn shape_mirror(shape: &OcctShape, plane: &str) -> Result<UniquePtr<OcctShape>>;
 
@@ -202,6 +208,13 @@ impl Shape {
 
     pub fn scale(&self, factor: f64) -> Result<Shape, String> {
         ffi::shape_scale(&self.inner, factor)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Non-uniform scale with independent factors for each axis.
+    pub fn scale_xyz(&self, sx: f64, sy: f64, sz: f64) -> Result<Shape, String> {
+        ffi::shape_scale_xyz(&self.inner, sx, sy, sz)
             .map(|p| Shape { inner: p })
             .map_err(|e| e.to_string())
     }
@@ -425,5 +438,18 @@ mod tests {
         let out = std::env::temp_dir().join("rrcad_smoke_cut.step");
         result.export_step(out.to_str().unwrap()).unwrap();
         assert!(out.exists());
+    }
+
+    #[test]
+    fn scale_xyz_stretches_bounding_box() {
+        // box(1,1,1) scaled by (2,3,4) should produce extents (2,3,4).
+        let unit = Shape::make_box(1.0, 1.0, 1.0).unwrap();
+        let scaled = unit.scale_xyz(2.0, 3.0, 4.0).expect("scale_xyz failed");
+        let bb = scaled.bounding_box().expect("bounding_box failed");
+        // bb = [xmin, ymin, zmin, xmax, ymax, zmax]
+        let (dx, dy, dz) = (bb[3] - bb[0], bb[4] - bb[1], bb[5] - bb[2]);
+        assert!((dx - 2.0).abs() < 1e-6, "expected dx=2, got {dx}");
+        assert!((dy - 3.0).abs() < 1e-6, "expected dy=3, got {dy}");
+        assert!((dz - 4.0).abs() < 1e-6, "expected dz=4, got {dz}");
     }
 }

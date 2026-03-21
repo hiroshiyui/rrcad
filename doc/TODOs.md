@@ -60,8 +60,7 @@ Goal: close the gap between our DSL and what OpenSCAD / CadQuery expose from OCC
 All 3-D operations shipped. Completed: `loft`, `.shell`, `.offset`, `.extrude(twist/scale)`; primitives `cone`, `torus`, `wedge`; 2D profiles `polygon`, `ellipse`, `arc`; import `import_step`, `import_stl`; query `.bounding_box`, `.volume`, `.surface_area`.
 
 ### Transforms
-- [ ] `.scale(sx, sy, sz)` — non-uniform scale; `BRepBuilderAPI_GTransform` with `gp_GTrsf`
-  (current `shape_scale` uses `gp_Trsf::SetScaleFactor` which is uniform-only)
+- [x] `.scale(sx, sy, sz)` — non-uniform scale; `BRepBuilderAPI_GTransform` with `gp_GTrsf`
 
 ### Selective modifiers
 - [ ] `.fillet(r, selector)` — fillet only edges matching a selector string (reuse existing edge-selector machinery)

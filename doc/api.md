@@ -324,7 +324,8 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `.common(other)` | Intersection |
 | `.translate(x, y, z)` | Move |
 | `.rotate(ax, ay, az, deg)` | Rotate around axis by degrees |
-| `.scale(factor)` | Uniform scale |
+| `.scale(factor)` | Uniform scale (all axes) |
+| `.scale(sx, sy, sz)` | Non-uniform scale — independent factor per axis |
 | `.mirror(:xy\|:xz\|:yz)` | Mirror about a coordinate plane |
 | `.fillet(r)` | Round all edges |
 | `.chamfer(d)` | Bevel all edges |

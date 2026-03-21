@@ -273,6 +273,19 @@ pub unsafe extern "C" fn rrcad_shape_scale(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_scale_xyz(
+    ptr: *mut c_void,
+    sx: f64,
+    sy: f64,
+    sz: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    unsafe { shape_result_to_ptr(shape.scale_xyz(sx, sy, sz), error_out) }
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn rrcad_shape_fillet(
     ptr: *mut c_void,
     radius: f64,

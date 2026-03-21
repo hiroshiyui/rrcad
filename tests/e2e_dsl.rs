@@ -195,6 +195,49 @@ fn e2e_import_step_roundtrip() {
     assert!(result.contains("Shape"), "expected Shape, got: {result}");
 }
 
+// ---------------------------------------------------------------------------
+// scale — uniform and non-uniform
+// ---------------------------------------------------------------------------
+
+#[test]
+fn e2e_scale_uniform() {
+    // scale(2) doubles all extents: box(5,5,5).scale(2) → extents 10×10×10
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("box(5.0, 5.0, 5.0).scale(2.0).bounding_box")
+        .expect("scale uniform failed");
+    // bounding_box returns {x:, y:, z:, dx:, dy:, dz:}; check dx (extent X) is 10
+    assert!(
+        result.contains("dx: 10"),
+        "unexpected bounding_box: {result}"
+    );
+}
+
+#[test]
+fn e2e_scale_nonuniform() {
+    // scale(sx, sy, sz) stretches each axis independently.
+    // box(1,1,1).scale(2, 3, 4) → extents 2×3×4
+    let mut vm = MrubyVm::new();
+    let bb = vm
+        .eval("box(1.0, 1.0, 1.0).scale(2.0, 3.0, 4.0).bounding_box")
+        .expect("scale non-uniform failed");
+    assert!(bb.contains("dx: 2"), "expected dx: 2, got: {bb}");
+    assert!(bb.contains("dy: 3"), "expected dy: 3, got: {bb}");
+    assert!(bb.contains("dz: 4"), "expected dz: 4, got: {bb}");
+}
+
+#[test]
+fn e2e_scale_nonuniform_export_step() {
+    // Verify that a non-uniformly scaled shape produces a valid STEP file.
+    let out = tmp("rrcad_e2e_scale_xyz.step");
+    let mut vm = MrubyVm::new();
+    vm.eval(&format!(
+        "box(10.0, 10.0, 10.0).scale(1.5, 2.0, 0.5).export('{}')",
+        out.display()
+    ))
+    .expect("scale_xyz export failed");
+    assert_valid_step(&out);
+}
 #[test]
 fn e2e_import_stl_roundtrip() {
     // Write a sphere to STL via the Rust API, then import it through the DSL.

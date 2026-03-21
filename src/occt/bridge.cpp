@@ -31,7 +31,10 @@
 #include <BRepFilletAPI_MakeFillet.hxx>
 
 // --- OCCT: transforms ---
+#include <BRepBuilderAPI_GTransform.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <gp_GTrsf.hxx>
+#include <gp_Mat.hxx>
 
 // --- OCCT: Phase 2 ---
 #include <BRepBuilderAPI_MakeEdge.hxx>
@@ -263,6 +266,24 @@ std::unique_ptr<OcctShape> shape_scale(const OcctShape& s, double factor) {
     xform.Build();
     if (!xform.IsDone())
         throw std::runtime_error("BRepBuilderAPI_Transform (scale) failed");
+    return wrap(xform.Shape());
+}
+
+// Non-uniform scale — independent factors for X, Y, Z.
+//
+// gp_Trsf only supports uniform scale (single scalar), so we use gp_GTrsf
+// (general affine transform) with a diagonal 3x3 matrix.
+// BRepBuilderAPI_GTransform may approximate curved edges; the result is still
+// topologically valid and suitable for all downstream operations.
+std::unique_ptr<OcctShape> shape_scale_xyz(const OcctShape& s, double sx, double sy, double sz) {
+    // Build a diagonal 3×3 matrix: diag(sx, sy, sz).
+    // gp_Mat(row0col0, row0col1, row0col2, row1col0, ...)
+    gp_GTrsf gtrsf;
+    gtrsf.SetVectorialPart(gp_Mat(sx, 0.0, 0.0, 0.0, sy, 0.0, 0.0, 0.0, sz));
+    // Translation part stays zero (SetTranslationPart not called).
+    BRepBuilderAPI_GTransform xform(s.get(), gtrsf, /*copy=*/Standard_True);
+    if (!xform.IsDone())
+        throw std::runtime_error("BRepBuilderAPI_GTransform (scale_xyz) failed");
     return wrap(xform.Shape());
 }
 

@@ -63,6 +63,9 @@ std::unique_ptr<OcctShape> shape_translate(const OcctShape& shape, double dx, do
 std::unique_ptr<OcctShape> shape_rotate(const OcctShape& shape, double axis_x, double axis_y,
                                         double axis_z, double angle_deg);
 std::unique_ptr<OcctShape> shape_scale(const OcctShape& shape, double factor);
+// Non-uniform scale: independent factors along each axis.
+// Uses BRepBuilderAPI_GTransform + gp_GTrsf (general affine).
+std::unique_ptr<OcctShape> shape_scale_xyz(const OcctShape& shape, double sx, double sy, double sz);
 
 // --- Phase 2: mirror ---
 std::unique_ptr<OcctShape> shape_mirror(const OcctShape& shape, rust::Str plane);
