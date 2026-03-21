@@ -176,6 +176,8 @@ Newell silhouette without BSpline oscillation.
   <https://users.cs.utah.edu/~dejohnso/models/teapot.html>
 - **Bezier patches** (raw vertex + patch index file):
   <https://users.cs.utah.edu/~dejohnso/models/teapot_bezier>
+- Utah Graphics Lab: The Utah Teapot
+  <https://graphics.cs.utah.edu/teapot/>
 
 ### Coordinate system (Newell)
 
