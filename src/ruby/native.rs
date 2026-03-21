@@ -33,6 +33,25 @@ unsafe fn set_err(error_out: *mut *const c_char, msg: &str) {
     });
 }
 
+/// Convert a `Result<Shape, String>` into a raw pointer for the C FFI return value.
+///
+/// On success: boxes the shape and returns the raw pointer.
+/// On error: writes the error message into `*error_out` and returns null.
+///
+/// Callers must clear `*error_out` (set it to null) before calling this.
+unsafe fn shape_result_to_ptr(
+    result: Result<Shape, String>,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    match result {
+        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Constructors
 // ---------------------------------------------------------------------------
@@ -45,13 +64,7 @@ pub unsafe extern "C" fn rrcad_make_box(
     error_out: *mut *const c_char,
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
-    match Shape::make_box(dx, dy, dz) {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(Shape::make_box(dx, dy, dz), error_out) }
 }
 
 #[unsafe(no_mangle)]
@@ -61,13 +74,7 @@ pub unsafe extern "C" fn rrcad_make_cylinder(
     error_out: *mut *const c_char,
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
-    match Shape::make_cylinder(r, h) {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(Shape::make_cylinder(r, h), error_out) }
 }
 
 #[unsafe(no_mangle)]
@@ -76,13 +83,7 @@ pub unsafe extern "C" fn rrcad_make_sphere(
     error_out: *mut *const c_char,
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
-    match Shape::make_sphere(r) {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(Shape::make_sphere(r), error_out) }
 }
 
 #[unsafe(no_mangle)]
@@ -93,13 +94,7 @@ pub unsafe extern "C" fn rrcad_make_cone(
     error_out: *mut *const c_char,
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
-    match Shape::make_cone(r1, r2, h) {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(Shape::make_cone(r1, r2, h), error_out) }
 }
 
 #[unsafe(no_mangle)]
@@ -109,13 +104,7 @@ pub unsafe extern "C" fn rrcad_make_torus(
     error_out: *mut *const c_char,
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
-    match Shape::make_torus(r1, r2) {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(Shape::make_torus(r1, r2), error_out) }
 }
 
 #[unsafe(no_mangle)]
@@ -127,13 +116,7 @@ pub unsafe extern "C" fn rrcad_make_wedge(
     error_out: *mut *const c_char,
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
-    match Shape::make_wedge(dx, dy, dz, ltx) {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(Shape::make_wedge(dx, dy, dz, ltx), error_out) }
 }
 
 // ---------------------------------------------------------------------------
@@ -164,13 +147,7 @@ pub unsafe extern "C" fn rrcad_import_step(
             return std::ptr::null_mut();
         }
     };
-    match Shape::import_step(path_str) {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(Shape::import_step(path_str), error_out) }
 }
 
 #[unsafe(no_mangle)]
@@ -186,13 +163,7 @@ pub unsafe extern "C" fn rrcad_import_stl(
             return std::ptr::null_mut();
         }
     };
-    match Shape::import_stl(path_str) {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(Shape::import_stl(path_str), error_out) }
 }
 
 // ---------------------------------------------------------------------------
@@ -232,13 +203,7 @@ pub unsafe extern "C" fn rrcad_shape_fuse(
     unsafe { *error_out = std::ptr::null() };
     let sa = unsafe { &*(a as *const Shape) };
     let sb = unsafe { &*(b as *const Shape) };
-    match sa.fuse(sb) {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(sa.fuse(sb), error_out) }
 }
 
 #[unsafe(no_mangle)]
@@ -250,13 +215,7 @@ pub unsafe extern "C" fn rrcad_shape_cut(
     unsafe { *error_out = std::ptr::null() };
     let sa = unsafe { &*(a as *const Shape) };
     let sb = unsafe { &*(b as *const Shape) };
-    match sa.cut(sb) {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(sa.cut(sb), error_out) }
 }
 
 #[unsafe(no_mangle)]
@@ -268,13 +227,7 @@ pub unsafe extern "C" fn rrcad_shape_common(
     unsafe { *error_out = std::ptr::null() };
     let sa = unsafe { &*(a as *const Shape) };
     let sb = unsafe { &*(b as *const Shape) };
-    match sa.common(sb) {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(sa.common(sb), error_out) }
 }
 
 // ---------------------------------------------------------------------------
@@ -291,13 +244,7 @@ pub unsafe extern "C" fn rrcad_shape_translate(
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    match shape.translate(dx, dy, dz) {
-        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(shape.translate(dx, dy, dz), error_out) }
 }
 
 #[unsafe(no_mangle)]
@@ -311,13 +258,7 @@ pub unsafe extern "C" fn rrcad_shape_rotate(
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    match shape.rotate(ax, ay, az, angle_deg) {
-        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(shape.rotate(ax, ay, az, angle_deg), error_out) }
 }
 
 #[unsafe(no_mangle)]
@@ -328,13 +269,7 @@ pub unsafe extern "C" fn rrcad_shape_scale(
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    match shape.scale(factor) {
-        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(shape.scale(factor), error_out) }
 }
 
 #[unsafe(no_mangle)]
@@ -345,13 +280,7 @@ pub unsafe extern "C" fn rrcad_shape_fillet(
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    match shape.fillet(radius) {
-        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(shape.fillet(radius), error_out) }
 }
 
 #[unsafe(no_mangle)]
@@ -362,13 +291,7 @@ pub unsafe extern "C" fn rrcad_shape_chamfer(
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    match shape.chamfer(dist) {
-        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(shape.chamfer(dist), error_out) }
 }
 
 // ---------------------------------------------------------------------------
@@ -390,13 +313,7 @@ pub unsafe extern "C" fn rrcad_shape_mirror(
             return std::ptr::null_mut();
         }
     };
-    match shape.mirror(plane_str) {
-        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(shape.mirror(plane_str), error_out) }
 }
 
 // ---------------------------------------------------------------------------
@@ -410,13 +327,7 @@ pub unsafe extern "C" fn rrcad_make_rect(
     error_out: *mut *const c_char,
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
-    match Shape::make_rect(w, h) {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(Shape::make_rect(w, h), error_out) }
 }
 
 #[unsafe(no_mangle)]
@@ -425,13 +336,7 @@ pub unsafe extern "C" fn rrcad_make_circle_face(
     error_out: *mut *const c_char,
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
-    match Shape::make_circle_face(r) {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(Shape::make_circle_face(r), error_out) }
 }
 
 #[unsafe(no_mangle)]
@@ -442,13 +347,7 @@ pub unsafe extern "C" fn rrcad_make_polygon(
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
     let slice = unsafe { std::slice::from_raw_parts(pts, n_pts * 2) };
-    match Shape::make_polygon(slice) {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(Shape::make_polygon(slice), error_out) }
 }
 
 #[unsafe(no_mangle)]
@@ -458,13 +357,7 @@ pub unsafe extern "C" fn rrcad_make_ellipse_face(
     error_out: *mut *const c_char,
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
-    match Shape::make_ellipse_face(rx, ry) {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(Shape::make_ellipse_face(rx, ry), error_out) }
 }
 
 #[unsafe(no_mangle)]
@@ -475,13 +368,7 @@ pub unsafe extern "C" fn rrcad_make_arc(
     error_out: *mut *const c_char,
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
-    match Shape::make_arc(r, start_deg, end_deg) {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(Shape::make_arc(r, start_deg, end_deg), error_out) }
 }
 
 // ---------------------------------------------------------------------------
@@ -496,13 +383,7 @@ pub unsafe extern "C" fn rrcad_shape_extrude(
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    match shape.extrude(height) {
-        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(shape.extrude(height), error_out) }
 }
 
 #[unsafe(no_mangle)]
@@ -513,13 +394,7 @@ pub unsafe extern "C" fn rrcad_shape_revolve(
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    match shape.revolve(angle_deg) {
-        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(shape.revolve(angle_deg), error_out) }
 }
 
 // ---------------------------------------------------------------------------
@@ -534,13 +409,7 @@ pub unsafe extern "C" fn rrcad_make_spline_2d(
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
     let slice = unsafe { std::slice::from_raw_parts(pts, n_pts * 2) };
-    match Shape::make_spline_2d(slice) {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(Shape::make_spline_2d(slice), error_out) }
 }
 
 #[unsafe(no_mangle)]
@@ -551,13 +420,7 @@ pub unsafe extern "C" fn rrcad_make_spline_3d(
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
     let slice = unsafe { std::slice::from_raw_parts(pts, n_pts * 3) };
-    match Shape::make_spline_3d(slice) {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(Shape::make_spline_3d(slice), error_out) }
 }
 
 // ---------------------------------------------------------------------------
@@ -769,13 +632,7 @@ pub unsafe extern "C" fn rrcad_shape_sweep(
     unsafe { *error_out = std::ptr::null() };
     let sp = unsafe { &*(profile as *const Shape) };
     let pa = unsafe { &*(path as *const Shape) };
-    match sp.sweep(pa) {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(sp.sweep(pa), error_out) }
 }
 
 // ---------------------------------------------------------------------------
@@ -796,14 +653,7 @@ pub unsafe extern "C" fn rrcad_shape_loft(
     let profiles: Vec<&Shape> = (0..n)
         .map(|i| unsafe { &*(*ptrs.add(i) as *const Shape) })
         .collect();
-    let profile_refs: Vec<&Shape> = profiles.iter().copied().collect();
-    match Shape::loft(&profile_refs, ruled != 0) {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(Shape::loft(&profiles, ruled != 0), error_out) }
 }
 
 /// Hollow out a solid, removing the topmost face and creating walls of
@@ -816,13 +666,7 @@ pub unsafe extern "C" fn rrcad_shape_shell(
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    match shape.shell(thickness) {
-        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(shape.shell(thickness), error_out) }
 }
 
 /// Inflate (distance>0) or deflate (distance<0) a solid uniformly.
@@ -834,13 +678,7 @@ pub unsafe extern "C" fn rrcad_shape_offset(
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    match shape.offset(distance) {
-        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(shape.offset(distance), error_out) }
 }
 
 /// Extrude with optional end-twist (degrees around Z) and end-scale factor.
@@ -855,11 +693,5 @@ pub unsafe extern "C" fn rrcad_shape_extrude_ex(
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    match shape.extrude_ex(height, twist_deg, scale) {
-        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
+    unsafe { shape_result_to_ptr(shape.extrude_ex(height, twist_deg, scale), error_out) }
 }

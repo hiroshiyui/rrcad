@@ -683,25 +683,16 @@ static bool edge_matches(const TopoDS_Edge& edge, const std::string& sel) {
 
 int32_t shape_faces_count(const OcctShape& shape, rust::Str selector) {
     std::string sel(selector.data(), selector.size());
-    // Validate selector by calling face_matches on a dummy check; easier to
-    // iterate and count (also validates selector via exception on first call).
+    // Validate selector upfront before iterating.
+    if (sel != "all" && sel != "top" && sel != "bottom" && sel != "side")
+        throw std::runtime_error(std::string("faces: unknown selector ':") + sel +
+                                 "' — use :all, :top, :bottom, or :side");
     int32_t count = 0;
-    bool validated = false;
     TopExp_Explorer exp(shape.get(), TopAbs_FACE);
     for (; exp.More(); exp.Next()) {
         TopoDS_Face face = TopoDS::Face(exp.Current());
-        if (!validated) {
-            // This call throws on unknown selector — propagates to Rust as Err
-            face_matches(face, sel);
-            validated = true;
-        }
         if (face_matches(face, sel))
             ++count;
-    }
-    if (!validated && sel != "all" && sel != "top" && sel != "bottom" && sel != "side") {
-        // Shape has no faces — still validate selector
-        throw std::runtime_error(std::string("faces: unknown selector ':") + sel +
-                                 "' — use :all, :top, :bottom, or :side");
     }
     return count;
 }
@@ -726,23 +717,19 @@ std::unique_ptr<OcctShape> shape_faces_get(const OcctShape& shape, rust::Str sel
 // TopExp_Explorer may visit shared edges multiple times; TopTools_IndexedMapOfShape
 // guarantees each unique TShape appears exactly once.
 static std::vector<TopoDS_Edge> collect_edges(const OcctShape& shape, const std::string& sel) {
+    // Validate selector upfront before iterating.
+    if (sel != "all" && sel != "vertical" && sel != "horizontal")
+        throw std::runtime_error(std::string("edges: unknown selector ':") + sel +
+                                 "' — use :all, :vertical, or :horizontal");
+
     TopTools_IndexedMapOfShape edge_map;
     TopExp::MapShapes(shape.get(), TopAbs_EDGE, edge_map);
 
     std::vector<TopoDS_Edge> result;
-    bool validated = false;
     for (int i = 1; i <= edge_map.Extent(); i++) {
         TopoDS_Edge edge = TopoDS::Edge(edge_map(i));
-        if (!validated) {
-            edge_matches(edge, sel); // throws on unknown selector
-            validated = true;
-        }
         if (edge_matches(edge, sel))
             result.push_back(edge);
-    }
-    if (!validated && sel != "all" && sel != "vertical" && sel != "horizontal") {
-        throw std::runtime_error(std::string("edges: unknown selector ':") + sel +
-                                 "' — use :all, :vertical, or :horizontal");
     }
     return result;
 }
@@ -784,11 +771,18 @@ std::unique_ptr<OcctShape> import_stl(rust::Str path) {
     Handle(Poly_Triangulation) tri = RWStl::ReadFile(path_str.c_str(), Message_ProgressRange());
     if (tri.IsNull())
         throw std::runtime_error("RWStl::ReadFile failed or file is empty: " + path_str);
+    // Attach the triangulation to a face, then wrap that face in a compound.
+    // Returning a compound (same shape type as import_step) keeps callers
+    // consistent: a bare TopoDS_Face cannot be passed to boolean ops and its
+    // bounding-box / volume results differ from solid behaviour.
     TopoDS_Face face;
     BRep_Builder builder;
     builder.MakeFace(face);
     builder.UpdateFace(face, tri);
-    return wrap(face);
+    TopoDS_Compound compound;
+    builder.MakeCompound(compound);
+    builder.Add(compound, face);
+    return wrap(compound);
 }
 
 // ---------------------------------------------------------------------------
@@ -856,55 +850,43 @@ void export_stl(const OcctShape& shape, rust::Str path) {
         throw std::runtime_error("StlAPI_Writer::Write failed for: " + path_str);
 }
 
-void export_gltf(const OcctShape& shape, rust::Str path, double linear_deflection) {
-    // 1. Tessellate the shape (required before glTF export).
+// Shared setup for glTF / GLB export: tessellate, create XDE document, add shape.
+static Handle(TDocStd_Document)
+    make_xde_doc(const OcctShape& shape, double linear_deflection, const char* label) {
     BRepMesh_IncrementalMesh mesher(shape.get(), linear_deflection,
                                     /*isRelative=*/Standard_False,
                                     /*angularDeflection=*/0.5);
     mesher.Perform();
 
-    // 2. Set up an XDE document and add the shape.
     Handle(XCAFApp_Application) app = XCAFApp_Application::GetApplication();
     Handle(TDocStd_Document) doc;
     app->NewDocument(TCollection_ExtendedString("BinXCAF"), doc);
     if (doc.IsNull())
-        throw std::runtime_error("Failed to create XDE document for glTF export");
+        throw std::runtime_error(std::string("Failed to create XDE document for ") + label);
 
     Handle(XCAFDoc_ShapeTool) shape_tool = XCAFDoc_DocumentTool::ShapeTool(doc->Main());
     shape_tool->AddShape(shape.get());
+    return doc;
+}
 
-    // 3. Write glTF.
+void export_gltf(const OcctShape& shape, rust::Str path, double linear_deflection) {
+    Handle(TDocStd_Document) doc = make_xde_doc(shape, linear_deflection, "glTF export");
     std::string path_str(path.data(), path.size());
     TCollection_AsciiString gltf_path(path_str.c_str());
     RWGltf_CafWriter writer(gltf_path, /*isBinary=*/Standard_False);
     TColStd_IndexedDataMapOfStringString metadata;
     Message_ProgressRange progress;
-
     if (!writer.Perform(doc, metadata, progress))
         throw std::runtime_error("RWGltf_CafWriter::Perform failed for: " + path_str);
 }
 
 void export_glb(const OcctShape& shape, rust::Str path, double linear_deflection) {
-    BRepMesh_IncrementalMesh mesher(shape.get(), linear_deflection,
-                                    /*isRelative=*/Standard_False,
-                                    /*angularDeflection=*/0.5);
-    mesher.Perform();
-
-    Handle(XCAFApp_Application) app = XCAFApp_Application::GetApplication();
-    Handle(TDocStd_Document) doc;
-    app->NewDocument(TCollection_ExtendedString("BinXCAF"), doc);
-    if (doc.IsNull())
-        throw std::runtime_error("Failed to create XDE document for GLB export");
-
-    Handle(XCAFDoc_ShapeTool) shape_tool = XCAFDoc_DocumentTool::ShapeTool(doc->Main());
-    shape_tool->AddShape(shape.get());
-
+    Handle(TDocStd_Document) doc = make_xde_doc(shape, linear_deflection, "GLB export");
     std::string path_str(path.data(), path.size());
     TCollection_AsciiString glb_path(path_str.c_str());
     RWGltf_CafWriter writer(glb_path, /*isBinary=*/Standard_True);
     TColStd_IndexedDataMapOfStringString metadata;
     Message_ProgressRange progress;
-
     if (!writer.Perform(doc, metadata, progress))
         throw std::runtime_error("RWGltf_CafWriter::Perform (GLB) failed for: " + path_str);
 }

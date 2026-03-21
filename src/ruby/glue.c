@@ -349,8 +349,7 @@ static mrb_value mrb_rrcad_shape_scale(mrb_state* mrb, mrb_value self) {
 
 static mrb_value mrb_rrcad_shape_fillet(mrb_state* mrb, mrb_value self) {
     mrb_float r;
-    mrb_value opts = mrb_nil_value();
-    mrb_get_args(mrb, "f|o", &r, &opts);
+    mrb_get_args(mrb, "f", &r);
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
     const char* err = NULL;
@@ -362,8 +361,7 @@ static mrb_value mrb_rrcad_shape_fillet(mrb_state* mrb, mrb_value self) {
 
 static mrb_value mrb_rrcad_shape_chamfer(mrb_state* mrb, mrb_value self) {
     mrb_float d;
-    mrb_value opts = mrb_nil_value();
-    mrb_get_args(mrb, "f|o", &d, &opts);
+    mrb_get_args(mrb, "f", &d);
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
     const char* err = NULL;
