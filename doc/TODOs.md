@@ -71,11 +71,11 @@ All 3-D operations shipped. Completed: `loft`, `.shell`, `.offset`, `.extrude(tw
 - [x] `polar_pattern(shape, n, angle_deg)` — rotate n copies around the Z axis
 
 ### Sub-shape selectors (extensions)
-- [ ] `vertices` selector on shapes (complement to existing `faces` / `edges`)
-- [ ] Direction-based face selector: `faces(">Z")` / `faces("<X")` (CadQuery style)
+- [x] `vertices` selector on shapes (complement to existing `faces` / `edges`)
+- [x] Direction-based face selector: `faces(">Z")` / `faces("<X")` (CadQuery style)
 
 ### Export additions
-- [ ] OBJ export — `RWObj_CafWriter` (OCCT 7.6+); same XDE pipeline as glTF, trivial to add
+- [x] OBJ export — `RWObj_CafWriter` via `TKDEOBJ`; same XDE pipeline as glTF; `.export("out.obj")` dispatches automatically by extension
 
 ---
 

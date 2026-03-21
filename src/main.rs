@@ -46,8 +46,14 @@ Boolean operations           (return a new Shape)
   a.cut(b)                  subtract b from a
   a.common(b)               intersection of a and b
 
+Sub-shape selectors          (return an Array of Shapes)
+  s.faces(:top|:bottom|:side|:all)
+  s.faces(\">Z\"|\"<X\"|...)   direction-based (CadQuery style)
+  s.edges(:vertical|:horizontal|:all)
+  s.vertices(:all)          all unique vertices
+
 Export
-  shape.export(\"out.step\")  write STEP file
+  shape.export(\"out.step\")  write STEP / STL / GLB / OBJ (by extension)
 
 Patterns
   linear_pattern(s,n,[dx,dy,dz]) n copies translated along vector
@@ -128,9 +134,10 @@ const SHAPE_METHODS: &[&str] = &[
     "revolve",
     // Phase 3 — native
     "sweep",
-    // Phase 3+ — stubs
+    // Phase 3+ — sub-shape selectors
     "faces",
     "edges",
+    "vertices",
     // Ruby built-ins
     "class",
     "inspect",

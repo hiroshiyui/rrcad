@@ -151,8 +151,9 @@ let spout   = Shape::make_circle_face(0.7)?.sweep(&path)?;
 
 | Method | Description |
 |--------|-------------|
-| `.faces(selector: &str) -> Result<Vec<Shape>>` | All faces matching the selector. Selectors: `"all"`, `"top"` (normal·Z > 0.5), `"bottom"` (normal·Z < −0.5), `"side"` (all others). Face orientation is accounted for. |
+| `.faces(selector: &str) -> Result<Vec<Shape>>` | All faces matching the selector. Named selectors: `"all"`, `"top"` (normal·Z > 0.5), `"bottom"` (normal·Z < −0.5), `"side"` (all others). Direction-based selectors: `">Z"`, `"<Z"`, `">X"`, `"<X"`, `">Y"`, `"<Y"` — selects faces whose outward normal has a component > 0.5 (or < −0.5) along the given axis. Face orientation is accounted for in both forms. |
 | `.edges(selector: &str) -> Result<Vec<Shape>>` | All unique edges matching the selector (deduplicated via `TopTools_IndexedMapOfShape`). Selectors: `"all"`, `"vertical"` (tangent·Z > 0.5), `"horizontal"` (all others). Degenerate edges are excluded. |
+| `.vertices(selector: &str) -> Result<Vec<Shape>>` | All unique vertices. Only `"all"` is supported (deduplicated via `TopTools_IndexedMapOfShape`). |
 
 ```rust
 let top_faces = part.faces("top")?;
@@ -192,6 +193,7 @@ let pattern = hole.polar_pattern(6, 360.0)?;
 | `.export_stl(path: &str) -> Result<()>` | ASCII STL triangulated mesh |
 | `.export_gltf(path: &str, linear_deflection: f64) -> Result<()>` | glTF 2.0 (text JSON + companion `.bin`). `linear_deflection` controls tessellation quality (e.g. `0.1` for 0.1 mm). |
 | `.export_glb(path: &str, linear_deflection: f64) -> Result<()>` | Binary glTF (GLB). Single self-contained file; used by the live preview server. |
+| `.export_obj(path: &str, linear_deflection: f64) -> Result<()>` | Wavefront OBJ text format via `RWObj_CafWriter` (`TKDEOBJ`). Writes a companion `.mtl` material file alongside the `.obj`. |
 
 ```rust
 part.export_step("/tmp/part.step")?;
@@ -280,6 +282,8 @@ fn shape_faces_count(shape: &OcctShape, selector: &str)              -> Result<i
 fn shape_faces_get(shape: &OcctShape, selector: &str, idx: i32)      -> Result<UniquePtr<OcctShape>>;
 fn shape_edges_count(shape: &OcctShape, selector: &str)              -> Result<i32>;
 fn shape_edges_get(shape: &OcctShape, selector: &str, idx: i32)      -> Result<UniquePtr<OcctShape>>;
+fn shape_vertices_count(shape: &OcctShape, selector: &str)           -> Result<i32>;
+fn shape_vertices_get(shape: &OcctShape, selector: &str, idx: i32)   -> Result<UniquePtr<OcctShape>>;
 
 // Patterns
 fn shape_linear_pattern(shape: &OcctShape, n: i32,
@@ -292,6 +296,7 @@ fn export_step(shape: &OcctShape, path: &str)                         -> Result<
 fn export_stl (shape: &OcctShape, path: &str)                         -> Result<()>;
 fn export_gltf(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
 fn export_glb (shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
+fn export_obj (shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
 ```
 
 ---
@@ -376,12 +381,14 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `.sweep(path)` | Sweep profile along a `spline_3d` wire |
 | `.shell(thickness)` | Hollow out a solid by removing the topmost face and offsetting walls inward |
 | `.offset(distance)` | Inflate (positive) or deflate (negative) a solid uniformly |
-| `.faces(:top\|:bottom\|:side\|:all)` | Array of matching face sub-shapes |
+| `.faces(:top\|:bottom\|:side\|:all)` | Array of matching face sub-shapes (symbol selectors) |
+| `.faces(">Z"\|"<X"\|...)` | Direction-based face selector — string form (CadQuery style) |
 | `.edges(:vertical\|:horizontal\|:all)` | Array of matching edge sub-shapes (deduplicated) |
+| `.vertices(:all)` | Array of all unique vertex sub-shapes |
 | `.bounding_box` | Returns `{x:, y:, z:, dx:, dy:, dz:}` — origin corner and extents |
 | `.volume` | Volume of the solid (float) |
 | `.surface_area` | Total surface area (float) |
-| `.export("out.step")` | Write STEP file |
+| `.export("out.step")` | Write file; format determined by extension: `.step`/`.stp` → STEP, `.stl` → STL, `.glb` → GLB, `.gltf` → glTF, `.obj` → OBJ |
 
 ---
 
