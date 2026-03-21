@@ -683,6 +683,56 @@ pub unsafe extern "C" fn rrcad_shape_edges_get(
 }
 
 // ---------------------------------------------------------------------------
+// Phase 4: Query / introspection
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_bounding_box(
+    ptr: *mut c_void,
+    out: *mut f64, // caller-allocated array of 6 doubles: xmin,ymin,zmin,xmax,ymax,zmax
+    error_out: *mut *const c_char,
+) {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.bounding_box() {
+        Ok(arr) => unsafe { std::ptr::copy_nonoverlapping(arr.as_ptr(), out, 6) },
+        Err(e) => unsafe { set_err(error_out, &e) },
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_volume(
+    ptr: *mut c_void,
+    error_out: *mut *const c_char,
+) -> f64 {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.volume() {
+        Ok(v) => v,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            0.0
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_surface_area(
+    ptr: *mut c_void,
+    error_out: *mut *const c_char,
+) -> f64 {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.surface_area() {
+        Ok(a) => a,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            0.0
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Phase 3: Live preview
 // ---------------------------------------------------------------------------
 

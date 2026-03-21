@@ -93,6 +93,12 @@ std::unique_ptr<OcctShape> shape_edges_get(const OcctShape& shape, rust::Str sel
 std::unique_ptr<OcctShape> import_step(rust::Str path);
 std::unique_ptr<OcctShape> import_stl(rust::Str path);
 
+// --- Query / introspection ---
+// Fills out[0..6] with [xmin, ymin, zmin, xmax, ymax, zmax].
+void shape_bounding_box(const OcctShape& shape, rust::Slice<double> out);
+double shape_volume(const OcctShape& shape);
+double shape_surface_area(const OcctShape& shape);
+
 // --- Export ---
 void export_step(const OcctShape& shape, rust::Str path);
 void export_stl(const OcctShape& shape, rust::Str path);

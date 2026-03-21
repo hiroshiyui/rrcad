@@ -67,6 +67,12 @@
 // --- OCCT: tessellation (required before glTF export) ---
 #include <BRepMesh_IncrementalMesh.hxx>
 
+// --- OCCT: Phase 4 — query / introspection ---
+#include <BRepBndLib.hxx>
+#include <BRepGProp.hxx>
+#include <Bnd_Box.hxx>
+#include <GProp_GProps.hxx>
+
 // --- OCCT: STEP import / export ---
 #include <IFSelect_ReturnStatus.hxx>
 #include <STEPControl_Reader.hxx>
@@ -627,6 +633,41 @@ std::unique_ptr<OcctShape> import_stl(rust::Str path) {
     builder.MakeFace(face);
     builder.UpdateFace(face, tri);
     return wrap(face);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4: Query / introspection
+// ---------------------------------------------------------------------------
+
+void shape_bounding_box(const OcctShape& shape, rust::Slice<double> out) {
+    if (out.size() < 6)
+        throw std::runtime_error("bounding_box: output slice must have at least 6 elements");
+    Bnd_Box bndBox;
+    // AddOptimal gives tighter bounds than Add (avoids inflated gap/tolerance).
+    BRepBndLib::AddOptimal(shape.get(), bndBox, /*useTriangulation=*/Standard_False,
+                           /*useShapeTolerance=*/Standard_False);
+    if (bndBox.IsVoid())
+        throw std::runtime_error("bounding_box: shape has no geometry (void bounding box)");
+    double xmin, ymin, zmin, xmax, ymax, zmax;
+    bndBox.Get(xmin, ymin, zmin, xmax, ymax, zmax);
+    out[0] = xmin;
+    out[1] = ymin;
+    out[2] = zmin;
+    out[3] = xmax;
+    out[4] = ymax;
+    out[5] = zmax;
+}
+
+double shape_volume(const OcctShape& shape) {
+    GProp_GProps props;
+    BRepGProp::VolumeProperties(shape.get(), props);
+    return props.Mass();
+}
+
+double shape_surface_area(const OcctShape& shape) {
+    GProp_GProps props;
+    BRepGProp::SurfaceProperties(shape.get(), props);
+    return props.Mass();
 }
 
 // ---------------------------------------------------------------------------

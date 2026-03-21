@@ -72,6 +72,11 @@ mod ffi {
         fn import_step(path: &str) -> Result<UniquePtr<OcctShape>>;
         fn import_stl(path: &str) -> Result<UniquePtr<OcctShape>>;
 
+        // --- Query / introspection ---
+        fn shape_bounding_box(shape: &OcctShape, out: &mut [f64]) -> Result<()>;
+        fn shape_volume(shape: &OcctShape) -> Result<f64>;
+        fn shape_surface_area(shape: &OcctShape) -> Result<f64>;
+
         // --- Export ---
         fn export_step(shape: &OcctShape, path: &str) -> Result<()>;
         fn export_stl(shape: &OcctShape, path: &str) -> Result<()>;
@@ -270,6 +275,23 @@ impl Shape {
                     .map_err(|e| e.to_string())
             })
             .collect()
+    }
+
+    // --- Query / introspection ---
+
+    /// Returns `[xmin, ymin, zmin, xmax, ymax, zmax]`.
+    pub fn bounding_box(&self) -> Result<[f64; 6], String> {
+        let mut out = [0f64; 6];
+        ffi::shape_bounding_box(&self.inner, &mut out).map_err(|e| e.to_string())?;
+        Ok(out)
+    }
+
+    pub fn volume(&self) -> Result<f64, String> {
+        ffi::shape_volume(&self.inner).map_err(|e| e.to_string())
+    }
+
+    pub fn surface_area(&self) -> Result<f64, String> {
+        ffi::shape_surface_area(&self.inner).map_err(|e| e.to_string())
     }
 
     // --- Import ---

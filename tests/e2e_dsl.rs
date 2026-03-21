@@ -126,6 +126,54 @@ fn e2e_shape_assigned_to_global_and_reused() {
 }
 
 // ---------------------------------------------------------------------------
+// Query / introspection
+// ---------------------------------------------------------------------------
+
+#[test]
+fn e2e_bounding_box() {
+    let mut vm = MrubyVm::new();
+    // box(10, 20, 30) at origin → min corner (0,0,0), extents (10,20,30)
+    let result = vm
+        .eval("bb = box(10.0, 20.0, 30.0).bounding_box; [bb[:dx], bb[:dy], bb[:dz]].inspect")
+        .expect("bounding_box failed");
+    assert!(
+        result.contains("10.0") && result.contains("20.0") && result.contains("30.0"),
+        "unexpected bounding box extents: {result}"
+    );
+}
+
+#[test]
+fn e2e_volume() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("box(10.0, 20.0, 30.0).volume")
+        .expect("volume failed");
+    // 10 × 20 × 30 = 6000.0
+    let vol: f64 = result.trim().parse().expect("volume result not a float");
+    assert!(
+        (vol - 6000.0).abs() < 1.0,
+        "expected volume ≈ 6000, got {vol}"
+    );
+}
+
+#[test]
+fn e2e_surface_area() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("box(10.0, 20.0, 30.0).surface_area")
+        .expect("surface_area failed");
+    // 2*(10*20 + 20*30 + 10*30) = 2*(200+600+300) = 2200.0
+    let area: f64 = result
+        .trim()
+        .parse()
+        .expect("surface_area result not a float");
+    assert!(
+        (area - 2200.0).abs() < 1.0,
+        "expected surface_area ≈ 2200, got {area}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Import round-trips
 // ---------------------------------------------------------------------------
 

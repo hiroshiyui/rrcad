@@ -57,7 +57,7 @@ stay portable. See `tests/teapot_dsl.rs` (6 tests), `tests/phase3_selectors.rs` 
 
 Goal: close the gap between our DSL and what OpenSCAD / CadQuery expose from OCCT.
 
-Completed: primitives `cone`, `torus`, `wedge`; 2D profiles `polygon`, `ellipse`, `arc`.
+Completed: primitives `cone`, `torus`, `wedge`; 2D profiles `polygon`, `ellipse`, `arc`; import `import_step`, `import_stl`; query `.bounding_box`, `.volume`, `.surface_area`.
 
 ### 3-D operations
 - [ ] `loft([profile1, profile2, ...], ruled: false)` — `BRepOffsetAPI_ThruSections`; solves organic shapes (teapot body, blades, …)
@@ -84,9 +84,9 @@ Completed: primitives `cone`, `torus`, `wedge`; 2D profiles `polygon`, `ellipse`
 - [x] `import_stl("file.stl")` — `RWStl::ReadFile` (returns `Handle(Poly_Triangulation)`)
 
 ### Query / introspection
-- [ ] `.bounding_box` — returns `{x:, y:, z:, dx:, dy:, dz:}`; use `BRepBndLib::AddOptimal` (tighter than `BRepBndLib::Add`) + `Bnd_Box`
-- [ ] `.volume` — mass properties; `BRepGProp::VolumeProperties` + `GProp_GProps`
-- [ ] `.surface_area` — `BRepGProp::SurfaceProperties` + `GProp_GProps`
+- [x] `.bounding_box` — returns `{x:, y:, z:, dx:, dy:, dz:}`; `BRepBndLib::AddOptimal` + `Bnd_Box`
+- [x] `.volume` — mass properties; `BRepGProp::VolumeProperties` + `GProp_GProps`
+- [x] `.surface_area` — `BRepGProp::SurfaceProperties` + `GProp_GProps`
 
 ### Sub-shape selectors (extensions)
 - [ ] `vertices` selector on shapes (complement to existing `faces` / `edges`)

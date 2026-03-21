@@ -12,6 +12,7 @@
 #include <mruby/compile.h>
 #include <mruby/data.h>
 #include <mruby/error.h>
+#include <mruby/hash.h>
 #include <mruby/string.h>
 #include <stdlib.h>
 
@@ -104,6 +105,11 @@ extern void* rrcad_shape_faces_get(void* ptr, const char* selector, int idx,
 extern int rrcad_shape_edges_count(void* ptr, const char* selector, const char** error_out);
 extern void* rrcad_shape_edges_get(void* ptr, const char* selector, int idx,
                                    const char** error_out);
+
+/* Phase 4 — query / introspection */
+extern void rrcad_shape_bounding_box(void* ptr, double* out, const char** error_out);
+extern double rrcad_shape_volume(void* ptr, const char** error_out);
+extern double rrcad_shape_surface_area(void* ptr, const char** error_out);
 
 /* mRuby data type descriptor — name appears in TypeError messages. */
 static void shape_dfree(mrb_state* mrb, void* ptr) {
@@ -665,6 +671,59 @@ static mrb_value mrb_rrcad_shape_edges(mrb_state* mrb, mrb_value self) {
     return result;
 }
 
+/* -------------------------------------------------------------------------
+ * Phase 4: Query / introspection
+ * -------------------------------------------------------------------------
+ */
+
+static mrb_value mrb_rrcad_shape_bounding_box(mrb_state* mrb, mrb_value self) {
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+
+    double bounds[6];
+    const char* err = NULL;
+    rrcad_shape_bounding_box(ptr, bounds, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+
+    /* Return {x:, y:, z:, dx:, dy:, dz:} where x/y/z is the min corner
+     * and dx/dy/dz is the extent in each axis. */
+    mrb_value hash = mrb_hash_new(mrb);
+    mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_lit(mrb, "x")),
+                 mrb_float_value(mrb, bounds[0]));
+    mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_lit(mrb, "y")),
+                 mrb_float_value(mrb, bounds[1]));
+    mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_lit(mrb, "z")),
+                 mrb_float_value(mrb, bounds[2]));
+    mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_lit(mrb, "dx")),
+                 mrb_float_value(mrb, bounds[3] - bounds[0]));
+    mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_lit(mrb, "dy")),
+                 mrb_float_value(mrb, bounds[4] - bounds[1]));
+    mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_lit(mrb, "dz")),
+                 mrb_float_value(mrb, bounds[5] - bounds[2]));
+    return hash;
+}
+
+static mrb_value mrb_rrcad_shape_volume(mrb_state* mrb, mrb_value self) {
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    double vol = rrcad_shape_volume(ptr, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return mrb_float_value(mrb, vol);
+}
+
+static mrb_value mrb_rrcad_shape_surface_area(mrb_state* mrb, mrb_value self) {
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    double area = rrcad_shape_surface_area(ptr, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return mrb_float_value(mrb, area);
+}
+
 /* =========================================================================
  * rrcad_register_shape_class
  *
@@ -731,4 +790,11 @@ void rrcad_register_shape_class(mrb_state* mrb) {
                       MRB_ARGS_REQ(1));
     mrb_define_method(mrb, mrb->kernel_module, "import_stl", mrb_rrcad_import_stl,
                       MRB_ARGS_REQ(1));
+
+    /* Phase 4: Query / introspection */
+    mrb_define_method(mrb, shape_class, "bounding_box", mrb_rrcad_shape_bounding_box,
+                      MRB_ARGS_NONE());
+    mrb_define_method(mrb, shape_class, "volume", mrb_rrcad_shape_volume, MRB_ARGS_NONE());
+    mrb_define_method(mrb, shape_class, "surface_area", mrb_rrcad_shape_surface_area,
+                      MRB_ARGS_NONE());
 }
