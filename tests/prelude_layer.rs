@@ -126,6 +126,28 @@ fn native_wedge_returns_shape() {
 }
 
 #[test]
+fn native_polygon_returns_shape() {
+    let mut vm = MrubyVm::new();
+    assert_contains(
+        &mut vm,
+        "polygon([[0.0,0.0],[5.0,0.0],[5.0,5.0],[0.0,5.0]]).class",
+        "Shape",
+    );
+}
+
+#[test]
+fn native_ellipse_returns_shape() {
+    let mut vm = MrubyVm::new();
+    assert_contains(&mut vm, "ellipse(6.0, 3.0).class", "Shape");
+}
+
+#[test]
+fn native_arc_returns_shape() {
+    let mut vm = MrubyVm::new();
+    assert_contains(&mut vm, "arc(5.0, 0.0, 90.0).class", "Shape");
+}
+
+#[test]
 fn native_shape_inspect_returns_shape_string() {
     let mut vm = MrubyVm::new();
     assert_contains(&mut vm, "box(1.0, 2.0, 3.0).inspect", "#<Shape>");

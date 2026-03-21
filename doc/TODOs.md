@@ -63,9 +63,9 @@ Goal: close the gap between our DSL and what OpenSCAD / CadQuery expose from OCC
 - [x] `wedge(dx, dy, dz, ltx)` — `BRepPrimAPI_MakeWedge`
 
 ### Sketch / 2-D profiles
-- [ ] `polygon([[x,y], ...])` — arbitrary closed polygon face (`BRepBuilderAPI_MakePolygon` + `BRepBuilderAPI_MakeFace`)
-- [ ] `ellipse(rx, ry)` — elliptic face (`GC_MakeEllipse` + `BRepBuilderAPI_MakeEdge`)
-- [ ] `arc(r, start_deg, end_deg)` — circular arc wire (`GC_MakeArcOfCircle` + `BRepBuilderAPI_MakeEdge`)
+- [x] `polygon([[x,y], ...])` — arbitrary closed polygon face (`BRepBuilderAPI_MakePolygon` + `BRepBuilderAPI_MakeFace`)
+- [x] `ellipse(rx, ry)` — elliptic face (`GC_MakeEllipse` + `BRepBuilderAPI_MakeEdge`)
+- [x] `arc(r, start_deg, end_deg)` — circular arc wire (`GC_MakeArcOfCircle` + `BRepBuilderAPI_MakeEdge`)
 
 ### 3-D operations
 - [ ] `loft([profile1, profile2, ...], ruled: false)` — `BRepOffsetAPI_ThruSections`; solves organic shapes (teapot body, blades, …)

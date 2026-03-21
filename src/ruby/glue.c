@@ -81,6 +81,9 @@ extern void* rrcad_shape_chamfer(void* ptr, double dist, const char** error_out)
 extern void* rrcad_shape_mirror(void* ptr, const char* plane, const char** error_out);
 extern void* rrcad_make_rect(double w, double h, const char** error_out);
 extern void* rrcad_make_circle_face(double r, const char** error_out);
+extern void* rrcad_make_polygon(const double* pts, size_t n_pts, const char** error_out);
+extern void* rrcad_make_ellipse_face(double rx, double ry, const char** error_out);
+extern void* rrcad_make_arc(double r, double start_deg, double end_deg, const char** error_out);
 extern void* rrcad_shape_extrude(void* ptr, double height, const char** error_out);
 extern void* rrcad_shape_revolve(void* ptr, double angle_deg, const char** error_out);
 
@@ -510,6 +513,49 @@ static mrb_value mrb_rrcad_shape_sweep(mrb_state* mrb, mrb_value self) {
 }
 
 /* -------------------------------------------------------------------------
+ * Phase 4: Sketch profiles — polygon, ellipse, arc
+ * -------------------------------------------------------------------------
+ */
+
+static mrb_value mrb_rrcad_polygon(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value arr;
+    mrb_get_args(mrb, "A", &arr);
+
+    int n = 0;
+    double* pts = extract_point_array(mrb, arr, 2, &n);
+
+    const char* err = NULL;
+    void* ptr = rrcad_make_polygon(pts, (size_t)n, &err);
+    free(pts);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, ptr);
+}
+
+static mrb_value mrb_rrcad_ellipse(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_float rx, ry;
+    mrb_get_args(mrb, "ff", &rx, &ry);
+    const char* err = NULL;
+    void* ptr = rrcad_make_ellipse_face((double)rx, (double)ry, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, ptr);
+}
+
+static mrb_value mrb_rrcad_arc(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_float r, start_deg, end_deg;
+    mrb_get_args(mrb, "fff", &r, &start_deg, &end_deg);
+    const char* err = NULL;
+    void* ptr = rrcad_make_arc((double)r, (double)start_deg, (double)end_deg, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, ptr);
+}
+
+/* -------------------------------------------------------------------------
  * Phase 3: Live preview — preview(shape)
  *
  * Tessellates the shape to a temp GLB file and signals WebSocket clients
@@ -633,6 +679,11 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     /* Phase 2: Sketch constructors */
     mrb_define_method(mrb, mrb->kernel_module, "rect", mrb_rrcad_rect, MRB_ARGS_REQ(2));
     mrb_define_method(mrb, mrb->kernel_module, "circle", mrb_rrcad_circle, MRB_ARGS_REQ(1));
+
+    /* Phase 4: Sketch profiles */
+    mrb_define_method(mrb, mrb->kernel_module, "polygon", mrb_rrcad_polygon, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, mrb->kernel_module, "ellipse", mrb_rrcad_ellipse, MRB_ARGS_REQ(2));
+    mrb_define_method(mrb, mrb->kernel_module, "arc", mrb_rrcad_arc, MRB_ARGS_REQ(3));
 
     /* Phase 3: Spline constructors and sweep */
     mrb_define_method(mrb, mrb->kernel_module, "spline_2d", mrb_rrcad_spline_2d, MRB_ARGS_REQ(1));

@@ -44,6 +44,10 @@
 #include <gp_Circ.hxx>
 #include <gp_Pln.hxx>
 
+// --- OCCT: Phase 4 sketch profiles ---
+#include <GC_MakeArcOfCircle.hxx>
+#include <GC_MakeEllipse.hxx>
+
 // --- OCCT: Phase 3 — splines and pipe sweep ---
 #include <BRepOffsetAPI_MakePipe.hxx>
 #include <GeomAPI_Interpolate.hxx>
@@ -294,6 +298,57 @@ std::unique_ptr<OcctShape> make_circle_face(double r) {
     if (!face.IsDone())
         throw std::runtime_error("BRepBuilderAPI_MakeFace (circle) failed");
     return wrap(face.Face());
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4: Sketch profiles — polygon, ellipse, arc
+// ---------------------------------------------------------------------------
+
+std::unique_ptr<OcctShape> make_polygon(rust::Slice<const double> pts) {
+    int n = (int)(pts.size() / 2);
+    if (n < 3)
+        throw std::runtime_error("polygon requires at least 3 points");
+    BRepBuilderAPI_MakePolygon poly;
+    for (int i = 0; i < n; i++)
+        poly.Add(gp_Pnt(pts[(size_t)(i * 2)], pts[(size_t)(i * 2 + 1)], 0.0));
+    poly.Close();
+    if (!poly.IsDone())
+        throw std::runtime_error("BRepBuilderAPI_MakePolygon failed");
+    BRepBuilderAPI_MakeFace face(poly.Wire());
+    if (!face.IsDone())
+        throw std::runtime_error("BRepBuilderAPI_MakeFace (polygon) failed");
+    return wrap(face.Face());
+}
+
+std::unique_ptr<OcctShape> make_ellipse_face(double rx, double ry) {
+    // OCCT requires major radius >= minor radius for GC_MakeEllipse.
+    if (rx < ry)
+        std::swap(rx, ry);
+    gp_Ax2 axes(gp_Pnt(0.0, 0.0, 0.0), gp_Dir(0.0, 0.0, 1.0), gp_Dir(1.0, 0.0, 0.0));
+    GC_MakeEllipse ellipse_maker(axes, rx, ry);
+    if (!ellipse_maker.IsDone())
+        throw std::runtime_error("GC_MakeEllipse failed");
+    TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(ellipse_maker.Value()).Edge();
+    TopoDS_Wire wire = BRepBuilderAPI_MakeWire(edge).Wire();
+    BRepBuilderAPI_MakeFace face(wire);
+    if (!face.IsDone())
+        throw std::runtime_error("BRepBuilderAPI_MakeFace (ellipse) failed");
+    return wrap(face.Face());
+}
+
+std::unique_ptr<OcctShape> make_arc(double r, double start_deg, double end_deg) {
+    gp_Ax2 axes(gp_Pnt(0.0, 0.0, 0.0), gp_Dir(0.0, 0.0, 1.0), gp_Dir(1.0, 0.0, 0.0));
+    gp_Circ circ(axes, r);
+    double start_rad = start_deg * M_PI / 180.0;
+    double end_rad = end_deg * M_PI / 180.0;
+    GC_MakeArcOfCircle arc_maker(circ, start_rad, end_rad, Standard_True);
+    if (!arc_maker.IsDone())
+        throw std::runtime_error("GC_MakeArcOfCircle failed");
+    TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(arc_maker.Value()).Edge();
+    BRepBuilderAPI_MakeWire wire_maker(edge);
+    if (!wire_maker.IsDone())
+        throw std::runtime_error("BRepBuilderAPI_MakeWire (arc) failed");
+    return wrap(wire_maker.Wire());
 }
 
 // ---------------------------------------------------------------------------

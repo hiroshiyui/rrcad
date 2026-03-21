@@ -386,6 +386,56 @@ pub unsafe extern "C" fn rrcad_make_circle_face(
     }
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_make_polygon(
+    pts: *const f64,
+    n_pts: usize,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let slice = unsafe { std::slice::from_raw_parts(pts, n_pts * 2) };
+    match Shape::make_polygon(slice) {
+        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_make_ellipse_face(
+    rx: f64,
+    ry: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    match Shape::make_ellipse_face(rx, ry) {
+        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_make_arc(
+    r: f64,
+    start_deg: f64,
+    end_deg: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    match Shape::make_arc(r, start_deg, end_deg) {
+        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Extrude / Revolve (Phase 2)
 // ---------------------------------------------------------------------------

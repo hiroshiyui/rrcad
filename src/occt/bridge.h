@@ -66,6 +66,11 @@ std::unique_ptr<OcctShape> shape_mirror(const OcctShape& shape, rust::Str plane)
 std::unique_ptr<OcctShape> make_rect(double w, double h);
 std::unique_ptr<OcctShape> make_circle_face(double r);
 
+// --- Phase 4: sketch profiles ---
+std::unique_ptr<OcctShape> make_polygon(rust::Slice<const double> pts);
+std::unique_ptr<OcctShape> make_ellipse_face(double rx, double ry);
+std::unique_ptr<OcctShape> make_arc(double r, double start_deg, double end_deg);
+
 // --- Phase 2: extrude / revolve ---
 std::unique_ptr<OcctShape> shape_extrude(const OcctShape& shape, double height);
 std::unique_ptr<OcctShape> shape_revolve(const OcctShape& shape, double angle_deg);

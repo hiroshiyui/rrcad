@@ -42,6 +42,9 @@ mod ffi {
 
         fn make_rect(w: f64, h: f64) -> Result<UniquePtr<OcctShape>>;
         fn make_circle_face(r: f64) -> Result<UniquePtr<OcctShape>>;
+        fn make_polygon(pts: &[f64]) -> Result<UniquePtr<OcctShape>>;
+        fn make_ellipse_face(rx: f64, ry: f64) -> Result<UniquePtr<OcctShape>>;
+        fn make_arc(r: f64, start_deg: f64, end_deg: f64) -> Result<UniquePtr<OcctShape>>;
 
         fn shape_extrude(shape: &OcctShape, height: f64) -> Result<UniquePtr<OcctShape>>;
         fn shape_revolve(shape: &OcctShape, angle_deg: f64) -> Result<UniquePtr<OcctShape>>;
@@ -187,6 +190,24 @@ impl Shape {
 
     pub fn make_circle_face(r: f64) -> Result<Self, String> {
         ffi::make_circle_face(r)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn make_polygon(pts: &[f64]) -> Result<Self, String> {
+        ffi::make_polygon(pts)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn make_ellipse_face(rx: f64, ry: f64) -> Result<Self, String> {
+        ffi::make_ellipse_face(rx, ry)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    pub fn make_arc(r: f64, start_deg: f64, end_deg: f64) -> Result<Self, String> {
+        ffi::make_arc(r, start_deg, end_deg)
             .map(|p| Shape { inner: p })
             .map_err(|e| e.to_string())
     }
