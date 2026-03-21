@@ -49,23 +49,15 @@ via `export_glb`; `axum` HTTP server serves the GLB and a Three.js viewer
 page (`GLTFLoader` + `OrbitControls` + auto-fit camera); `notify` watches
 the script file and re-evals on save; WebSocket pushes `"reload"` to the
 browser. `preview(shape)` is a no-op when not in `--preview` mode so scripts
-stay portable. See `tests/teapot_dsl.rs` (7 tests), `tests/phase3_selectors.rs` (16 tests).
+stay portable. See `tests/teapot_dsl.rs` (6 tests), `tests/phase3_selectors.rs` (16 tests).
 
 ---
 
-## Phase 4 — OCCT Coverage (OpenSCAD / CadQuery parity)
+## Phase 4 — OCCT Coverage (OpenSCAD / CadQuery parity) — in progress
 
 Goal: close the gap between our DSL and what OpenSCAD / CadQuery expose from OCCT.
 
-### Primitives
-- [x] `cone(r1, r2, h)` — `BRepPrimAPI_MakeCone`
-- [x] `torus(r1, r2)` — `BRepPrimAPI_MakeTorus`
-- [x] `wedge(dx, dy, dz, ltx)` — `BRepPrimAPI_MakeWedge`
-
-### Sketch / 2-D profiles
-- [x] `polygon([[x,y], ...])` — arbitrary closed polygon face (`BRepBuilderAPI_MakePolygon` + `BRepBuilderAPI_MakeFace`)
-- [x] `ellipse(rx, ry)` — elliptic face (`GC_MakeEllipse` + `BRepBuilderAPI_MakeEdge`)
-- [x] `arc(r, start_deg, end_deg)` — circular arc wire (`GC_MakeArcOfCircle` + `BRepBuilderAPI_MakeEdge`)
+Completed: primitives `cone`, `torus`, `wedge`; 2D profiles `polygon`, `ellipse`, `arc`.
 
 ### 3-D operations
 - [ ] `loft([profile1, profile2, ...], ruled: false)` — `BRepOffsetAPI_ThruSections`; solves organic shapes (teapot body, blades, …)
@@ -247,4 +239,4 @@ No SlotMap, no cross-language reference counting.
 
 **Rendering (current):** OCCT tessellation → GLB → `axum` HTTP → Three.js browser viewer → WebSocket live reload. Activated with `rrcad --preview <script.rb>`.
 
-**Rendering (long-term):** egui + wgpu native viewer (Phase 4) once DSL is stable.
+**Rendering:** Web-based preview via axum + Three.js is the long-term approach; native egui/wgpu viewer has been dropped.

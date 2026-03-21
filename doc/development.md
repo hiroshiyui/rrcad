@@ -78,7 +78,7 @@ rrcad/
 │       └── viewer.html     # Three.js viewer (embedded via include_str!)
 ├── samples/                # DSL example scripts
 │   ├── README.md
-│   ├── 01_hello_box.rb … 07_teapot.rb
+│   ├── 01_hello_box.rb … 06_live_preview.rb
 ├── tests/                  # integration test suites
 │   ├── occt_layer.rs       # OCCT Rust API smoke tests
 │   ├── vm_layer.rs         # MrubyVm eval smoke tests
@@ -169,8 +169,8 @@ No cross-language reference counting.
 2. Evaluates `prelude.rb` (embedded via `include_str!`), which defines
    `Shape`, `Assembly`, and Kernel stub methods.
 3. Calls `rrcad_register_shape_class(mrb)` (in `glue.c`), which overrides the
-   prelude stubs with native C/Rust implementations. All Phase 1–3 methods
-   are fully native; stubs remain only for Phase 4+ features not yet wired up.
+   prelude stubs with native C/Rust implementations. All implemented methods
+   are fully native; prelude stubs remain only for operations not yet wired up.
 
 ---
 
@@ -378,10 +378,10 @@ cargo clippy                      # lints
 | `src/occt/mod.rs` (inline) | OCCT Rust API: box→fillet→STEP, boolean cut |
 | `tests/occt_layer.rs` | All OCCT primitives, booleans, transforms, fillets, export |
 | `tests/vm_layer.rs` | `MrubyVm` eval: types, errors, persistence, multiple VMs |
-| `tests/prelude_layer.rs` | DSL prelude stubs; native overrides for Phase 1–3; Assembly |
+| `tests/prelude_layer.rs` | DSL prelude stubs; native overrides for all implemented methods (Phases 1–4); Assembly |
 | `tests/e2e_dsl.rs` | Phase 1 end-to-end: box/cylinder/sphere/fuse/cut/common/export |
 | `tests/phase2_dsl.rs` | Phase 2 end-to-end: transforms, mirror, rect/circle, extrude/revolve |
-| `tests/teapot_dsl.rs` | Phase 3: spline_2d, spline_3d, sweep; full teapot STEP export |
+| `tests/teapot_dsl.rs` | Phase 3: spline_2d, spline_3d, sweep |
 | `tests/phase3_selectors.rs` | Phase 3: `.faces(:top|:bottom|:side|:all)`, `.edges(:vertical|:horizontal|:all)` |
 
 Output files are written to `std::env::temp_dir()` (typically `/tmp` on Linux).
