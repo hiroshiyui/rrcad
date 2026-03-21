@@ -27,11 +27,17 @@ use rrcad::occt::Shape;
 | `Shape::make_box(dx, dy, dz) -> Result<Shape>` | Axis-aligned box with corner at origin |
 | `Shape::make_cylinder(radius, height) -> Result<Shape>` | Cylinder along the Z axis |
 | `Shape::make_sphere(radius) -> Result<Shape>` | Sphere centred at origin |
+| `Shape::make_cone(r1, r2, height) -> Result<Shape>` | Cone/frustum along the Z axis (`r1` = base radius, `r2` = top radius) |
+| `Shape::make_torus(r1, r2) -> Result<Shape>` | Torus in the XY plane (`r1` = major radius, `r2` = tube radius) |
+| `Shape::make_wedge(dx, dy, dz, ltx) -> Result<Shape>` | Wedge with base `dx×dz`, height `dy`, and top face width `ltx` along X |
 
 ```rust
 let b = Shape::make_box(10.0, 20.0, 30.0)?;
 let c = Shape::make_cylinder(5.0, 15.0)?;
 let s = Shape::make_sphere(8.0)?;
+let k = Shape::make_cone(4.0, 1.0, 10.0)?;
+let t = Shape::make_torus(6.0, 1.5)?;
+let w = Shape::make_wedge(10.0, 8.0, 6.0, 4.0)?;
 ```
 
 #### 2D Sketch Faces (for extrude / revolve)
@@ -40,6 +46,9 @@ let s = Shape::make_sphere(8.0)?;
 |--------|-------------|
 | `Shape::make_rect(w, h) -> Result<Shape>` | Rectangular face in the XY plane |
 | `Shape::make_circle_face(r) -> Result<Shape>` | Circular face in the XY plane |
+| `Shape::make_polygon(pts: &[f64]) -> Result<Shape>` | Closed polygon face in the XY plane. `pts` is a flat `[x0, y0, x1, y1, …]` slice; at least 3 points required. |
+| `Shape::make_ellipse_face(rx, ry) -> Result<Shape>` | Elliptic face in the XY plane. OCCT requires major ≥ minor; arguments are swapped automatically if needed. |
+| `Shape::make_arc(r, start_deg, end_deg) -> Result<Shape>` | Circular arc `Wire` in the XY plane, counterclockwise from `start_deg` to `end_deg`. Suitable as a sweep path. |
 | `Shape::make_spline_2d(pts: &[f64]) -> Result<Shape>` | Closed profile in the XZ plane. `pts` is a flat `[r0, z0, r1, z1, …]` slice. Interpolates a BSpline, closes with a straight edge if the endpoints differ, returns a `Face`. Designed for `.revolve()`. |
 
 #### 3D Wire Paths (for sweep)
@@ -199,10 +208,16 @@ public:
 fn make_box(dx: f64, dy: f64, dz: f64)              -> Result<UniquePtr<OcctShape>>;
 fn make_cylinder(radius: f64, height: f64)            -> Result<UniquePtr<OcctShape>>;
 fn make_sphere(radius: f64)                            -> Result<UniquePtr<OcctShape>>;
+fn make_cone(r1: f64, r2: f64, height: f64)          -> Result<UniquePtr<OcctShape>>;
+fn make_torus(r1: f64, r2: f64)                       -> Result<UniquePtr<OcctShape>>;
+fn make_wedge(dx: f64, dy: f64, dz: f64, ltx: f64)  -> Result<UniquePtr<OcctShape>>;
 
 // 2D sketch faces
 fn make_rect(w: f64, h: f64)                          -> Result<UniquePtr<OcctShape>>;
 fn make_circle_face(r: f64)                            -> Result<UniquePtr<OcctShape>>;
+fn make_polygon(pts: &[f64])                           -> Result<UniquePtr<OcctShape>>;
+fn make_ellipse_face(rx: f64, ry: f64)                -> Result<UniquePtr<OcctShape>>;
+fn make_arc(r: f64, start_deg: f64, end_deg: f64)    -> Result<UniquePtr<OcctShape>>;
 fn make_spline_2d(pts: &[f64])                         -> Result<UniquePtr<OcctShape>>;
 fn make_spline_3d(pts: &[f64])                         -> Result<UniquePtr<OcctShape>>;
 
@@ -283,8 +298,14 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `box(dx, dy, dz)` | Rectangular solid |
 | `cylinder(r, h)` | Cylinder along Z axis |
 | `sphere(r)` | Sphere at origin |
+| `cone(r1, r2, h)` | Cone/frustum along Z axis |
+| `torus(r1, r2)` | Torus in XY plane |
+| `wedge(dx, dy, dz, ltx)` | Wedge primitive |
 | `rect(w, h)` | Rectangular face in XY plane |
 | `circle(r)` | Circular face in XY plane |
+| `polygon([[x,y], ...])` | Closed polygon face in XY plane (≥ 3 points) |
+| `ellipse(rx, ry)` | Elliptic face in XY plane |
+| `arc(r, start_deg, end_deg)` | Circular arc wire in XY plane (counterclockwise) |
 | `spline_2d([[r,z], ...])` | Closed XZ-plane profile (for `revolve`) |
 | `spline_3d([[x,y,z], ...])` | 3D wire path (for `sweep`) |
 | `solid { ... }` | Block returning its last expression |
