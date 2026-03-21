@@ -49,6 +49,27 @@ mod ffi {
         fn shape_extrude(shape: &OcctShape, height: f64) -> Result<UniquePtr<OcctShape>>;
         fn shape_revolve(shape: &OcctShape, angle_deg: f64) -> Result<UniquePtr<OcctShape>>;
 
+        // --- Phase 4: ThruSections (loft) builder ---
+        type ThruSectionsBuilder;
+        fn thru_sections_new(solid: bool, ruled: bool) -> Result<UniquePtr<ThruSectionsBuilder>>;
+        fn thru_sections_add(
+            builder: Pin<&mut ThruSectionsBuilder>,
+            profile: &OcctShape,
+        ) -> Result<()>;
+        fn thru_sections_build(
+            builder: Pin<&mut ThruSectionsBuilder>,
+        ) -> Result<UniquePtr<OcctShape>>;
+
+        // --- Phase 4: 3-D operations ---
+        fn shape_shell(shape: &OcctShape, thickness: f64) -> Result<UniquePtr<OcctShape>>;
+        fn shape_offset(shape: &OcctShape, distance: f64) -> Result<UniquePtr<OcctShape>>;
+        fn shape_extrude_ex(
+            shape: &OcctShape,
+            height: f64,
+            twist_deg: f64,
+            scale: f64,
+        ) -> Result<UniquePtr<OcctShape>>;
+
         // --- Phase 3: splines and sweep ---
         fn make_spline_2d(pts: &[f64]) -> Result<UniquePtr<OcctShape>>;
         fn make_spline_3d(pts: &[f64]) -> Result<UniquePtr<OcctShape>>;
@@ -229,6 +250,46 @@ impl Shape {
 
     pub fn revolve(&self, angle_deg: f64) -> Result<Shape, String> {
         ffi::shape_revolve(&self.inner, angle_deg)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    // --- Phase 4: loft (ThruSections builder pattern) ---
+
+    /// Loft through a sequence of planar profiles (Faces or Wires).
+    /// `ruled=true` produces a ruled surface (straight lines between sections).
+    pub fn loft(profiles: &[&Shape], ruled: bool) -> Result<Shape, String> {
+        let mut builder = ffi::thru_sections_new(true, ruled).map_err(|e| e.to_string())?;
+        for p in profiles {
+            ffi::thru_sections_add(builder.pin_mut(), &p.inner).map_err(|e| e.to_string())?;
+        }
+        ffi::thru_sections_build(builder.pin_mut())
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    // --- Phase 4: 3-D operations ---
+
+    /// Hollow out the solid, removing the topmost face and offsetting inward
+    /// by `thickness`.  Wraps BRepOffsetAPI_MakeThickSolid::MakeThickSolidByJoin.
+    pub fn shell(&self, thickness: f64) -> Result<Shape, String> {
+        ffi::shape_shell(&self.inner, thickness)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Inflate (positive) or deflate (negative) the solid uniformly.
+    /// Wraps BRepOffsetAPI_MakeOffsetShape::PerformByJoin.
+    pub fn offset(&self, distance: f64) -> Result<Shape, String> {
+        ffi::shape_offset(&self.inner, distance)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Extrude with optional end-twist (degrees) and end-scale.
+    /// Falls back to MakePrism for the zero-twist/unity-scale case.
+    pub fn extrude_ex(&self, height: f64, twist_deg: f64, scale: f64) -> Result<Shape, String> {
+        ffi::shape_extrude_ex(&self.inner, height, twist_deg, scale)
             .map(|p| Shape { inner: p })
             .map_err(|e| e.to_string())
     }

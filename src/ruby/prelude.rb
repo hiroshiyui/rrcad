@@ -71,8 +71,18 @@ class Shape
     raise NotImplementedError, "Shape#mirror is not yet implemented (Phase 2)"
   end
 
-  def extrude(_height)
+  def extrude(_height, _opts = {})
     raise NotImplementedError, "Shape#extrude is not yet implemented (Phase 2)"
+  end
+
+  # --- 3-D operations — Phase 4 -------------------------------------------
+
+  def shell(_thickness)
+    raise NotImplementedError, "Shape#shell is not yet implemented (Phase 4)"
+  end
+
+  def offset(_distance)
+    raise NotImplementedError, "Shape#offset is not yet implemented (Phase 4)"
   end
 
   def revolve(_angle = 360.0)
@@ -154,6 +164,11 @@ module Kernel
 
   def circle(_r)
     raise NotImplementedError, "circle() is not yet implemented (Phase 2)"
+  end
+
+  # Loft — overridden natively after prelude runs.
+  def loft(_profiles, _opts = {})
+    raise NotImplementedError, "loft() is not yet implemented (Phase 4)"
   end
 
   # Spline profiles — overridden natively after prelude runs.

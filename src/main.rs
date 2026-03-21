@@ -273,21 +273,43 @@ fn run_preview(script_path: &str) {
     eval_script(script_path);
 
     // Watch the script file; re-eval on every change.
+    //
+    // We watch the *parent directory* rather than the file itself to handle
+    // atomic-write editors (write temp → rename into place).  inotify tracks
+    // inodes: a rename replaces the inode and the file-level watch goes silent.
+    // A directory-level watch fires Create/Rename events for any file in the
+    // directory, so we filter by the canonical script path.
+    let canonical_script = std::fs::canonicalize(script_path)
+        .unwrap_or_else(|_| std::path::PathBuf::from(script_path));
+    let watch_dir = canonical_script
+        .parent()
+        .expect("script path has no parent directory")
+        .to_path_buf();
+
     let (tx, rx) = std::sync::mpsc::channel();
     let mut watcher = notify::recommended_watcher(move |res| {
         tx.send(res).ok();
     })
     .expect("failed to create file watcher");
     watcher
-        .watch(script_path.as_ref(), RecursiveMode::NonRecursive)
-        .expect("failed to watch script");
+        .watch(&watch_dir, RecursiveMode::NonRecursive)
+        .expect("failed to watch script directory");
 
     println!("Watching {script_path} for changes…");
 
     loop {
         match rx.recv() {
-            Ok(_) => {
-                // Debounce: drain events that arrive within the next 50 ms.
+            Ok(Ok(event)) => {
+                // Filter: only react when the event involves our script file.
+                let affects_script = event.paths.iter().any(|p| {
+                    std::fs::canonicalize(p)
+                        .map(|c| c == canonical_script)
+                        .unwrap_or(false)
+                });
+                if !affects_script {
+                    continue;
+                }
+                // Debounce: drain any further events that arrive within 50 ms.
                 loop {
                     match rx.recv_timeout(std::time::Duration::from_millis(50)) {
                         Ok(_) => continue,
@@ -296,6 +318,7 @@ fn run_preview(script_path: &str) {
                 }
                 eval_script(script_path);
             }
+            Ok(Err(e)) => eprintln!("watch error: {e}"),
             Err(_) => break,
         }
     }

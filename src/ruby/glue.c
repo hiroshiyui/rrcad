@@ -111,6 +111,13 @@ extern void rrcad_shape_bounding_box(void* ptr, double* out, const char** error_
 extern double rrcad_shape_volume(void* ptr, const char** error_out);
 extern double rrcad_shape_surface_area(void* ptr, const char** error_out);
 
+/* Phase 4 — 3-D operations */
+extern void* rrcad_shape_loft(const void** ptrs, size_t n, int ruled, const char** error_out);
+extern void* rrcad_shape_shell(void* ptr, double thickness, const char** error_out);
+extern void* rrcad_shape_offset(void* ptr, double distance, const char** error_out);
+extern void* rrcad_shape_extrude_ex(void* ptr, double height, double twist_deg, double scale,
+                                    const char** error_out);
+
 /* mRuby data type descriptor — name appears in TypeError messages. */
 static void shape_dfree(mrb_state* mrb, void* ptr) {
     (void)mrb;
@@ -411,13 +418,114 @@ static mrb_value mrb_rrcad_circle(mrb_state* mrb, mrb_value self) {
  * -------------------------------------------------------------------------
  */
 
+/* extrude(height, twist_deg: 0, scale: 1.0)
+ *
+ * When called without keyword arguments this is identical to the Phase 2
+ * extrude (uses BRepPrimAPI_MakePrism).  When twist_deg or scale are
+ * supplied the extended path (BRepOffsetAPI_ThruSections) is used. */
 static mrb_value mrb_rrcad_shape_extrude(mrb_state* mrb, mrb_value self) {
     mrb_float height;
-    mrb_get_args(mrb, "f", &height);
+    mrb_value opts = mrb_nil_value();
+    mrb_get_args(mrb, "f|H", &height, &opts);
+
+    double twist_deg = 0.0;
+    double scale = 1.0;
+
+    if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
+        mrb_value twist_val =
+            mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "twist_deg")),
+                           mrb_float_value(mrb, 0.0));
+        mrb_value scale_val = mrb_hash_fetch(mrb, opts,
+                                              mrb_symbol_value(mrb_intern_lit(mrb, "scale")),
+                                              mrb_float_value(mrb, 1.0));
+        if (mrb_float_p(twist_val))
+            twist_deg = (double)mrb_float(twist_val);
+        else if (mrb_integer_p(twist_val))
+            twist_deg = (double)mrb_integer(twist_val);
+        if (mrb_float_p(scale_val))
+            scale = (double)mrb_float(scale_val);
+        else if (mrb_integer_p(scale_val))
+            scale = (double)mrb_integer(scale_val);
+    }
+
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
     const char* err = NULL;
-    void* result = rrcad_shape_extrude(ptr, (double)height, &err);
+    /* rrcad_shape_extrude_ex falls back to MakePrism when twist≈0 and scale≈1 */
+    void* result = rrcad_shape_extrude_ex(ptr, (double)height, twist_deg, scale, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* -------------------------------------------------------------------------
+ * Phase 4: 3-D operations — loft, shell, offset
+ * -------------------------------------------------------------------------
+ */
+
+/* loft(profiles, ruled: false)
+ *
+ * Top-level Kernel method.  `profiles` is an Array of Shape objects; each
+ * must be a Face, Wire, or Vertex (for a pointed cap/base).  Optional
+ * `ruled: true` produces a ruled (flat-face) solid instead of a smooth one. */
+static mrb_value mrb_rrcad_loft(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value arr;
+    mrb_value opts = mrb_nil_value();
+    mrb_get_args(mrb, "A|H", &arr, &opts);
+
+    int ruled = 0;
+    if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
+        mrb_value v = mrb_hash_fetch(mrb, opts,
+                                     mrb_symbol_value(mrb_intern_lit(mrb, "ruled")),
+                                     mrb_false_value());
+        ruled = mrb_test(v) ? 1 : 0;
+    }
+
+    int n = (int)RARRAY_LEN(arr);
+    if (n < 2)
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "loft requires at least 2 profiles");
+
+    const void** ptrs = (const void**)malloc((size_t)n * sizeof(void*));
+    if (!ptrs)
+        mrb_raise(mrb, E_RUNTIME_ERROR, "out of memory");
+
+    for (int i = 0; i < n; i++) {
+        mrb_value elem = mrb_ary_ref(mrb, arr, i);
+        void* p = shape_ptr(mrb, elem); /* type-checks the element */
+        require_native_ptr(mrb, p);
+        ptrs[i] = p;
+    }
+
+    const char* err = NULL;
+    void* result = rrcad_shape_loft(ptrs, (size_t)n, ruled, &err);
+    free(ptrs);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* .shell(thickness) — hollow out the solid, removing the top face. */
+static mrb_value mrb_rrcad_shape_shell(mrb_state* mrb, mrb_value self) {
+    mrb_float thickness;
+    mrb_get_args(mrb, "f", &thickness);
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    void* result = rrcad_shape_shell(ptr, (double)thickness, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* .offset(distance) — inflate (>0) or deflate (<0) the solid uniformly. */
+static mrb_value mrb_rrcad_shape_offset(mrb_state* mrb, mrb_value self) {
+    mrb_float distance;
+    mrb_get_args(mrb, "f", &distance);
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    void* result = rrcad_shape_offset(ptr, (double)distance, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
@@ -753,7 +861,8 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     mrb_define_method(mrb, shape_class, "chamfer", mrb_rrcad_shape_chamfer,
                       MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
     mrb_define_method(mrb, shape_class, "mirror", mrb_rrcad_shape_mirror, MRB_ARGS_REQ(1));
-    mrb_define_method(mrb, shape_class, "extrude", mrb_rrcad_shape_extrude, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "extrude", mrb_rrcad_shape_extrude,
+                      MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
     mrb_define_method(mrb, shape_class, "revolve", mrb_rrcad_shape_revolve, MRB_ARGS_OPT(1));
 
     /* Top-level primitive constructors — available everywhere via Kernel. */
@@ -790,6 +899,12 @@ void rrcad_register_shape_class(mrb_state* mrb) {
                       MRB_ARGS_REQ(1));
     mrb_define_method(mrb, mrb->kernel_module, "import_stl", mrb_rrcad_import_stl,
                       MRB_ARGS_REQ(1));
+
+    /* Phase 4: 3-D operations */
+    mrb_define_method(mrb, mrb->kernel_module, "loft", mrb_rrcad_loft,
+                      MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
+    mrb_define_method(mrb, shape_class, "shell", mrb_rrcad_shape_shell, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "offset", mrb_rrcad_shape_offset, MRB_ARGS_REQ(1));
 
     /* Phase 4: Query / introspection */
     mrb_define_method(mrb, shape_class, "bounding_box", mrb_rrcad_shape_bounding_box,

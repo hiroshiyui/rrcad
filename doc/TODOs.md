@@ -60,12 +60,11 @@ Goal: close the gap between our DSL and what OpenSCAD / CadQuery expose from OCC
 Completed: primitives `cone`, `torus`, `wedge`; 2D profiles `polygon`, `ellipse`, `arc`; import `import_step`, `import_stl`; query `.bounding_box`, `.volume`, `.surface_area`.
 
 ### 3-D operations
-- [ ] `loft([profile1, profile2, ...], ruled: false)` — `BRepOffsetAPI_ThruSections`; solves organic shapes (teapot body, blades, …)
-- [ ] `.shell(thickness)` — hollow out a solid; `BRepOffsetAPI_MakeThickSolid::MakeThickSolidByJoin`
-  - Note: **not** `BRepOffsetAPI_MakeOffset` — that is for 2D wire offsetting only
-- [ ] `.offset(distance)` — inflate / deflate a solid; `BRepOffsetAPI_MakeOffsetShape`
-- [ ] `.extrude(h, twist_deg: 0, scale: 1.0)` — extend `shape_extrude` with twist and end-scale;
-  use `BRepOffsetAPI_MakePipeShell` with a `GeomFill_EvolvedSection` law (replaces `MakePrism` when twist/scale are nonzero)
+- [x] `loft([profile1, profile2, ...], ruled: false)` — `BRepOffsetAPI_ThruSections`; solves organic shapes (teapot body, blades, …)
+- [x] `.shell(thickness)` — hollow out a solid; `BRepOffsetAPI_MakeThickSolid::MakeThickSolidByJoin` (auto-removes topmost face as the opening)
+- [x] `.offset(distance)` — inflate / deflate a solid; `BRepOffsetAPI_MakeOffsetShape`
+- [x] `.extrude(h, twist_deg: 0, scale: 1.0)` — extended extrude with twist and end-scale; uses
+  `BRepOffsetAPI_ThruSections` discretised into N sections when twist/scale are nonzero
 
 ### Transforms
 - [ ] `.scale(sx, sy, sz)` — non-uniform scale; `BRepBuilderAPI_GTransform` with `gp_GTrsf`
@@ -164,11 +163,17 @@ Goal: scripts with parameters, constraints, and design tables.
 
 ---
 
-## Utah Teapot Sample (deferred)
+## Utah Teapot Sample ✓
 
-A faithful `samples/07_teapot.rb` requires `loft` (Phase 4) to model the body
-properly — the current `spline_2d + revolve` approach cannot reproduce the
-Newell silhouette without BSpline oscillation.
+`samples/07_teapot.rb` is complete.  Uses `loft` (Phase 4) for the body,
+`sweep` for spout and handle, `revolve` for the lid dome, and `sphere` for
+the knob.  The body follows Newell cross-section radii/heights scaled to
+OCCT coordinates (Z-up, height=7.5).  Validated by `tests/teapot_sample.rs`
+(5 tests: 4 part-level + 1 full assembly).
+
+The result is a geometric approximation of the Newell teapot — not an exact
+Bezier-patch reproduction, but faithful to the published cross-section
+silhouette data.
 
 ### Reference data
 

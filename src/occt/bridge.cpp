@@ -73,6 +73,17 @@
 #include <Bnd_Box.hxx>
 #include <GProp_GProps.hxx>
 
+// --- OCCT: Phase 4 — 3-D operations ---
+#include <BRepBuilderAPI_Transform.hxx>
+#include <BRepOffsetAPI_MakeOffsetShape.hxx>
+#include <BRepOffsetAPI_MakeThickSolid.hxx>
+#include <BRepOffsetAPI_ThruSections.hxx>
+#include <BRepTools.hxx>
+#include <TopTools_ListOfShape.hxx>
+#include <TopoDS_Wire.hxx>
+#include <cmath>
+#include <limits>
+
 // --- OCCT: STEP import / export ---
 #include <IFSelect_ReturnStatus.hxx>
 #include <STEPControl_Reader.hxx>
@@ -380,6 +391,151 @@ std::unique_ptr<OcctShape> shape_revolve(const OcctShape& s, double angle_deg) {
     if (!revol.IsDone())
         throw std::runtime_error("BRepPrimAPI_MakeRevol (revolve) failed");
     return wrap(revol.Shape());
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4: ThruSections (loft) builder
+// ---------------------------------------------------------------------------
+
+ThruSectionsBuilder::ThruSectionsBuilder(bool solid, bool ruled)
+    : impl(std::make_unique<BRepOffsetAPI_ThruSections>(solid, ruled)) {}
+
+ThruSectionsBuilder::~ThruSectionsBuilder() = default;
+
+std::unique_ptr<ThruSectionsBuilder> thru_sections_new(bool solid, bool ruled) {
+    return std::make_unique<ThruSectionsBuilder>(solid, ruled);
+}
+
+void thru_sections_add(ThruSectionsBuilder& b, const OcctShape& profile) {
+    const TopoDS_Shape& s = profile.get();
+    if (s.ShapeType() == TopAbs_FACE) {
+        // Extract the outer wire from the face so ThruSections can work with it.
+        TopoDS_Wire wire = BRepTools::OuterWire(TopoDS::Face(s));
+        b.impl->AddWire(wire);
+    } else if (s.ShapeType() == TopAbs_WIRE) {
+        b.impl->AddWire(TopoDS::Wire(s));
+    } else if (s.ShapeType() == TopAbs_VERTEX) {
+        b.impl->AddVertex(TopoDS::Vertex(s));
+    } else {
+        throw std::runtime_error("loft: each profile must be a Face, Wire, or Vertex");
+    }
+}
+
+std::unique_ptr<OcctShape> thru_sections_build(ThruSectionsBuilder& b) {
+    b.impl->Build();
+    if (!b.impl->IsDone())
+        throw std::runtime_error("BRepOffsetAPI_ThruSections (loft) failed");
+    return wrap(b.impl->Shape());
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4: .shell(thickness) — hollow out a solid
+// ---------------------------------------------------------------------------
+
+std::unique_ptr<OcctShape> shape_shell(const OcctShape& shape, double thickness) {
+    // Select the face with the highest Z centroid as the opening (top face).
+    TopoDS_Face top_face;
+    double max_z = -std::numeric_limits<double>::max();
+    bool found = false;
+
+    for (TopExp_Explorer exp(shape.get(), TopAbs_FACE); exp.More(); exp.Next()) {
+        const TopoDS_Face& face = TopoDS::Face(exp.Current());
+        GProp_GProps props;
+        BRepGProp::SurfaceProperties(face, props);
+        double z = props.CentreOfMass().Z();
+        if (z > max_z) {
+            max_z = z;
+            top_face = face;
+            found = true;
+        }
+    }
+
+    if (!found)
+        throw std::runtime_error("shell: shape has no faces");
+
+    TopTools_ListOfShape faces_to_remove;
+    faces_to_remove.Append(top_face);
+
+    // Negative offset moves surfaces inward, creating a wall of `thickness`.
+    BRepOffsetAPI_MakeThickSolid thick;
+    thick.MakeThickSolidByJoin(shape.get(), faces_to_remove, -thickness, 1e-3);
+    if (!thick.IsDone())
+        throw std::runtime_error("BRepOffsetAPI_MakeThickSolid (shell) failed");
+    return wrap(thick.Shape());
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4: .offset(distance) — inflate / deflate a solid
+// ---------------------------------------------------------------------------
+
+std::unique_ptr<OcctShape> shape_offset(const OcctShape& shape, double distance) {
+    BRepOffsetAPI_MakeOffsetShape offsetter;
+    offsetter.PerformByJoin(shape.get(), distance, 1e-3);
+    if (!offsetter.IsDone())
+        throw std::runtime_error("BRepOffsetAPI_MakeOffsetShape (offset) failed");
+    return wrap(offsetter.Shape());
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4: .extrude(h, twist_deg, scale) — extended extrusion
+//
+// When twist_deg≈0 and scale≈1 the fast path (MakePrism) is used.  Otherwise
+// the extrusion is discretised into N cross-sections (proportional to the
+// twist angle) and lofted through them via BRepOffsetAPI_ThruSections.
+// Each section is the original profile scaled by lerp(1,scale,t) and rotated
+// by lerp(0,twist_deg,t) around Z, then translated to z = t*height.
+// ---------------------------------------------------------------------------
+
+std::unique_ptr<OcctShape> shape_extrude_ex(const OcctShape& profile, double height,
+                                            double twist_deg, double scale) {
+    // Fast path: delegate to existing MakePrism implementation.
+    if (std::abs(twist_deg) < 1e-10 && std::abs(scale - 1.0) < 1e-10)
+        return shape_extrude(profile, height);
+
+    // Number of sections: more sections for larger twist angles, minimum 4.
+    const int N = std::max(4, static_cast<int>(std::abs(twist_deg) / 5.0) + 2);
+
+    // isSolid=true produces a closed solid; isRuled=false gives smooth loft.
+    BRepOffsetAPI_ThruSections loft(/*isSolid=*/Standard_True, /*isRuled=*/Standard_False);
+
+    for (int i = 0; i < N; i++) {
+        double t = static_cast<double>(i) / static_cast<double>(N - 1);
+        double z = t * height;
+        double rot_rad = t * twist_deg * (M_PI / 180.0);
+        double s = 1.0 + t * (scale - 1.0); // linear scale interpolation
+
+        // Build combined transform: scale → rotate around Z → translate to z.
+        // In OCCT, T1.Multiply(T2) means T1 = T1 * T2 (T2 applied first).
+        gp_Trsf trsf_translate;
+        trsf_translate.SetTranslation(gp_Vec(0.0, 0.0, z));
+        gp_Trsf trsf_rotate;
+        trsf_rotate.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)), rot_rad);
+        gp_Trsf trsf_scale;
+        trsf_scale.SetScaleFactor(s);
+
+        // combined = translate * rotate * scale → P' = translate(rotate(scale(P)))
+        gp_Trsf combined = trsf_translate;
+        combined.Multiply(trsf_rotate);
+        combined.Multiply(trsf_scale);
+
+        // Apply transform to a copy of the profile (Standard_True = make copy).
+        BRepBuilderAPI_Transform transformer(profile.get(), combined, Standard_True);
+        const TopoDS_Shape& transformed = transformer.Shape();
+
+        // Add to loft: extract outer wire from faces.
+        if (transformed.ShapeType() == TopAbs_FACE) {
+            loft.AddWire(BRepTools::OuterWire(TopoDS::Face(transformed)));
+        } else if (transformed.ShapeType() == TopAbs_WIRE) {
+            loft.AddWire(TopoDS::Wire(transformed));
+        } else {
+            throw std::runtime_error("extrude_ex: profile must be a Face or Wire");
+        }
+    }
+
+    loft.Build();
+    if (!loft.IsDone())
+        throw std::runtime_error("BRepOffsetAPI_ThruSections (extrude_ex) failed");
+    return wrap(loft.Shape());
 }
 
 // ---------------------------------------------------------------------------

@@ -777,3 +777,89 @@ pub unsafe extern "C" fn rrcad_shape_sweep(
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Phase 4: 3-D operations — loft, shell, offset, extrude_ex
+// ---------------------------------------------------------------------------
+
+/// Loft through N profiles passed as an array of raw Shape pointers.
+/// `ruled` is 0 for smooth loft, non-zero for ruled (straight) sections.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_loft(
+    ptrs: *const *const c_void,
+    n: usize,
+    ruled: std::ffi::c_int,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    // Rebuild a slice of &Shape references from the raw pointer array.
+    let profiles: Vec<&Shape> = (0..n)
+        .map(|i| unsafe { &*(*ptrs.add(i) as *const Shape) })
+        .collect();
+    let profile_refs: Vec<&Shape> = profiles.iter().copied().collect();
+    match Shape::loft(&profile_refs, ruled != 0) {
+        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Hollow out a solid, removing the topmost face and creating walls of
+/// the given `thickness`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_shell(
+    ptr: *mut c_void,
+    thickness: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.shell(thickness) {
+        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Inflate (distance>0) or deflate (distance<0) a solid uniformly.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_offset(
+    ptr: *mut c_void,
+    distance: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.offset(distance) {
+        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
+
+/// Extrude with optional end-twist (degrees around Z) and end-scale factor.
+/// Falls back to MakePrism when twist≈0 and scale≈1.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_extrude_ex(
+    ptr: *mut c_void,
+    height: f64,
+    twist_deg: f64,
+    scale: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.extrude_ex(height, twist_deg, scale) {
+        Ok(s) => Box::into_raw(Box::new(s)) as *mut c_void,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null_mut()
+        }
+    }
+}
