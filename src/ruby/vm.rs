@@ -16,6 +16,12 @@ pub struct MrubyVm {
     mrb: *mut ffi::MrbState,
 }
 
+impl Default for MrubyVm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MrubyVm {
     /// Open a new mRuby interpreter with the rrcad DSL prelude pre-loaded.
     ///

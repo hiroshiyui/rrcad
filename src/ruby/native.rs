@@ -1,13 +1,29 @@
-/// Rust-side extern "C" functions called from `glue.c`.
-///
-/// Each constructor allocates a heap `Box<occt::Shape>` and returns the raw
-/// pointer cast to `*mut c_void`.  The C `dfree` callback (`rrcad_shape_drop`)
-/// reclaims that memory when mRuby GC collects the `RData` object.
-///
-/// Error reporting: when an OCCT operation fails the function writes a pointer
-/// to a thread-local `CString` into `*error_out` and returns null.  The C
-/// caller checks `error_out` and raises a Ruby `RuntimeError` before the
-/// thread-local slot is overwritten.
+// Clippy's `missing_safety_doc` lint is suppressed for this module because
+// all `extern "C"` functions here share the same safety contract (documented
+// in the module-level doc comment below), and repeating it on every one of
+// the ~45 entry points would be pure noise.
+#![allow(clippy::missing_safety_doc)]
+
+//! Rust-side extern "C" functions called from `glue.c`.
+//!
+//! Each constructor allocates a heap `Box<occt::Shape>` and returns the raw
+//! pointer cast to `*mut c_void`.  The C `dfree` callback (`rrcad_shape_drop`)
+//! reclaims that memory when mRuby GC collects the `RData` object.
+//!
+//! Error reporting: when an OCCT operation fails the function writes a pointer
+//! to a thread-local `CString` into `*error_out` and returns null.  The C
+//! caller checks `error_out` and raises a Ruby `RuntimeError` before the
+//! thread-local slot is overwritten.
+//!
+//! # Safety contract (applies to every `extern "C"` function in this file)
+//!
+//! All functions in this module are C FFI entry points; they are only called
+//! from `glue.c`, never from safe Rust.  Callers must ensure:
+//! - `ptr` / `a` / `b` / `profile` / `path` point to a live `Box<Shape>` that
+//!   was produced by this module and has not yet been freed.
+//! - `error_out` is a valid non-null pointer to a `*const c_char` slot.
+//! - All string/slice pointers (`path`, `pts`, `selector`, `plane`) are valid
+//!   for the duration of the call.
 use std::ffi::{CString, c_char, c_void};
 
 use crate::occt::Shape;

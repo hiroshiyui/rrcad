@@ -318,12 +318,10 @@ fn run_preview(script_path: &str) {
                     continue;
                 }
                 // Debounce: drain any further events that arrive within 50 ms.
-                loop {
-                    match rx.recv_timeout(std::time::Duration::from_millis(50)) {
-                        Ok(_) => continue,
-                        Err(_) => break,
-                    }
-                }
+                while rx
+                    .recv_timeout(std::time::Duration::from_millis(50))
+                    .is_ok()
+                {}
                 eval_script(script_path);
             }
             Ok(Err(e)) => eprintln!("watch error: {e}"),
