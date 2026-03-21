@@ -70,6 +70,9 @@
 // --- OCCT: tessellation (required before glTF export) ---
 #include <BRepMesh_IncrementalMesh.hxx>
 
+// --- OCCT: shape validity check ---
+#include <BRepCheck_Analyzer.hxx>
+
 // --- OCCT: Phase 4 — query / introspection ---
 #include <BRepBndLib.hxx>
 #include <BRepGProp.hxx>
@@ -173,7 +176,16 @@ std::unique_ptr<OcctShape> make_wedge(double dx, double dy, double dz, double lt
 // ---------------------------------------------------------------------------
 
 std::unique_ptr<OcctShape> shape_fuse(const OcctShape& a, const OcctShape& b) {
-    BRepAlgoAPI_Fuse op(a.get(), b.get());
+    // Builder-style API: explicit args/tools, fuzzy tolerance for near-coincident
+    // faces, and TBB parallel evaluation (OCCT 7.4+).
+    TopTools_ListOfShape args, tools;
+    args.Append(a.get());
+    tools.Append(b.get());
+    BRepAlgoAPI_Fuse op;
+    op.SetArguments(args);
+    op.SetTools(tools);
+    op.SetRunParallel(Standard_True);
+    op.SetFuzzyValue(1e-6);
     op.Build();
     if (!op.IsDone())
         throw std::runtime_error("BRepAlgoAPI_Fuse failed");
@@ -181,7 +193,14 @@ std::unique_ptr<OcctShape> shape_fuse(const OcctShape& a, const OcctShape& b) {
 }
 
 std::unique_ptr<OcctShape> shape_cut(const OcctShape& a, const OcctShape& b) {
-    BRepAlgoAPI_Cut op(a.get(), b.get());
+    TopTools_ListOfShape args, tools;
+    args.Append(a.get());
+    tools.Append(b.get());
+    BRepAlgoAPI_Cut op;
+    op.SetArguments(args);
+    op.SetTools(tools);
+    op.SetRunParallel(Standard_True);
+    op.SetFuzzyValue(1e-6);
     op.Build();
     if (!op.IsDone())
         throw std::runtime_error("BRepAlgoAPI_Cut failed");
@@ -189,7 +208,14 @@ std::unique_ptr<OcctShape> shape_cut(const OcctShape& a, const OcctShape& b) {
 }
 
 std::unique_ptr<OcctShape> shape_common(const OcctShape& a, const OcctShape& b) {
-    BRepAlgoAPI_Common op(a.get(), b.get());
+    TopTools_ListOfShape args, tools;
+    args.Append(a.get());
+    tools.Append(b.get());
+    BRepAlgoAPI_Common op;
+    op.SetArguments(args);
+    op.SetTools(tools);
+    op.SetRunParallel(Standard_True);
+    op.SetFuzzyValue(1e-6);
     op.Build();
     if (!op.IsDone())
         throw std::runtime_error("BRepAlgoAPI_Common failed");
@@ -1007,6 +1033,12 @@ double shape_surface_area(const OcctShape& shape) {
 // ---------------------------------------------------------------------------
 
 void export_step(const OcctShape& shape, rust::Str path) {
+    // Guard against degenerate geometry that would produce a corrupt STEP file.
+    BRepCheck_Analyzer checker(shape.get());
+    if (!checker.IsValid())
+        throw std::runtime_error("shape is topologically invalid (degenerate faces or open shells) "
+                                 "— check upstream boolean operations or fillet radii");
+
     STEPControl_Writer writer;
     IFSelect_ReturnStatus status = writer.Transfer(shape.get(), STEPControl_AsIs);
     if (status != IFSelect_RetDone)
@@ -1020,9 +1052,9 @@ void export_step(const OcctShape& shape, rust::Str path) {
 
 void export_stl(const OcctShape& shape, rust::Str path) {
     // Tessellate before writing — StlAPI_Writer requires a pre-meshed shape
-    // in OCCT 7.7+.
+    // in OCCT 7.7+.  isParallel=true uses the TBB thread pool (OCCT 7.4+).
     BRepMesh_IncrementalMesh mesher(shape.get(), 0.1, /*isRelative=*/Standard_False,
-                                    /*angularDeflection=*/0.5);
+                                    /*angularDeflection=*/0.5, /*isParallel=*/Standard_True);
     mesher.Perform();
 
     std::string path_str(path.data(), path.size());
@@ -1035,9 +1067,10 @@ void export_stl(const OcctShape& shape, rust::Str path) {
 // Shared setup for glTF / GLB export: tessellate, create XDE document, add shape.
 static Handle(TDocStd_Document)
     make_xde_doc(const OcctShape& shape, double linear_deflection, const char* label) {
+    // isParallel=true uses the TBB thread pool — dominant cost on complex shapes.
     BRepMesh_IncrementalMesh mesher(shape.get(), linear_deflection,
                                     /*isRelative=*/Standard_False,
-                                    /*angularDeflection=*/0.5);
+                                    /*angularDeflection=*/0.5, /*isParallel=*/Standard_True);
     mesher.Perform();
 
     Handle(XCAFApp_Application) app = XCAFApp_Application::GetApplication();
@@ -1063,10 +1096,19 @@ void export_gltf(const OcctShape& shape, rust::Str path, double linear_deflectio
 }
 
 void export_glb(const OcctShape& shape, rust::Str path, double linear_deflection) {
+    // Guard against degenerate geometry that would produce a corrupt GLB file.
+    BRepCheck_Analyzer checker(shape.get());
+    if (!checker.IsValid())
+        throw std::runtime_error("shape is topologically invalid (degenerate faces or open shells) "
+                                 "— check upstream boolean operations or fillet radii");
+
     Handle(TDocStd_Document) doc = make_xde_doc(shape, linear_deflection, "GLB export");
     std::string path_str(path.data(), path.size());
     TCollection_AsciiString glb_path(path_str.c_str());
     RWGltf_CafWriter writer(glb_path, /*isBinary=*/Standard_True);
+    // TRS decomposition (translation/rotation/scale) is lighter and more
+    // interoperable with animation tools than the default 4×4 matrix.
+    writer.SetTransformationFormat(RWGltf_WriterTrsfFormat_TRS);
     TColStd_IndexedDataMapOfStringString metadata;
     Message_ProgressRange progress;
     if (!writer.Perform(doc, metadata, progress))

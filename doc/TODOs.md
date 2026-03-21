@@ -85,7 +85,7 @@ Targeted improvements to the current `bridge.cpp` implementation using newer OCC
 Items marked `[ ]` are ready to implement (pure C++ changes, no DSL surface change).
 Items marked `(phase 5)` require DSL/API design work and belong in Phase 5.
 
-### [ ] Boolean operations — robustness and performance
+### [x] Boolean operations — robustness and performance
 
 **File:** `src/occt/bridge.cpp` — `shape_fuse`, `shape_cut`, `shape_common`
 
@@ -116,7 +116,7 @@ No header changes needed.
 
 ---
 
-### [ ] Tessellation — parallel meshing
+### [x] Tessellation — parallel meshing
 
 **File:** `src/occt/bridge.cpp` — `export_stl` and `make_xde_doc` (shared by glTF/GLB/OBJ)
 
@@ -136,7 +136,7 @@ Two call sites: the one in `export_stl` and the one in `make_xde_doc`.
 
 ---
 
-### [ ] GLB transform format — TRS instead of 4×4 matrix
+### [x] GLB transform format — TRS instead of 4×4 matrix
 
 **File:** `src/occt/bridge.cpp` — `export_glb`
 
@@ -158,7 +158,7 @@ the same pattern but is less critical.
 
 ---
 
-### [ ] Shape validity check before export
+### [x] Shape validity check before export
 
 **File:** `src/occt/bridge.cpp` — `export_step` and `export_glb`
 
