@@ -154,7 +154,7 @@ Week 1:  Tier 1 (#1–4)  — asymmetric chamfer, offset_2d, grid_pattern, fuse_
 Week 2:  Tier 2 (#5–8)  — shape_type, closed?/manifold?, centroid, validate
 Week 3:  Tier 3 (#9–11) — ruled_surface, fill_surface, slice
 Week 4:  Tier 4 (#12–14) — IGES import/export, SVG export
-Week 5+: Tier 5 (Phase 8)
+Week 5+: Tier 5 / Phase 8
 ```
 
 ### Notes
@@ -166,6 +166,133 @@ Week 5+: Tier 5 (Phase 8)
 - SVG export requires orthographic projection; a visible-edges-only wireframe is a good v1.
 - Draft angle extrude is common for manufacturing but needs its own OCCT path; punted to
   Phase 8 to keep Phase 7 focused.
+
+---
+
+## Phase 8 — Part Design: Sketch-on-Face, Pad & Pocket
+
+**Goal:** close the gap with FreeCAD's Part Design workbench for "CAD as code" workflows.
+FreeCAD's core loop is: select a face → sketch in its plane → pad (extrude outward) or
+pocket (cut inward).  This phase brings that loop to the Ruby DSL, making rrcad a credible
+alternative for mechanical part modelling without a GUI.
+
+### The core DSL pattern
+
+```ruby
+plate = box(100, 60, 10)
+
+# Pocket: cut a rounded slot from the top face
+result = plate.pocket(:top, depth: 8) do
+  rect(40, 20).fillet_wire(4)          # 2D sketch in face-local coords
+end
+
+# Pad: add a boss on the bottom face
+result = plate.pad(:bottom, height: 6) do
+  circle(10)
+end
+
+# Arbitrary face by index or direction string
+result = plate.pocket(">X", depth: 5) do
+  circle(4).translate(0, 5)            # face-local X/Y
+  circle(4).translate(0, -5)
+end
+```
+
+Face-local coordinate system: origin at the face centroid, X/Y along the face
+tangent directions, Z along the outward normal.  All 2D shapes in the block are
+interpreted in this local frame.  The implementation transforms them to world
+coordinates before extrude/cut.
+
+### Tier 1 — Core Part Design primitives
+
+| # | Feature | DSL | OCCT API |
+|---|---------|-----|----------|
+| 1 | **Pad** | `.pad(face_sel, height:) { sketch }` | `BRepPrimAPI_MakePrism` along face normal + `BRepAlgoAPI_Fuse` |
+| 2 | **Pocket** | `.pocket(face_sel, depth:) { sketch }` | `BRepPrimAPI_MakePrism` along −normal + `BRepAlgoAPI_Cut` |
+| 3 | **Wire fillet** | `.fillet_wire(r)` on a Face/Wire | `BRepFilletAPI_MakeFillet2d` |
+| 4 | **Datum plane** | `datum_plane(origin:, normal:, x_dir:)` | `gp_Ax3` + `BRepBuilderAPI_MakeFace(gp_Pln)` — returns a reusable plane shape for `.pad`/`.pocket` |
+
+Implementation of face-local transform (shared by pad + pocket):
+1. `BRep_Tool::Surface(face)` → cast to `Geom_Plane` → get `gp_Ax3`
+2. `BRepGProp::SurfaceProperties` → face centroid as `gp_Pnt` origin
+3. `gp_Trsf::SetTransformation(ax3)` → maps world → face-local (invert for local → world)
+4. `BRepBuilderAPI_Transform(sketch, trsf)` → sketch in world coords
+5. `BRepPrimAPI_MakePrism(sketch_face, normal_vec * depth)` → tool solid
+6. `BRepAlgoAPI_Fuse` (pad) or `BRepAlgoAPI_Cut` (pocket)
+
+### Tier 2 — Manufacturing features
+
+| # | Feature | DSL | OCCT API |
+|---|---------|-----|----------|
+| 5 | **Draft angle** | `.extrude(h, draft: angle_deg)` | `BRepOffsetAPI_DraftAngle` |
+| 6 | **Helix path** | `helix(radius:, pitch:, height:)` → Wire | `BRepBuilderAPI_MakeEdge` on `Geom_Line` + `BRepBuilderAPI_MakeWire` with helical param |
+| 7 | **Thread** | `thread(solid, face_sel, pitch:, depth:)` | helix path + triangular profile + `.sweep` + `.cut` from base solid |
+| 8 | **Counterbore / countersink** | `cbore(d:, cbore_d:, cbore_h:)` sketch macro | compound `rect`+`circle` sketch — pure Ruby DSL, no new C++ |
+
+### Tier 3 — Inspection & clearance
+
+| # | Feature | DSL | OCCT API |
+|---|---------|-----|----------|
+| 9 | **Distance between shapes** | `.distance_to(other)` → Float | `BRepExtrema_DistShapeShape` |
+| 10 | **Moment of inertia** | `.inertia` → `{ixx:, iyy:, izz:, ixy:, …}` | `BRepGProp::VolumeProperties` → `GProp_GProps::MatrixOfInertia` |
+| 11 | **Thickness map** | `.min_thickness` → Float | `BRepExtrema_DistShapeShape` on shell vs offset shell |
+
+### Tier 4 — 2D drawing output
+
+| # | Feature | DSL | OCCT API |
+|---|---------|-----|----------|
+| 12 | **Slice to face** | `.slice(plane: :xy, at: 5.0)` → Face | `BRepAlgoAPI_Section` |
+| 13 | **SVG export** | `shape.export("part.svg", view: :top)` | `HLRBRep_Algo` (hidden-line removal) + `HLRBRep_HLRToShape` → polylines → SVG |
+| 14 | **DXF export** | `shape.export("part.dxf")` | slice → wire edges → `DXF_Writer` (lightweight hand-rolled or via `IFSelect`) |
+
+SVG via HLRBRep: `HLRBRep_Algo` computes visible / hidden edges from a given
+projection direction; `HLRBRep_HLRToShape` extracts them as `TopoDS_Edge` collections;
+each edge is tessellated into polyline segments and serialised as SVG `<path>` elements.
+This is the same pipeline FreeCAD's TechDraw uses internally.
+
+### Tier 5 — Advanced composition
+
+| # | Feature | DSL | OCCT API |
+|---|---------|-----|----------|
+| 15 | **Boolean fragment** | `fragment([a, b, c])` → Array of solids | `BRepAlgoAPI_BuilderAlgo` (general fuser that keeps all fragments) |
+| 16 | **Convex hull** | `.convex_hull` | `BRepBuilderAPI_Copy` + `BRepAlgoAPI_Fuse` fold (no native OCCT hull; wrap qhull or approximate via point cloud + loft) |
+| 17 | **Path pattern** | `path_pattern(shape, path, n)` | `BRepGProp_SurfaceProperties` arc-length param → `n` equally spaced transforms |
+| 18 | **Pipe with guide** | `sweep(profile, path, guide:)` | `BRepFill_PipeShell::SetMode(guide_wire)` |
+
+### Implementation order
+
+```
+Sprint 1: Tier 1 (#1–4) — pad, pocket, fillet_wire, datum_plane
+          These four together unlock the core FreeCAD Part Design loop in rrcad.
+
+Sprint 2: Tier 2 (#5–8) — draft angle, helix, thread, cbore macro
+          Manufacturing features; helix is the prerequisite for thread.
+
+Sprint 3: Tier 3 (#9–11) — distance_to, inertia, min_thickness
+          Inspection / clearance checks; pure OCCT queries, no new topology.
+
+Sprint 4: Tier 4 (#12–14) — slice, SVG export, DXF export
+          2D drawing output; SVG via HLRBRep is the most complex item here.
+
+Sprint 5: Tier 5 (#15–18) — fragment, convex hull, path pattern, guided sweep
+          Advanced composition; lower priority, implement as demand arises.
+```
+
+### Notes
+
+- **pad / pocket are the highest-priority items** — they alone cover the majority of
+  FreeCAD Part Design workflows that users would want to do in code.
+- `fillet_wire` is a prerequisite for rounded pockets (slot with rounded ends, etc.)
+  and must land in the same sprint as pad/pocket.
+- The face-local transform logic (`gp_Ax3` → `gp_Trsf`) is shared by pad, pocket, and
+  datum_plane; implement it once as a C++ helper and reuse.
+- SVG export via `HLRBRep_Algo` is the single largest new subsystem; it should be a
+  separate sub-task with its own bridge class (similar to `ThruSectionsBuilder`).
+- Thread is a compound feature (helix + profile sweep + cut) that can be implemented
+  entirely in the Ruby DSL once helix is available — no new C++ needed for the thread
+  feature itself.
+- DXF v1 can be a hand-rolled ASCII writer (just LINE and ARC entities from sliced edges);
+  no need for a full DXF library.
 
 ---
 
