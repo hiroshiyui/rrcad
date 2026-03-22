@@ -92,6 +92,75 @@ Validated by `tests/teapot_sample.rs` (5 tests).
 
 ---
 
+## Phase 7 — Improve OCCT Coverage & Compatibility
+
+### Tier 1 — Quick wins, high ROI (complete existing patterns)
+
+| # | Feature | DSL | OCCT API |
+|---|---------|-----|----------|
+| 1 | **Asymmetric chamfer** | `.chamfer(d1, d2)` or `.chamfer(d1..d2)` | `BRepFilletAPI_MakeChamfer::Add(edge, d1, d2)` |
+| 2 | **2D profile offset** | `.offset_2d(d)` | `BRepOffsetAPI_MakeOffset` on a Face/Wire |
+| 3 | **Grid pattern** | `grid_pattern(s, nx, ny, dx, dy)` | Pure Rust composition over `linear_pattern` |
+| 4 | **Multi-shape fuse/cut** | `fuse_all([a,b,c])`, `cut_all([a,b,c])` | Fold-left in Rust, no new C++ |
+
+### Tier 2 — Validation & introspection (robustness for real workflows)
+
+| # | Feature | DSL | OCCT API |
+|---|---------|-----|----------|
+| 5 | **Shape type query** | `.shape_type` → `:solid/:shell/:face/:wire/:edge/:vertex` | `shape.ShapeType()` → `TopAbs_ShapeEnum` |
+| 6 | **Closed / manifold check** | `.closed?`, `.manifold?` | `ShapeAnalysis` + edge-sharing loop |
+| 7 | **Centroid** | `.centroid` → `[x, y, z]` | `BRepGProp::VolumeProperties` (already have `volume`) |
+| 8 | **Topology validation** | `.validate` → `:ok` or error list | `BRepCheck_Analyzer` (already used in export guard) |
+
+### Tier 3 — Surface modeling (next frontier)
+
+| # | Feature | DSL | OCCT API |
+|---|---------|-----|----------|
+| 9 | **Ruled surface** | `ruled_surface(wire_a, wire_b)` | `BRepFill_RuledSurface` |
+| 10 | **Fill surface** | `fill_surface([boundary_wires])` | `BRepFill_Filling` |
+| 11 | **Slice by plane** | `.slice(plane: :xy, z: 5.0)` → Face | `BRepAlgoAPI_Section` |
+
+### Tier 4 — Interop (legacy CAD exchange)
+
+| # | Feature | DSL | OCCT API |
+|---|---------|-----|----------|
+| 12 | **IGES import** | `import_iges("file.igs")` | `IGESControl_Reader` |
+| 13 | **IGES export** | `shape.export("file.igs")` | `IGESControl_Writer` |
+| 14 | **SVG export** (2D projection) | `shape.export("file.svg")` | Orthographic projection → polylines |
+
+### Tier 5 — Phase 8 candidates (include only if time allows)
+
+- **Draft angle extrude** — `.extrude(h, draft: 5.0)` — tapered walls for moulded parts
+- **Path pattern** — `path_pattern(shape, spline_path, n)` — copies at equal arc-length steps along a curve
+- **Closest point / collision** — `.distance_to(other)` → float — `BRepExtrema_DistShapeShape`
+- **Moment of inertia** — `.inertia` → tensor — `BRepGProp::VolumeProperties`
+- **2D Boolean on sketches** — `sketch_a.fuse_2d(sketch_b)` — `BRepAlgoAPI_*` restricted to Face shapes
+- **Wire fillet** (pre-profile) — `.fillet_wire(r)` — round 2D sketch corners before extrude
+- **Pipe with guide curve** — advanced sweep; `BRepFill_PipeShell` with guide surface
+- **Convex hull** — `.convex_hull` — bounding convex solid (OpenSCAD `hull()` parity)
+
+### Implementation order
+
+```
+Week 1:  Tier 1 (#1–4)  — asymmetric chamfer, offset_2d, grid_pattern, fuse_all/cut_all
+Week 2:  Tier 2 (#5–8)  — shape_type, closed?/manifold?, centroid, validate
+Week 3:  Tier 3 (#9–11) — ruled_surface, fill_surface, slice
+Week 4:  Tier 4 (#12–14) — IGES import/export, SVG export
+Week 5+: Tier 5 (Phase 8)
+```
+
+### Notes
+
+- Tier 1 + 2 require almost no new C++ — completing existing patterns in Rust/glue.c.
+- Surface modeling (Tier 3) introduces face-only shapes (not solids); `BRepCheck_Analyzer`
+  is the safety net. `BRepFill_Filling` boundary wires must be closed.
+- IGES follows the same reader/writer pattern as STEP — no architectural change.
+- SVG export requires orthographic projection; a visible-edges-only wireframe is a good v1.
+- Draft angle extrude is common for manufacturing but needs its own OCCT path; punted to
+  Phase 8 to keep Phase 7 focused.
+
+---
+
 ## Architecture Notes
 
 See `CLAUDE.md` and `doc/development.md` for the full architecture and
