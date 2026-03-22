@@ -25,8 +25,61 @@
 //! - All string/slice pointers (`path`, `pts`, `selector`, `plane`) are valid
 //!   for the duration of the call.
 use std::ffi::{CString, c_char, c_void};
+use std::path::{Path, PathBuf};
 
 use crate::occt::Shape;
+
+// ---------------------------------------------------------------------------
+// Path-traversal guard
+// ---------------------------------------------------------------------------
+
+/// Resolve `raw` to a canonical absolute path and verify it is inside the
+/// current working directory.
+///
+/// Security rationale: DSL scripts run arbitrary Ruby code, so a malicious
+/// (or buggy) script could pass a path like `"../../etc/passwd"` to an export
+/// or import function.  This helper ensures every file I/O path stays within
+/// the process working directory, blocking directory-traversal attacks.
+///
+/// For files that do not yet exist (export paths), we canonicalize only the
+/// parent directory and rejoin the filename, because `canonicalize` requires
+/// the target to exist.
+fn safe_path(raw: &str) -> Result<PathBuf, String> {
+    let p = PathBuf::from(raw);
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+    let canon_cwd = cwd
+        .canonicalize()
+        .map_err(|e| format!("cannot resolve cwd: {e}"))?;
+
+    let canonical = if p.exists() {
+        // File exists: full canonicalization resolves all symlinks.
+        p.canonicalize()
+            .map_err(|e| format!("cannot resolve path '{raw}': {e}"))?
+    } else {
+        // File does not exist yet (typical for export).  Canonicalize only the
+        // parent directory, then re-attach the filename component.
+        let parent = p.parent().unwrap_or(Path::new(""));
+        let canon_parent = if parent == Path::new("") {
+            // No directory component — file lives in the current directory.
+            canon_cwd.clone()
+        } else {
+            parent.canonicalize().map_err(|e| {
+                format!("cannot resolve directory for '{raw}': {e}")
+            })?
+        };
+        canon_parent.join(
+            p.file_name()
+                .ok_or_else(|| format!("invalid path (no filename component): '{raw}'"))?,
+        )
+    };
+
+    if !canonical.starts_with(&canon_cwd) {
+        return Err(format!(
+            "path '{raw}' is outside the working directory (path traversal rejected)"
+        ));
+    }
+    Ok(canonical)
+}
 
 // ---------------------------------------------------------------------------
 // Thread-local error slot
@@ -163,7 +216,16 @@ pub unsafe extern "C" fn rrcad_import_step(
             return std::ptr::null_mut();
         }
     };
-    unsafe { shape_result_to_ptr(Shape::import_step(path_str), error_out) }
+    // Guard against directory-traversal: reject paths outside cwd.
+    let safe = match safe_path(path_str) {
+        Ok(p) => p,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            return std::ptr::null_mut();
+        }
+    };
+    let safe_str = safe.to_string_lossy();
+    unsafe { shape_result_to_ptr(Shape::import_step(&safe_str), error_out) }
 }
 
 #[unsafe(no_mangle)]
@@ -179,7 +241,16 @@ pub unsafe extern "C" fn rrcad_import_stl(
             return std::ptr::null_mut();
         }
     };
-    unsafe { shape_result_to_ptr(Shape::import_stl(path_str), error_out) }
+    // Guard against directory-traversal: reject paths outside cwd.
+    let safe = match safe_path(path_str) {
+        Ok(p) => p,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            return std::ptr::null_mut();
+        }
+    };
+    let safe_str = safe.to_string_lossy();
+    unsafe { shape_result_to_ptr(Shape::import_stl(&safe_str), error_out) }
 }
 
 // ---------------------------------------------------------------------------
@@ -201,7 +272,16 @@ pub unsafe extern "C" fn rrcad_shape_export_step(
             return;
         }
     };
-    if let Err(e) = shape.export_step(path_str) {
+    // Guard against directory-traversal: reject export paths outside cwd.
+    let safe = match safe_path(path_str) {
+        Ok(p) => p,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            return;
+        }
+    };
+    let safe_str = safe.to_string_lossy();
+    if let Err(e) = shape.export_step(&safe_str) {
         unsafe { set_err(error_out, &e) };
     }
 }
@@ -221,7 +301,16 @@ pub unsafe extern "C" fn rrcad_shape_export_stl(
             return;
         }
     };
-    if let Err(e) = shape.export_stl(path_str) {
+    // Guard against directory-traversal: reject export paths outside cwd.
+    let safe = match safe_path(path_str) {
+        Ok(p) => p,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            return;
+        }
+    };
+    let safe_str = safe.to_string_lossy();
+    if let Err(e) = shape.export_stl(&safe_str) {
         unsafe { set_err(error_out, &e) };
     }
 }
@@ -241,7 +330,16 @@ pub unsafe extern "C" fn rrcad_shape_export_gltf(
             return;
         }
     };
-    if let Err(e) = shape.export_gltf(path_str, 0.1) {
+    // Guard against directory-traversal: reject export paths outside cwd.
+    let safe = match safe_path(path_str) {
+        Ok(p) => p,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            return;
+        }
+    };
+    let safe_str = safe.to_string_lossy();
+    if let Err(e) = shape.export_gltf(&safe_str, 0.1) {
         unsafe { set_err(error_out, &e) };
     }
 }
@@ -261,7 +359,16 @@ pub unsafe extern "C" fn rrcad_shape_export_glb(
             return;
         }
     };
-    if let Err(e) = shape.export_glb(path_str, 0.1) {
+    // Guard against directory-traversal: reject export paths outside cwd.
+    let safe = match safe_path(path_str) {
+        Ok(p) => p,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            return;
+        }
+    };
+    let safe_str = safe.to_string_lossy();
+    if let Err(e) = shape.export_glb(&safe_str, 0.1) {
         unsafe { set_err(error_out, &e) };
     }
 }
@@ -281,7 +388,16 @@ pub unsafe extern "C" fn rrcad_shape_export_obj(
             return;
         }
     };
-    if let Err(e) = shape.export_obj(path_str, 0.1) {
+    // Guard against directory-traversal: reject export paths outside cwd.
+    let safe = match safe_path(path_str) {
+        Ok(p) => p,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            return;
+        }
+    };
+    let safe_str = safe.to_string_lossy();
+    if let Err(e) = shape.export_obj(&safe_str, 0.1) {
         unsafe { set_err(error_out, &e) };
     }
 }
@@ -302,11 +418,20 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
             return;
         }
     };
+    // Guard against directory-traversal: reject export paths outside cwd.
+    let safe = match safe_path(path_str) {
+        Ok(p) => p,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            return;
+        }
+    };
+    let safe_str = safe.to_string_lossy();
     let view_str = match unsafe { std::ffi::CStr::from_ptr(view) }.to_str() {
         Ok(s) => s,
         Err(_) => "top",
     };
-    if let Err(e) = shape.export_svg(path_str, view_str) {
+    if let Err(e) = shape.export_svg(&safe_str, view_str) {
         unsafe { set_err(error_out, &e) };
     }
 }
@@ -327,11 +452,20 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
             return;
         }
     };
+    // Guard against directory-traversal: reject export paths outside cwd.
+    let safe = match safe_path(path_str) {
+        Ok(p) => p,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            return;
+        }
+    };
+    let safe_str = safe.to_string_lossy();
     let view_str = match unsafe { std::ffi::CStr::from_ptr(view) }.to_str() {
         Ok(s) => s,
         Err(_) => "top",
     };
-    if let Err(e) = shape.export_dxf(path_str, view_str) {
+    if let Err(e) = shape.export_dxf(&safe_str, view_str) {
         unsafe { set_err(error_out, &e) };
     }
 }
