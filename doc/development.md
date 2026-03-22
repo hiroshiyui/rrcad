@@ -94,7 +94,12 @@ rrcad/
 │   ├── phase5_params.rs    # Phase 5: param DSL, --param overrides, design table
 │   ├── phase7_tier1.rs    # Phase 7 Tier 1: chamfer_asym, offset_2d, grid_pattern, fuse_all, cut_all
 │   ├── phase7_tier2.rs    # Phase 7 Tier 2: shape_type, centroid, closed?, manifold?, validate
-│   └── phase7_tier3.rs    # Phase 7 Tier 3: ruled_surface, fill_surface, slice
+│   ├── phase7_tier3.rs    # Phase 7 Tier 3: ruled_surface, fill_surface, slice
+│   ├── phase8_tier1.rs    # Phase 8 Tier 1: pad, pocket, fillet_wire, datum_plane (11 tests)
+│   ├── phase8_tier2.rs    # Phase 8 Tier 2: draft angle, helix, thread, cbore/csink (13 tests)
+│   ├── phase8_tier3.rs    # Phase 8 Tier 3: distance_to, inertia, min_thickness (10 tests)
+│   ├── phase8_tier4.rs    # Phase 8 Tier 4: SVG/DXF 2-D drawing export (11 tests)
+│   └── phase8_tier5.rs    # Phase 8 Tier 5: fragment, convex_hull, path_pattern, guided sweep (11 tests)
 ├── vendor/
 │   └── mruby/              # git submodule — mRuby 3.4.0
 └── doc/

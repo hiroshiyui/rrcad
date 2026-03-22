@@ -73,6 +73,9 @@ See [`doc/TODOs.md`](doc/TODOs.md) for the phased implementation plan:
 - **Phase 3** ✓ — Spline profiles + sweep; sub-shape selectors (`.faces`, `.edges`); live browser preview (`axum` + Three.js + WebSocket file watcher; `--preview` CLI)
 - **Phase 4** ✓ — OCCT coverage: `cone`, `torus`, `wedge`, `polygon`, `ellipse`, `arc`, `loft`, `shell`, `offset`, `simplify`; selective fillet/chamfer; linear/polar patterns; STEP/STL import; bounding box / volume / surface area queries
 - **Phase 5** ✓ — Parametric design: `param` DSL + `--param` CLI override; design table batch export (`--design-table`); GLB color/material (`.color(r,g,b)`); assembly mating (`Shape#mate`, `Assembly#mate`); spline tangent constraints; feature removal (`.simplify`)
+- **Phase 6** ✓ — Variable-section sweep (`sweep_sections`); Bézier surface patches (`bezier_patch`); face/shell sewing (`sew`); Utah Teapot rebuild from 28 Newell patches
+- **Phase 7** ✓ — Asymmetric chamfer; 2D profile offset; grid pattern; `fuse_all`/`cut_all`; shape type / `closed?` / `manifold?` / `centroid` / `validate`; surface modeling (`ruled_surface`, `fill_surface`, `.slice`)
+- **Phase 8** ✓ — Part Design: `.pad`, `.pocket`, `.fillet_wire`, `datum_plane`; manufacturing: draft extrude, `helix`, thread, cbore/csink macros; inspection: `.distance_to`, `.inertia`, `.min_thickness`; 2-D drawing: `.export("part.svg")` / `.export("part.dxf")` via `HLRBRep_PolyAlgo`; advanced composition: `fragment`, `.convex_hull`, `path_pattern`, guided `.sweep`
 
 ## Third-party components
 
