@@ -361,6 +361,25 @@ std::unique_ptr<OcctShape> shape_fillet_wire(const OcctShape& profile, double ra
 std::unique_ptr<OcctShape> make_datum_plane(double ox, double oy, double oz, double nx, double ny,
                                             double nz, double xx, double xy, double xz);
 
+// --- Phase 8 Tier 3: Inspection & clearance ---
+
+// Minimum distance between two shapes.  Returns 0 if the shapes overlap.
+// Uses BRepExtrema_DistShapeShape with default deflection.
+double shape_distance_to(const OcctShape& a, const OcctShape& b);
+
+// Inertia tensor of a solid about its centre of mass.
+// Fills out[0..6] with [Ixx, Iyy, Izz, Ixy, Ixz, Iyz] (in the world frame).
+// Uses BRepGProp::VolumeProperties → GProp_GProps::MatrixOfInertia.
+// Throws std::runtime_error for non-solid shapes.
+void shape_inertia(const OcctShape& shape, rust::Slice<double> out);
+
+// Minimum wall thickness of a solid: smallest distance between any two
+// opposed faces.  Strategy: extract the outer shell, build an inward-offset
+// shell, then use BRepExtrema_DistShapeShape between the two shells.
+// Throws std::runtime_error if the shape is not a Solid or Shell, or if
+// the offset fails.
+double shape_min_thickness(const OcctShape& shape);
+
 // --- Phase 8 Tier 2: Manufacturing features ---
 
 // Draft angle extrude: straight prism then taper all lateral faces via

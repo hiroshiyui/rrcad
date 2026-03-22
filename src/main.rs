@@ -100,6 +100,9 @@ Part Design (Phase 8)
   thread(solid, :side, pitch: p, depth: d) cut helical thread groove into solid
   cbore(d:, cbore_d:, cbore_h:, depth:)  counterbore hole tool (use with .cut)
   csink(d:, csink_d:, csink_angle:, depth:) countersink tool (use with .cut)
+  s.distance_to(other)       minimum distance between shapes (0 if overlapping)
+  s.inertia                  {ixx:,iyy:,izz:,ixy:,ixz:,iyz:} inertia tensor
+  s.min_thickness            minimum wall thickness of a solid/shell
 
 Parameters (Phase 5)
   param :name, default: val        declare a parameter (returns value)

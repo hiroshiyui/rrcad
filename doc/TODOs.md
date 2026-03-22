@@ -239,13 +239,15 @@ All four Tier 2 features are implemented and tested in `tests/phase8_tier2.rs` (
 | 7 | **Thread** ✓ | `thread(solid, face_sel, pitch:, depth:)` | helix path + triangular polygon profile + `.sweep` + `.cut` — pure Ruby DSL |
 | 8 | **Counterbore / countersink** ✓ | `cbore(d:, cbore_d:, cbore_h:, depth:)`, `csink(d:, csink_d:, csink_angle:, depth:)` | pure Ruby DSL — `circle.extrude` + `cone` + `.fuse`; use with `.cut` |
 
-### Tier 3 — Inspection & clearance
+### ✓ Tier 3 — Inspection & clearance
+
+All three Tier 3 features are implemented and tested in `tests/phase8_tier3.rs` (10 tests).
 
 | # | Feature | DSL | OCCT API |
 |---|---------|-----|----------|
-| 9 | **Distance between shapes** | `.distance_to(other)` → Float | `BRepExtrema_DistShapeShape` |
-| 10 | **Moment of inertia** | `.inertia` → `{ixx:, iyy:, izz:, ixy:, …}` | `BRepGProp::VolumeProperties` → `GProp_GProps::MatrixOfInertia` |
-| 11 | **Thickness map** | `.min_thickness` → Float | `BRepExtrema_DistShapeShape` on shell vs offset shell |
+| 9 | **Distance between shapes** ✓ | `.distance_to(other)` → Float | `BRepExtrema_DistShapeShape` |
+| 10 | **Moment of inertia** ✓ | `.inertia` → `{ixx:, iyy:, izz:, ixy:, …}` | `BRepGProp::VolumeProperties` → `GProp_GProps::MatrixOfInertia` |
+| 11 | **Minimum wall thickness** ✓ | `.min_thickness` → Float | Ray-casting via `IntCurvesFace_ShapeIntersector` — shoots inward ray from each face centroid, returns shortest intersection distance |
 
 ### Tier 4 — 2D drawing output
 

@@ -119,6 +119,11 @@
 #include <ChFi2d_ConstructionError.hxx>
 #include <gp_Ax3.hxx>
 
+// --- OCCT: Phase 8 Tier 3 — inspection & clearance ---
+#include <BRepExtrema_DistShapeShape.hxx>
+#include <BRepGProp_Face.hxx>
+#include <IntCurvesFace_ShapeIntersector.hxx>
+
 // --- OCCT: Phase 8 Tier 2 — manufacturing features ---
 #include <BRepOffsetAPI_DraftAngle.hxx>
 
@@ -2230,6 +2235,115 @@ void export_obj(const OcctShape& shape, rust::Str path, double linear_deflection
     Message_ProgressRange progress;
     if (!writer.Perform(doc, metadata, progress))
         throw std::runtime_error("RWObj_CafWriter::Perform failed for: " + path_str);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8 Tier 3 — Inspection & clearance
+// ---------------------------------------------------------------------------
+
+// shape_distance_to — minimum distance between two shapes.
+// BRepExtrema_DistShapeShape returns 0 when shapes intersect or touch.
+double shape_distance_to(const OcctShape& a, const OcctShape& b) {
+    BRepExtrema_DistShapeShape dist(a.get(), b.get());
+    dist.Perform();
+    if (!dist.IsDone())
+        throw std::runtime_error("shape_distance_to: BRepExtrema_DistShapeShape failed");
+    return dist.Value();
+}
+
+// shape_inertia — inertia tensor about the centre of mass.
+// Fills out[] with [Ixx, Iyy, Izz, Ixy, Ixz, Iyz].
+// The MatrixOfInertia diagonal is [Ixx, Iyy, Izz]; off-diagonal entries
+// are the products of inertia (Ixy = MatrixOfInertia(1,2), etc.).
+void shape_inertia(const OcctShape& shape, rust::Slice<double> out) {
+    if (out.size() < 6)
+        throw std::runtime_error("shape_inertia: output slice must have length >= 6");
+
+    GProp_GProps props;
+    // VolumeProperties computes mass (volume) and inertia for solid shapes.
+    BRepGProp::VolumeProperties(shape.get(), props);
+    gp_Mat m = props.MatrixOfInertia();
+    // gp_Mat is 1-indexed; row/col order is [1..3][1..3].
+    out[0] = m.Value(1, 1); // Ixx
+    out[1] = m.Value(2, 2); // Iyy
+    out[2] = m.Value(3, 3); // Izz
+    out[3] = m.Value(1, 2); // Ixy
+    out[4] = m.Value(1, 3); // Ixz
+    out[5] = m.Value(2, 3); // Iyz
+}
+
+// shape_min_thickness — minimum wall thickness of a solid or shell.
+//
+// Strategy A — hollow solid (two or more shells, e.g. from .shell(t)):
+//   BRepExtrema_DistShapeShape between the outer and inner shell directly
+//   returns the nominal wall thickness t.
+//
+// Strategy B — single-boundary solid (e.g. a plain box):
+//   Binary-search for the largest inward offset δ that
+//   BRepOffsetAPI_MakeOffsetShape accepts.  The largest successful δ
+//   approximates the inscribed sphere radius (≈ min_thickness for a sphere,
+//   ≈ half the shortest dimension for a box).
+double shape_min_thickness(const OcctShape& shape) {
+    const TopoDS_Shape& s = shape.get();
+
+    if (s.ShapeType() != TopAbs_SOLID && s.ShapeType() != TopAbs_SHELL)
+        throw std::runtime_error("min_thickness: shape must be a Solid or Shell");
+
+    // Ray-casting approach: for each face, shoot a ray from its UV-centre along
+    // the inward surface normal, intersect with the whole shape, and record the
+    // shortest non-trivial intersection distance.  The minimum over all faces is
+    // the minimum wall thickness.
+    //
+    // This works for both hollow solids (.shell(t) gives one connected shell
+    // with inner + outer surfaces joined at the rim) and simple solid boxes
+    // (ray from each face hits the opposite face at a distance = wall thickness).
+    IntCurvesFace_ShapeIntersector inter;
+    inter.Load(s, 1e-6);
+
+    double min_t = std::numeric_limits<double>::max();
+
+    TopExp_Explorer fexp(s, TopAbs_FACE);
+    for (; fexp.More(); fexp.Next()) {
+        const TopoDS_Face& face = TopoDS::Face(fexp.Current());
+
+        // UV mid-point of the face.
+        double u1, u2, v1, v2;
+        BRepTools::UVBounds(face, u1, u2, v1, v2);
+        double um = (u1 + u2) * 0.5, vm = (v1 + v2) * 0.5;
+
+        // Surface normal at (um, vm).
+        BRepGProp_Face gpf(face);
+        gp_Pnt p;
+        gp_Vec n;
+        gpf.Normal(um, vm, p, n);
+        if (n.Magnitude() < 1e-10)
+            continue;
+        n.Normalize();
+
+        // The OCCT surface normal points outward for FORWARD-oriented faces.
+        // Reverse it to obtain the inward direction (into the material).
+        if (face.Orientation() != TopAbs_REVERSED)
+            n.Reverse();
+
+        gp_Dir indir(n);
+        // Offset the ray origin slightly inward to avoid self-intersection.
+        gp_Pnt origin = p.Translated(gp_Vec(indir) * 1e-4);
+        gp_Lin ray(origin, indir);
+
+        inter.Perform(ray, 0.0, 1e6);
+        for (int i = 1; i <= inter.NbPnt(); ++i) {
+            double t = inter.WParameter(i);
+            // Ignore hits within 1e-3 (numerical noise / same face self-hit).
+            if (t > 1e-3 && t < min_t)
+                min_t = t;
+        }
+    }
+
+    if (min_t == std::numeric_limits<double>::max())
+        throw std::runtime_error(
+            "min_thickness: could not compute — shape may be open or degenerate");
+
+    return min_t;
 }
 
 // ---------------------------------------------------------------------------

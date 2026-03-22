@@ -237,6 +237,28 @@ class Shape
     raise NotImplementedError, "Shape#pocket is not yet implemented (Phase 8 Tier 1)"
   end
 
+  # --- Inspection & clearance — Phase 8 Tier 3 -----------------------------------
+
+  # Return the minimum distance between +self+ and +other+ (Float, ≥ 0).
+  # Returns 0.0 when the shapes overlap or touch.
+  # Uses BRepExtrema_DistShapeShape.
+  def distance_to(_other)
+    raise NotImplementedError, "Shape#distance_to is not yet implemented (Phase 8 Tier 3)"
+  end
+
+  # Return the inertia tensor about the centre of mass as a Hash:
+  #   {ixx:, iyy:, izz:, ixy:, ixz:, iyz:}  (world frame, units = mass × length²).
+  # Uses BRepGProp::VolumeProperties → GProp_GProps::MatrixOfInertia.
+  def inertia
+    raise NotImplementedError, "Shape#inertia is not yet implemented (Phase 8 Tier 3)"
+  end
+
+  # Return the minimum wall thickness of a solid or shell (Float).
+  # Offsets the outer shell inward and measures the gap with BRepExtrema_DistShapeShape.
+  def min_thickness
+    raise NotImplementedError, "Shape#min_thickness is not yet implemented (Phase 8 Tier 3)"
+  end
+
   # Fillet all corner vertices of a 2D Wire or Face profile.
   # Uses BRepFilletAPI_MakeFillet2d; non-corner vertices are silently skipped.
   #

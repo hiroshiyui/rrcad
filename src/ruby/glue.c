@@ -198,6 +198,11 @@ extern void* rrcad_shape_fillet_wire(void* ptr, double radius, const char** erro
 extern void* rrcad_datum_plane(double ox, double oy, double oz, double nx, double ny, double nz,
                                double xx, double xy, double xz, const char** error_out);
 
+/* Phase 8 Tier 3 — Inspection & clearance */
+extern double rrcad_shape_distance_to(void* a, void* b, const char** error_out);
+extern void   rrcad_shape_inertia(void* ptr, double* out, const char** error_out);
+extern double rrcad_shape_min_thickness(void* ptr, const char** error_out);
+
 /* Phase 8 Tier 2 — Manufacturing features */
 extern void* rrcad_shape_extrude_draft(void* ptr, double height, double draft_deg,
                                        const char** error_out);
@@ -1873,6 +1878,61 @@ static mrb_value mrb_rrcad_datum_plane(mrb_state* mrb, mrb_value self) {
 }
 
 /* =========================================================================
+ * Phase 8 Tier 3: Inspection & clearance
+ * =========================================================================
+ */
+
+/* shape.distance_to(other) → Float
+ * Minimum distance between two shapes.  Returns 0.0 when they overlap. */
+static mrb_value mrb_rrcad_shape_distance_to(mrb_state* mrb, mrb_value self) {
+    mrb_value other;
+    mrb_get_args(mrb, "o", &other);
+    void* a_ptr = DATA_PTR(self);
+    require_native_ptr(mrb, a_ptr);
+    void* b_ptr = DATA_PTR(other);
+    if (!b_ptr)
+        mrb_raise(mrb, E_TYPE_ERROR, "distance_to: argument must be a Shape");
+    const char* err = NULL;
+    double dist = rrcad_shape_distance_to(a_ptr, b_ptr, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return mrb_float_value(mrb, dist);
+}
+
+/* shape.inertia → {ixx:, iyy:, izz:, ixy:, ixz:, iyz:}
+ * Inertia tensor about the centre of mass in the world frame. */
+static mrb_value mrb_rrcad_shape_inertia(mrb_state* mrb, mrb_value self) {
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    double buf[6] = {0};
+    const char* err = NULL;
+    rrcad_shape_inertia(ptr, buf, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+
+    mrb_value hash = mrb_hash_new(mrb);
+    static const char* keys[] = {"ixx", "iyy", "izz", "ixy", "ixz", "iyz"};
+    for (int i = 0; i < 6; i++) {
+        mrb_hash_set(mrb, hash,
+                     mrb_symbol_value(mrb_intern_cstr(mrb, keys[i])),
+                     mrb_float_value(mrb, buf[i]));
+    }
+    return hash;
+}
+
+/* shape.min_thickness → Float
+ * Minimum wall thickness of a solid or shell. */
+static mrb_value mrb_rrcad_shape_min_thickness(mrb_state* mrb, mrb_value self) {
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    double t = rrcad_shape_min_thickness(ptr, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return mrb_float_value(mrb, t);
+}
+
+/* =========================================================================
  * Phase 8 Tier 2: Manufacturing features
  * =========================================================================
  */
@@ -2052,4 +2112,11 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     /* Phase 8 Tier 2: Manufacturing features */
     mrb_define_method(mrb, mrb->kernel_module, "helix", mrb_rrcad_helix,
                       MRB_ARGS_KEY(3, 0)); /* radius:, pitch:, height: */
+
+    /* Phase 8 Tier 3: Inspection & clearance */
+    mrb_define_method(mrb, shape_class, "distance_to", mrb_rrcad_shape_distance_to,
+                      MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "inertia", mrb_rrcad_shape_inertia, MRB_ARGS_NONE());
+    mrb_define_method(mrb, shape_class, "min_thickness", mrb_rrcad_shape_min_thickness,
+                      MRB_ARGS_NONE());
 }

@@ -1419,6 +1419,66 @@ pub unsafe extern "C" fn rrcad_shape_slice(
 }
 
 // ---------------------------------------------------------------------------
+// Phase 8 Tier 3 — Inspection & clearance
+// ---------------------------------------------------------------------------
+
+/// Minimum distance between two shapes.  Returns 0.0 when they intersect.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_distance_to(
+    a_ptr: *mut c_void,
+    b_ptr: *mut c_void,
+    error_out: *mut *const c_char,
+) -> f64 {
+    unsafe { *error_out = std::ptr::null() };
+    let a = unsafe { &*(a_ptr as *const Shape) };
+    let b = unsafe { &*(b_ptr as *const Shape) };
+    match a.distance_to(b) {
+        Ok(d) => d,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            f64::NAN
+        }
+    }
+}
+
+/// Inertia tensor [Ixx, Iyy, Izz, Ixy, Ixz, Iyz] about the centre of mass.
+/// Writes 6 f64 values into `out_ptr` (caller-allocated, length 6).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_inertia(
+    ptr: *mut c_void,
+    out_ptr: *mut f64,
+    error_out: *mut *const c_char,
+) {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.inertia() {
+        Ok(arr) => {
+            for (i, &v) in arr.iter().enumerate() {
+                unsafe { *out_ptr.add(i) = v };
+            }
+        }
+        Err(e) => unsafe { set_err(error_out, &e) },
+    }
+}
+
+/// Minimum wall thickness of a solid/shell.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_min_thickness(
+    ptr: *mut c_void,
+    error_out: *mut *const c_char,
+) -> f64 {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.min_thickness() {
+        Ok(t) => t,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            f64::NAN
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Phase 8 Tier 2 — Manufacturing features
 // ---------------------------------------------------------------------------
 

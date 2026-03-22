@@ -236,6 +236,11 @@ mod ffi {
             xz: f64,
         ) -> Result<UniquePtr<OcctShape>>;
 
+        // --- Phase 8 Tier 3: Inspection & clearance ---
+        fn shape_distance_to(a: &OcctShape, b: &OcctShape) -> Result<f64>;
+        fn shape_inertia(shape: &OcctShape, out: &mut [f64]) -> Result<()>;
+        fn shape_min_thickness(shape: &OcctShape) -> Result<f64>;
+
         // --- Phase 8 Tier 2: Manufacturing features ---
         fn shape_extrude_draft(
             profile: &OcctShape,
@@ -773,6 +778,30 @@ impl Shape {
         ffi::make_helix(radius, pitch, height)
             .map(|s| Shape { inner: s })
             .map_err(|e| e.to_string())
+    }
+
+    // --- Phase 8 Tier 3: Inspection & clearance ---
+
+    /// Minimum distance between `self` and `other`.  Returns `0.0` when the shapes
+    /// intersect or touch.  Uses `BRepExtrema_DistShapeShape`.
+    pub fn distance_to(&self, other: &Shape) -> Result<f64, String> {
+        ffi::shape_distance_to(&self.inner, &other.inner).map_err(|e| e.to_string())
+    }
+
+    /// Inertia tensor about the centre of mass.
+    /// Returns `[Ixx, Iyy, Izz, Ixy, Ixz, Iyz]` in the world frame via
+    /// `BRepGProp::VolumeProperties` → `GProp_GProps::MatrixOfInertia`.
+    pub fn inertia(&self) -> Result<[f64; 6], String> {
+        let mut buf = [0f64; 6];
+        ffi::shape_inertia(&self.inner, &mut buf).map_err(|e| e.to_string())?;
+        Ok(buf)
+    }
+
+    /// Minimum wall thickness of a solid or shell.
+    /// Offsets the outer shell inward by a small step and measures the resulting gap
+    /// via `BRepExtrema_DistShapeShape`.
+    pub fn min_thickness(&self) -> Result<f64, String> {
+        ffi::shape_min_thickness(&self.inner).map_err(|e| e.to_string())
     }
 
     // --- Phase 7 Tier 3: Surface modeling ---

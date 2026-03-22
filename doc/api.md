@@ -316,6 +316,29 @@ let profile = Shape::make_polygon(&[0.0, 0.0,  -0.6, 0.75,  0.0, 1.5])?;
 let thread  = profile.sweep(&path)?;
 ```
 
+### Inspection & clearance (Phase 8 Tier 3)
+
+| Method | Description |
+|--------|-------------|
+| `.distance_to(other: &Shape) -> Result<f64>` | Minimum distance between two shapes via `BRepExtrema_DistShapeShape`. Returns `0.0` for overlapping or touching shapes. |
+| `.inertia() -> Result<[f64; 6]>` | Mass moments of inertia `[Ixx, Iyy, Izz, Ixy, Ixz, Iyz]` computed by `BRepGProp::VolumeProperties` → `GProp_GProps::MatrixOfInertia`. |
+| `.min_thickness() -> Result<f64>` | Minimum wall thickness of a solid or shell via ray-casting (`IntCurvesFace_ShapeIntersector`): for each face, shoots a ray inward from the UV-centre, returns the shortest non-trivial intersection distance across all faces. Raises an error for non-solid/non-shell shapes. |
+
+```rust
+// Clearance check
+let a = Shape::make_box(10.0, 10.0, 10.0)?;
+let b = Shape::make_box(5.0, 5.0, 5.0)?.translate(20.0, 0.0, 0.0)?;
+let gap: f64 = a.distance_to(&b)?; // ≈ 10.0
+
+// Inertia tensor
+let s = Shape::make_sphere(5.0)?;
+let [ixx, iyy, izz, ixy, ixz, iyz] = s.inertia()?;
+
+// Wall thickness of a hollow box (shell thickness = 2 mm)
+let shell = Shape::make_box(20.0, 20.0, 20.0)?.shell(2.0)?;
+let t: f64 = shell.min_thickness()?; // ≈ 2.0
+```
+
 ```rust
 // Ruled surface between two wires
 let w1 = Shape::make_spline_3d(&[0.,0.,0., 1.,0.,0., 1.,1.,0.])?;
@@ -491,6 +514,12 @@ fn shape_extrude_draft(profile: &OcctShape,
 fn make_helix(radius: f64, pitch: f64,
               height: f64)                             -> Result<UniquePtr<OcctShape>>;
 
+// Inspection & clearance (Phase 8 Tier 3)
+fn shape_distance_to(a: &OcctShape, b: &OcctShape)    -> Result<f64>;
+fn shape_inertia(shape: &OcctShape,
+                 out: &mut [f64])                      -> Result<()>;
+fn shape_min_thickness(shape: &OcctShape)              -> Result<f64>;
+
 // Sub-shape selectors
 fn shape_faces_count(shape: &OcctShape, selector: &str)              -> Result<i32>;
 fn shape_faces_get(shape: &OcctShape, selector: &str, idx: i32)      -> Result<UniquePtr<OcctShape>>;
@@ -635,6 +664,9 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `.pocket(face_sel, depth:) { sketch }` | Same as `pad` but extrudes inward and subtracts from `self`. Returns a Solid. |
 | `.fillet_wire(r)` | Round all corners of a 2D Wire or Face by radius `r`. Returns a Face. Raises an error if `self` is a Solid or Shell. |
 | `.extrude(h, draft: a)` | Extrude with draft angle `a` degrees. Positive → narrower at top (standard mould taper). Uses `BRepOffsetAPI_DraftAngle` on the straight prism's lateral faces. |
+| `.distance_to(other)` | Minimum clearance distance to `other` shape (Float). Returns `0.0` when shapes overlap or touch. Uses `BRepExtrema_DistShapeShape`. |
+| `.inertia` | Mass moments of inertia as a Hash `{ixx:, iyy:, izz:, ixy:, ixz:, iyz:}`. Computed by `BRepGProp::VolumeProperties` + `MatrixOfInertia`. |
+| `.min_thickness` | Minimum wall thickness of a Solid or Shell (Float). Uses `IntCurvesFace_ShapeIntersector` ray-casting: shoots a ray inward from each face centroid along the face normal; returns the shortest non-trivial hit distance. Raises `ArgumentError` for non-solid/non-shell shapes. |
 | `.export("out.step")` | Write file; format determined by extension: `.step`/`.stp` → STEP, `.stl` → STL, `.glb` → GLB, `.gltf` → glTF, `.obj` → OBJ |
 
 ---
