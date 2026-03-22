@@ -392,7 +392,7 @@ cargo clippy                      # lints
 | `tests/e2e_dsl.rs` | Phase 1–5 end-to-end: export formats, color, mate, simplify |
 | `tests/phase2_dsl.rs` | Phase 2 end-to-end: transforms, mirror, rect/circle, extrude/revolve |
 | `tests/teapot_dsl.rs` | Phase 3: spline_2d/3d (incl. tangent variants), sweep |
-| `tests/teapot_sample.rs` | Full Utah teapot sample: 4 part tests + 1 assembly |
+| `tests/teapot_sample.rs` | `bezier_patch` and `sew` unit tests; full Utah teapot sample (body, spout, handle, lid + assembly); 9 tests total |
 | `tests/phase3_selectors.rs` | Phase 3: `.faces(:top|:bottom|:side|:all)`, `.edges(:vertical|:horizontal|:all)` |
 | `tests/phase4_3d_ops.rs` | Phase 4: shell, offset, loft, extrude_ex (twist/scale), linear/polar patterns |
 | `tests/phase5_params.rs` | Phase 5: `param` DSL, `--param` overrides, design table batch export |
