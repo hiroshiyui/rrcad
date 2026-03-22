@@ -432,4 +432,56 @@ void export_obj(const OcctShape& shape, rust::Str path, double linear_deflection
 void export_svg(const OcctShape& shape, rust::Str path, rust::Str view);
 void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view);
 
+// --- Phase 8 Tier 5: Advanced composition ---
+
+// fragment — General Boolean fragment: split all shapes at their mutual
+// intersection boundaries and return a Compound of all non-overlapping pieces.
+// Uses BRepAlgoAPI_BuilderAlgo (the "splitter" algorithm).
+// Builder pattern: create → add shapes → build → get result.
+//
+// Rules: non-copyable, non-movable, heap-allocated, always transferred as
+// unique_ptr<FragmentBuilder>.
+class FragmentBuilder {
+public:
+    FragmentBuilder();
+    ~FragmentBuilder(); // defined in bridge.cpp (Impl is incomplete here)
+
+    FragmentBuilder(const FragmentBuilder&) = delete;
+    FragmentBuilder& operator=(const FragmentBuilder&) = delete;
+    FragmentBuilder(FragmentBuilder&&) = delete;
+    FragmentBuilder& operator=(FragmentBuilder&&) = delete;
+
+    struct Impl; // fully defined in bridge.cpp; holds TopTools_ListOfShape
+    std::unique_ptr<Impl> impl;
+};
+
+std::unique_ptr<FragmentBuilder> fragment_new();
+void fragment_add(FragmentBuilder& builder, const OcctShape& shape);
+std::unique_ptr<OcctShape> fragment_build(FragmentBuilder& builder);
+
+// convex_hull — 3-D convex hull of the shape's tessellated mesh vertices.
+// Tessellates the shape with BRepMesh_IncrementalMesh, collects all triangle
+// mesh vertices (applying TopLoc_Location transforms), runs an incremental
+// QuickHull algorithm, then sews the hull triangles into a closed solid via
+// BRepBuilderAPI_Sewing + BRepBuilderAPI_MakeSolid.
+// Throws std::runtime_error if fewer than 4 non-coplanar points are found.
+std::unique_ptr<OcctShape> shape_convex_hull(const OcctShape& shape);
+
+// path_pattern — Distribute n evenly-spaced (arc-length) copies of `shape`
+// along `path` (a Wire or Edge), orienting each copy so its local Z-axis
+// aligns with the path tangent at that point.
+// Uses GCPnts_UniformAbscissa on BRepAdaptor_CompCurve for arc-length spacing.
+// Returns a TopoDS_Compound of n copies.
+std::unique_ptr<OcctShape> shape_path_pattern(const OcctShape& shape, const OcctShape& path,
+                                              int32_t n);
+
+// sweep_guide — Guided sweep: sweep `profile` along `path` (the main spine Wire)
+// while keeping the profile's orientation controlled by `guide` (an auxiliary
+// spine Wire, i.e. a guide rail).
+// Uses BRepOffsetAPI_MakePipeShell::SetMode(auxiliary_spine, …) with
+// BRepFill_Contact so the profile tracks the guide rail at all points.
+// Both `path` and `guide` must be Wires.  `profile` may be a Wire or Face.
+std::unique_ptr<OcctShape> shape_sweep_guide(const OcctShape& profile, const OcctShape& path,
+                                             const OcctShape& guide);
+
 } // namespace rrcad

@@ -676,6 +676,65 @@ pub unsafe extern "C" fn rrcad_shape_cut_all(
 }
 
 // ---------------------------------------------------------------------------
+// Phase 8 Tier 5: Advanced composition
+// ---------------------------------------------------------------------------
+
+/// `fragment(ptrs, n)` — split n shapes at all mutual intersections.
+/// Returns a Compound of all non-overlapping pieces.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_fragment(
+    ptrs: *const *const c_void,
+    n: usize,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shapes: Vec<&Shape> = (0..n)
+        .map(|i| unsafe { &*(*ptrs.add(i) as *const Shape) })
+        .collect();
+    unsafe { shape_result_to_ptr(Shape::fragment_all(&shapes), error_out) }
+}
+
+/// `.convex_hull` — 3-D convex hull of the shape's tessellated mesh vertices.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_convex_hull(
+    ptr: *mut c_void,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    unsafe { shape_result_to_ptr(shape.convex_hull(), error_out) }
+}
+
+/// `path_pattern(shape, path, n)` — distribute n copies of `shape` along `path`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_path_pattern(
+    ptr: *mut c_void,
+    path_ptr: *mut c_void,
+    n: std::ffi::c_int,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let path = unsafe { &*(path_ptr as *const Shape) };
+    unsafe { shape_result_to_ptr(shape.path_pattern(path, n), error_out) }
+}
+
+/// `.sweep(path, guide:)` — guided sweep with auxiliary spine.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_sweep_guide(
+    ptr: *mut c_void,
+    path_ptr: *mut c_void,
+    guide_ptr: *mut c_void,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let profile = unsafe { &*(ptr as *const Shape) };
+    let path = unsafe { &*(path_ptr as *const Shape) };
+    let guide = unsafe { &*(guide_ptr as *const Shape) };
+    unsafe { shape_result_to_ptr(profile.sweep_guide(path, guide), error_out) }
+}
+
+// ---------------------------------------------------------------------------
 // Mirror (Phase 2)
 // ---------------------------------------------------------------------------
 

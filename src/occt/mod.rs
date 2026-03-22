@@ -268,6 +268,31 @@ mod ffi {
         // Phase 8 Tier 4: 2-D drawing output.
         fn export_svg(shape: &OcctShape, path: &str, view: &str) -> Result<()>;
         fn export_dxf(shape: &OcctShape, path: &str, view: &str) -> Result<()>;
+
+        // Phase 8 Tier 5: Advanced composition.
+
+        // fragment builder — accumulate shapes then split at all intersections.
+        type FragmentBuilder;
+        fn fragment_new() -> Result<UniquePtr<FragmentBuilder>>;
+        fn fragment_add(builder: Pin<&mut FragmentBuilder>, shape: &OcctShape) -> Result<()>;
+        fn fragment_build(builder: Pin<&mut FragmentBuilder>) -> Result<UniquePtr<OcctShape>>;
+
+        // convex hull of the shape's tessellated mesh vertices.
+        fn shape_convex_hull(shape: &OcctShape) -> Result<UniquePtr<OcctShape>>;
+
+        // n evenly-spaced (arc-length) copies of shape along path.
+        fn shape_path_pattern(
+            shape: &OcctShape,
+            path: &OcctShape,
+            n: i32,
+        ) -> Result<UniquePtr<OcctShape>>;
+
+        // guided sweep: profile swept along path, orientation locked to guide.
+        fn shape_sweep_guide(
+            profile: &OcctShape,
+            path: &OcctShape,
+            guide: &OcctShape,
+        ) -> Result<UniquePtr<OcctShape>>;
     }
 }
 
@@ -890,6 +915,47 @@ impl Shape {
             acc = acc.cut(tool)?;
         }
         Ok(acc)
+    }
+
+    // --- Phase 8 Tier 5: Advanced composition ---
+
+    /// Fragment all shapes in the slice at their mutual intersection boundaries.
+    /// Returns a Compound of all non-overlapping pieces.
+    /// Uses `BRepAlgoAPI_BuilderAlgo` internally.
+    pub fn fragment_all(shapes: &[&Shape]) -> Result<Shape, String> {
+        if shapes.is_empty() {
+            return Err("fragment: requires at least 1 shape".to_string());
+        }
+        let mut builder = ffi::fragment_new().map_err(|e| e.to_string())?;
+        for s in shapes {
+            ffi::fragment_add(builder.pin_mut(), &s.inner).map_err(|e| e.to_string())?;
+        }
+        ffi::fragment_build(builder.pin_mut())
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    /// 3-D convex hull of the shape's tessellated mesh vertices.
+    pub fn convex_hull(&self) -> Result<Shape, String> {
+        ffi::shape_convex_hull(&self.inner)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Distribute `n` arc-length-evenly-spaced copies of `self` along `path`.
+    /// Each copy is oriented so its local Z-axis aligns with the path tangent.
+    pub fn path_pattern(&self, path: &Shape, n: i32) -> Result<Shape, String> {
+        ffi::shape_path_pattern(&self.inner, &path.inner, n)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Guided sweep: sweep `self` (a profile Wire/Face) along `path` while
+    /// keeping the profile orientation locked to the `guide` auxiliary Wire.
+    pub fn sweep_guide(&self, path: &Shape, guide: &Shape) -> Result<Shape, String> {
+        ffi::shape_sweep_guide(&self.inner, &path.inner, &guide.inner)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
     }
 
     // --- Import ---

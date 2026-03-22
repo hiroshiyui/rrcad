@@ -363,6 +363,15 @@ let section = Shape::make_box(10.0, 10.0, 10.0)?.slice("xy", 5.0)?;
 | `.export_svg(path: &str, view: &str) -> Result<()>` | SVG 2-D drawing. `view` is `"top"` (default), `"front"`, or `"side"`. Uses `HLRBRep_PolyAlgo` + `HLRBRep_PolyHLRToShape`. |
 | `.export_dxf(path: &str, view: &str) -> Result<()>` | DXF R12 ASCII drawing. Same `view` options as `export_svg`. |
 
+### Phase 8 Tier 5 — Advanced Composition
+
+| Method | Description |
+|--------|-------------|
+| `Shape::fragment_all(shapes: &[&Shape]) -> Result<Shape, String>` | Boolean fragment: splits all shapes at mutual intersection boundaries. Returns a Compound of all non-overlapping pieces. Uses `BRepAlgoAPI_BuilderAlgo` via the `FragmentBuilder` builder pattern. |
+| `.convex_hull() -> Result<Shape, String>` | 3-D convex hull of the shape's tessellated mesh vertices. Runs an incremental QuickHull algorithm; sews hull triangles into a BRep solid via `BRepBuilderAPI_Sewing` + `BRepBuilderAPI_MakeSolid`. |
+| `.path_pattern(path: &Shape, n: i32) -> Result<Shape, String>` | Distribute `n` arc-length-evenly-spaced copies of `self` along `path` (a Wire or Edge). Each copy is oriented so its local Z-axis aligns with the path tangent. Uses `GCPnts_UniformAbscissa` on `BRepAdaptor_CompCurve`. |
+| `.sweep_guide(path: &Shape, guide: &Shape) -> Result<Shape, String>` | Guided sweep: sweeps `self` (a profile Wire or Face) along `path` while keeping the profile orientation locked to the auxiliary `guide` wire. Uses `BRepOffsetAPI_MakePipeShell::SetMode(guide_wire, true, BRepFill_Contact)`. |
+
 ```rust
 part.export_step("/tmp/part.step")?;
 part.export_stl("/tmp/part.stl")?;
@@ -542,6 +551,16 @@ fn export_stl (shape: &OcctShape, path: &str)                         -> Result<
 fn export_gltf(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
 fn export_glb (shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
 fn export_obj (shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
+
+// Phase 8 Tier 5 — Advanced composition
+type FragmentBuilder;
+fn fragment_new()                                                          -> Result<UniquePtr<FragmentBuilder>>;
+fn fragment_add(builder: Pin<&mut FragmentBuilder>, shape: &OcctShape)    -> Result<()>;
+fn fragment_build(builder: Pin<&mut FragmentBuilder>)                     -> Result<UniquePtr<OcctShape>>;
+fn shape_convex_hull(shape: &OcctShape)                                   -> Result<UniquePtr<OcctShape>>;
+fn shape_path_pattern(shape: &OcctShape, path: &OcctShape, n: i32)       -> Result<UniquePtr<OcctShape>>;
+fn shape_sweep_guide(profile: &OcctShape, path: &OcctShape,
+                     guide: &OcctShape)                                   -> Result<UniquePtr<OcctShape>>;
 ```
 
 ---
@@ -672,6 +691,10 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `.export("out.step")` | Write file; format determined by extension: `.step`/`.stp` → STEP, `.stl` → STL, `.glb` → GLB, `.gltf` → glTF, `.obj` → OBJ, `.svg` → SVG 2-D drawing, `.dxf` → DXF R12 2-D drawing |
 | `.export("out.svg", view: :top\|:front\|:side)` | SVG 2-D drawing via `HLRBRep_PolyAlgo` hidden-line removal. `:top` (default) looks down −Z; `:front` looks along −Y; `:side` looks along +X. Outputs `<polyline>` elements with Y-down SVG coordinates. |
 | `.export("out.dxf", view: :top\|:front\|:side)` | DXF R12 ASCII drawing via the same HLR pipeline. Outputs `LINE` entities with Y-up CAD coordinates. |
+| `fragment([a, b, c])` | General Boolean fragment: split all shapes at their mutual intersection boundaries. Returns a Compound of all non-overlapping pieces. Uses `BRepAlgoAPI_BuilderAlgo`. |
+| `.convex_hull` | 3-D convex hull of the shape's tessellated mesh vertices. Uses an incremental QuickHull algorithm; returns a BRep solid. |
+| `path_pattern(shape, path, n)` | Distribute `n` arc-length-evenly-spaced copies of `shape` along `path` (a Wire). Each copy is oriented so its local Z-axis aligns with the path tangent. |
+| `.sweep(path, guide: wire)` | Guided sweep: sweep `self` (profile Wire or Face) along `path` while keeping the profile orientation locked to the auxiliary `guide` Wire. Uses `BRepOffsetAPI_MakePipeShell::SetMode`. |
 
 ---
 

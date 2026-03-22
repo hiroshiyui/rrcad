@@ -78,8 +78,7 @@ extern void* rrcad_shape_common(void* a, void* b, const char** error_out);
 /* Phase 5 */
 extern void* rrcad_shape_mate(void* ptr, void* from_ptr, void* to_ptr, double offset,
                               const char** error_out);
-extern void* rrcad_shape_set_color(void* ptr, double r, double g, double b,
-                                   const char** error_out);
+extern void* rrcad_shape_set_color(void* ptr, double r, double g, double b, const char** error_out);
 
 /* Phase 2 */
 extern void* rrcad_shape_translate(void* ptr, double dx, double dy, double dz,
@@ -147,8 +146,7 @@ extern void* rrcad_shape_extrude_ex(void* ptr, double height, double twist_deg, 
 /* Phase 4 — patterns */
 extern void* rrcad_shape_linear_pattern(void* ptr, int n, double dx, double dy, double dz,
                                         const char** error_out);
-extern void* rrcad_shape_polar_pattern(void* ptr, int n, double angle_deg,
-                                       const char** error_out);
+extern void* rrcad_shape_polar_pattern(void* ptr, int n, double angle_deg, const char** error_out);
 
 /* Phase 4 — vertices selector */
 extern int rrcad_shape_vertices_count(void* ptr, const char* selector, const char** error_out);
@@ -179,21 +177,19 @@ extern void* rrcad_shape_offset_2d(void* ptr, double distance, const char** erro
 extern void* rrcad_shape_grid_pattern(void* ptr, int nx, int ny, double dx, double dy,
                                       const char** error_out);
 extern void* rrcad_shape_fuse_all(const void** ptrs, size_t n, const char** error_out);
-extern void* rrcad_shape_cut_all(void* base, const void** ptrs, size_t n,
-                                 const char** error_out);
+extern void* rrcad_shape_cut_all(void* base, const void** ptrs, size_t n, const char** error_out);
 
 /* Phase 7 Tier 2 — validation & introspection */
 extern const char* rrcad_shape_type_name(void* ptr, const char** error_out);
-extern void        rrcad_shape_centroid(void* ptr, double* out, const char** error_out);
-extern int         rrcad_shape_is_closed(void* ptr, const char** error_out);
-extern int         rrcad_shape_is_manifold(void* ptr, const char** error_out);
+extern void rrcad_shape_centroid(void* ptr, double* out, const char** error_out);
+extern int rrcad_shape_is_closed(void* ptr, const char** error_out);
+extern int rrcad_shape_is_manifold(void* ptr, const char** error_out);
 extern const char* rrcad_shape_validate(void* ptr, const char** error_out);
 
 /* Phase 7 Tier 3 — surface modeling */
 extern void* rrcad_ruled_surface(void* a, void* b, const char** error_out);
 extern void* rrcad_fill_surface(void* ptr, const char** error_out);
-extern void* rrcad_shape_slice(void* ptr, const char* plane, double offset,
-                               const char** error_out);
+extern void* rrcad_shape_slice(void* ptr, const char* plane, double offset, const char** error_out);
 
 /* Phase 8 Tier 1 — Core Part Design */
 extern void* rrcad_shape_pad(void* body, void* face, void* sketch, double height,
@@ -206,14 +202,20 @@ extern void* rrcad_datum_plane(double ox, double oy, double oz, double nx, doubl
 
 /* Phase 8 Tier 3 — Inspection & clearance */
 extern double rrcad_shape_distance_to(void* a, void* b, const char** error_out);
-extern void   rrcad_shape_inertia(void* ptr, double* out, const char** error_out);
+extern void rrcad_shape_inertia(void* ptr, double* out, const char** error_out);
 extern double rrcad_shape_min_thickness(void* ptr, const char** error_out);
 
 /* Phase 8 Tier 2 — Manufacturing features */
 extern void* rrcad_shape_extrude_draft(void* ptr, double height, double draft_deg,
                                        const char** error_out);
-extern void* rrcad_make_helix(double radius, double pitch, double height,
-                              const char** error_out);
+extern void* rrcad_make_helix(double radius, double pitch, double height, const char** error_out);
+
+/* Phase 8 Tier 5 — Advanced composition */
+extern void* rrcad_shape_fragment(const void** ptrs, size_t n, const char** error_out);
+extern void* rrcad_shape_convex_hull(void* ptr, const char** error_out);
+extern void* rrcad_shape_path_pattern(void* ptr, void* path_ptr, int n, const char** error_out);
+extern void* rrcad_shape_sweep_guide(void* ptr, void* path_ptr, void* guide_ptr,
+                                     const char** error_out);
 
 /* mRuby data type descriptor — name appears in TypeError messages. */
 static void shape_dfree(mrb_state* mrb, void* ptr) {
@@ -366,8 +368,7 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     /* Extract optional view: keyword (default "top"). */
     const char* view = "top";
     if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
-        mrb_value vv = mrb_hash_fetch(mrb, opts,
-                                      mrb_symbol_value(mrb_intern_lit(mrb, "view")),
+        mrb_value vv = mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "view")),
                                       mrb_nil_value());
         if (mrb_symbol_p(vv))
             view = mrb_sym_name(mrb, mrb_symbol(vv));
@@ -464,7 +465,7 @@ static mrb_value mrb_rrcad_shape_mate(mrb_state* mrb, mrb_value self) {
     require_native_ptr(mrb, ptr);
 
     void* from_ptr = mrb_data_p(from_val) ? DATA_PTR(from_val) : NULL;
-    void* to_ptr   = mrb_data_p(to_val)   ? DATA_PTR(to_val)   : NULL;
+    void* to_ptr = mrb_data_p(to_val) ? DATA_PTR(to_val) : NULL;
     if (!from_ptr || !to_ptr)
         mrb_raise(mrb, E_ARGUMENT_ERROR, "mate: from and to must be Shape objects");
 
@@ -614,7 +615,8 @@ static mrb_value mrb_rrcad_shape_chamfer(mrb_state* mrb, mrb_value self) {
         result = rrcad_shape_chamfer(ptr, (double)d, &err);
     } else {
         if (!mrb_symbol_p(sel_val))
-            mrb_raise(mrb, E_TYPE_ERROR, "chamfer selector must be a Symbol (:all, :vertical, :horizontal)");
+            mrb_raise(mrb, E_TYPE_ERROR,
+                      "chamfer selector must be a Symbol (:all, :vertical, :horizontal)");
         const char* sel = mrb_sym_name(mrb, mrb_symbol(sel_val));
         result = rrcad_shape_chamfer_sel(ptr, (double)d, sel, &err);
     }
@@ -711,12 +713,10 @@ static mrb_value mrb_rrcad_shape_extrude(mrb_state* mrb, mrb_value self) {
         mrb_value twist_val =
             mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "twist_deg")),
                            mrb_float_value(mrb, 0.0));
-        mrb_value scale_val = mrb_hash_fetch(mrb, opts,
-                                              mrb_symbol_value(mrb_intern_lit(mrb, "scale")),
-                                              mrb_float_value(mrb, 1.0));
-        mrb_value draft_val =
-            mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "draft")),
-                           mrb_float_value(mrb, 0.0));
+        mrb_value scale_val = mrb_hash_fetch(
+            mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "scale")), mrb_float_value(mrb, 1.0));
+        mrb_value draft_val = mrb_hash_fetch(
+            mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "draft")), mrb_float_value(mrb, 0.0));
         if (mrb_float_p(twist_val))
             twist_deg = (double)mrb_float(twist_val);
         else if (mrb_integer_p(twist_val))
@@ -768,8 +768,7 @@ static mrb_value mrb_rrcad_loft(mrb_state* mrb, mrb_value self) {
 
     int ruled = 0;
     if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
-        mrb_value v = mrb_hash_fetch(mrb, opts,
-                                     mrb_symbol_value(mrb_intern_lit(mrb, "ruled")),
+        mrb_value v = mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "ruled")),
                                      mrb_false_value());
         ruled = mrb_test(v) ? 1 : 0;
     }
@@ -972,17 +971,41 @@ static mrb_value mrb_rrcad_spline_3d(mrb_state* mrb, mrb_value self) {
     return shape_from_ptr(mrb, ptr);
 }
 
+/* shape.sweep(path)
+ * shape.sweep(path, guide: guide_wire)
+ *
+ * With no guide: keyword, calls the standard BRepOffsetAPI_MakePipe sweep.
+ * With guide: keyword, uses BRepOffsetAPI_MakePipeShell in auxiliary-spine mode
+ * so the profile orientation tracks the guide wire at every point along path.
+ */
 static mrb_value mrb_rrcad_shape_sweep(mrb_state* mrb, mrb_value self) {
     mrb_value path_val;
-    mrb_get_args(mrb, "o", &path_val);
+    mrb_value opts = mrb_nil_value();
+    mrb_get_args(mrb, "o|H", &path_val, &opts);
 
     void* profile = DATA_PTR(self);
     require_native_ptr(mrb, profile);
     void* path = shape_ptr(mrb, path_val);
     require_native_ptr(mrb, path);
 
+    /* Check for optional guide: keyword. */
+    mrb_value guide_val = mrb_nil_value();
+    if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
+        mrb_sym guide_key = mrb_intern_lit(mrb, "guide");
+        guide_val = mrb_hash_fetch(mrb, opts, mrb_symbol_value(guide_key), mrb_nil_value());
+    }
+
     const char* err = NULL;
-    void* result = rrcad_shape_sweep(profile, path, &err);
+    void* result;
+    if (!mrb_nil_p(guide_val)) {
+        /* Guided sweep: auxiliary spine mode. */
+        void* guide = shape_ptr(mrb, guide_val);
+        require_native_ptr(mrb, guide);
+        result = rrcad_shape_sweep_guide(profile, path, guide, &err);
+    } else {
+        /* Plain sweep. */
+        result = rrcad_shape_sweep(profile, path, &err);
+    }
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
@@ -1313,12 +1336,15 @@ static mrb_value mrb_rrcad_linear_pattern(mrb_state* mrb, mrb_value self) {
     double dx = 0.0, dy = 0.0, dz = 0.0;
     for (int j = 0; j < 3; j++) {
         mrb_value v = mrb_ary_ref(mrb, vec_val, j);
-        double d = mrb_float_p(v)   ? (double)mrb_float(v)
+        double d = mrb_float_p(v)     ? (double)mrb_float(v)
                    : mrb_integer_p(v) ? (double)mrb_integer(v)
                                       : 0.0;
-        if (j == 0) dx = d;
-        else if (j == 1) dy = d;
-        else dz = d;
+        if (j == 0)
+            dx = d;
+        else if (j == 1)
+            dy = d;
+        else
+            dz = d;
     }
 
     const char* err = NULL;
@@ -1479,9 +1505,9 @@ static mrb_value mrb_rrcad_bezier_patch(mrb_state* mrb, mrb_value self) {
             mrb_raise(mrb, E_ARGUMENT_ERROR, "each bezier_patch control point must be [x, y, z]");
         for (int j = 0; j < 3; j++) {
             mrb_value v = mrb_ary_ref(mrb, pt, j);
-            pts[i * 3 + j] = mrb_float_p(v)   ? (double)mrb_float(v)
-                              : mrb_integer_p(v) ? (double)mrb_integer(v)
-                                                 : 0.0;
+            pts[i * 3 + j] = mrb_float_p(v)     ? (double)mrb_float(v)
+                             : mrb_integer_p(v) ? (double)mrb_integer(v)
+                                                : 0.0;
         }
     }
 
@@ -1509,8 +1535,7 @@ static mrb_value mrb_rrcad_sew(mrb_state* mrb, mrb_value self) {
     mrb_get_args(mrb, "A|H", &arr, &opts);
 
     if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
-        mrb_value tv = mrb_hash_fetch(mrb, opts,
-                                      mrb_symbol_value(mrb_intern_lit(mrb, "tolerance")),
+        mrb_value tv = mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "tolerance")),
                                       mrb_float_value(mrb, 1e-4));
         if (mrb_float_p(tv))
             tol = mrb_float(tv);
@@ -1689,9 +1714,8 @@ static mrb_value mrb_rrcad_shape_slice(mrb_state* mrb, mrb_value self) {
     mrb_get_args(mrb, "H", &kwargs);
 
     /* Require plane: keyword */
-    mrb_value plane_sym =
-        mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(mrb_intern_lit(mrb, "plane")),
-                       mrb_nil_value());
+    mrb_value plane_sym = mrb_hash_fetch(
+        mrb, kwargs, mrb_symbol_value(mrb_intern_lit(mrb, "plane")), mrb_nil_value());
     if (mrb_nil_p(plane_sym))
         mrb_raise(mrb, E_ARGUMENT_ERROR, "slice requires plane: :xy, :xz, or :yz");
 
@@ -1713,7 +1737,7 @@ static mrb_value mrb_rrcad_shape_slice(mrb_state* mrb, mrb_value self) {
 
     mrb_value offset_val =
         mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(offset_key), mrb_float_value(mrb, 0.0));
-    double offset = mrb_float_p(offset_val)   ? (double)mrb_float(offset_val)
+    double offset = mrb_float_p(offset_val)     ? (double)mrb_float(offset_val)
                     : mrb_integer_p(offset_val) ? (double)mrb_integer(offset_val)
                                                 : 0.0;
 
@@ -1768,18 +1792,17 @@ static mrb_value mrb_rrcad_shape_pad(mrb_state* mrb, mrb_value self) {
 
     mrb_value face_sel;
     mrb_value kwargs = mrb_nil_value();
-    mrb_value block  = mrb_nil_value();
+    mrb_value block = mrb_nil_value();
     mrb_get_args(mrb, "o|H&", &face_sel, &kwargs, &block);
 
     /* Extract height: keyword (required). */
     if (mrb_nil_p(kwargs))
         mrb_raise(mrb, E_ARGUMENT_ERROR, "pad requires height: keyword");
-    mrb_value height_val =
-        mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(mrb_intern_lit(mrb, "height")),
-                       mrb_nil_value());
+    mrb_value height_val = mrb_hash_fetch(
+        mrb, kwargs, mrb_symbol_value(mrb_intern_lit(mrb, "height")), mrb_nil_value());
     if (mrb_nil_p(height_val))
         mrb_raise(mrb, E_ARGUMENT_ERROR, "pad requires height: keyword");
-    double height = mrb_float_p(height_val)   ? (double)mrb_float(height_val)
+    double height = mrb_float_p(height_val)     ? (double)mrb_float(height_val)
                     : mrb_integer_p(height_val) ? (double)mrb_integer(height_val)
                                                 : 1.0;
 
@@ -1810,18 +1833,17 @@ static mrb_value mrb_rrcad_shape_pocket(mrb_state* mrb, mrb_value self) {
 
     mrb_value face_sel;
     mrb_value kwargs = mrb_nil_value();
-    mrb_value block  = mrb_nil_value();
+    mrb_value block = mrb_nil_value();
     mrb_get_args(mrb, "o|H&", &face_sel, &kwargs, &block);
 
     /* Extract depth: keyword (required). */
     if (mrb_nil_p(kwargs))
         mrb_raise(mrb, E_ARGUMENT_ERROR, "pocket requires depth: keyword");
-    mrb_value depth_val =
-        mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(mrb_intern_lit(mrb, "depth")),
-                       mrb_nil_value());
+    mrb_value depth_val = mrb_hash_fetch(
+        mrb, kwargs, mrb_symbol_value(mrb_intern_lit(mrb, "depth")), mrb_nil_value());
     if (mrb_nil_p(depth_val))
         mrb_raise(mrb, E_ARGUMENT_ERROR, "pocket requires depth: keyword");
-    double depth = mrb_float_p(depth_val)   ? (double)mrb_float(depth_val)
+    double depth = mrb_float_p(depth_val)     ? (double)mrb_float(depth_val)
                    : mrb_integer_p(depth_val) ? (double)mrb_integer(depth_val)
                                               : 1.0;
 
@@ -1868,9 +1890,9 @@ static mrb_value mrb_rrcad_datum_plane(mrb_state* mrb, mrb_value self) {
     mrb_get_args(mrb, "H", &kwargs);
 
     /* Helper: extract a [x, y, z] array from a keyword. */
-    mrb_sym origin_key  = mrb_intern_lit(mrb, "origin");
-    mrb_sym normal_key  = mrb_intern_lit(mrb, "normal");
-    mrb_sym x_dir_key   = mrb_intern_lit(mrb, "x_dir");
+    mrb_sym origin_key = mrb_intern_lit(mrb, "origin");
+    mrb_sym normal_key = mrb_intern_lit(mrb, "normal");
+    mrb_sym x_dir_key = mrb_intern_lit(mrb, "x_dir");
 
     mrb_value orig_val = mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(origin_key), mrb_nil_value());
     mrb_value norm_val = mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(normal_key), mrb_nil_value());
@@ -1881,14 +1903,14 @@ static mrb_value mrb_rrcad_datum_plane(mrb_state* mrb, mrb_value self) {
                   "datum_plane requires origin:, normal:, and x_dir: arrays");
 
     /* Extract three floats from a Ruby array. */
-#define EXTRACT3(arr, a, b, c)                                                  \
-    do {                                                                        \
-        mrb_value _a = mrb_ary_ref(mrb, (arr), 0);                             \
-        mrb_value _b = mrb_ary_ref(mrb, (arr), 1);                             \
-        mrb_value _c = mrb_ary_ref(mrb, (arr), 2);                             \
-        (a) = mrb_float_p(_a) ? mrb_float(_a) : (mrb_float)mrb_integer(_a);    \
-        (b) = mrb_float_p(_b) ? mrb_float(_b) : (mrb_float)mrb_integer(_b);    \
-        (c) = mrb_float_p(_c) ? mrb_float(_c) : (mrb_float)mrb_integer(_c);    \
+#define EXTRACT3(arr, a, b, c)                                                                     \
+    do {                                                                                           \
+        mrb_value _a = mrb_ary_ref(mrb, (arr), 0);                                                 \
+        mrb_value _b = mrb_ary_ref(mrb, (arr), 1);                                                 \
+        mrb_value _c = mrb_ary_ref(mrb, (arr), 2);                                                 \
+        (a) = mrb_float_p(_a) ? mrb_float(_a) : (mrb_float)mrb_integer(_a);                        \
+        (b) = mrb_float_p(_b) ? mrb_float(_b) : (mrb_float)mrb_integer(_b);                        \
+        (c) = mrb_float_p(_c) ? mrb_float(_c) : (mrb_float)mrb_integer(_c);                        \
     } while (0)
 
     mrb_float ox, oy, oz, nx, ny, nz, xx, xy, xz;
@@ -1941,8 +1963,7 @@ static mrb_value mrb_rrcad_shape_inertia(mrb_state* mrb, mrb_value self) {
     mrb_value hash = mrb_hash_new(mrb);
     static const char* keys[] = {"ixx", "iyy", "izz", "ixy", "ixz", "iyz"};
     for (int i = 0; i < 6; i++) {
-        mrb_hash_set(mrb, hash,
-                     mrb_symbol_value(mrb_intern_cstr(mrb, keys[i])),
+        mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_cstr(mrb, keys[i])),
                      mrb_float_value(mrb, buf[i]));
     }
     return hash;
@@ -1975,22 +1996,90 @@ static mrb_value mrb_rrcad_helix(mrb_state* mrb, mrb_value self) {
     mrb_get_args(mrb, "H", &kwargs);
 
     mrb_sym radius_key = mrb_intern_lit(mrb, "radius");
-    mrb_sym pitch_key  = mrb_intern_lit(mrb, "pitch");
+    mrb_sym pitch_key = mrb_intern_lit(mrb, "pitch");
     mrb_sym height_key = mrb_intern_lit(mrb, "height");
 
     mrb_value r_val = mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(radius_key), mrb_nil_value());
-    mrb_value p_val = mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(pitch_key),  mrb_nil_value());
+    mrb_value p_val = mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(pitch_key), mrb_nil_value());
     mrb_value h_val = mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(height_key), mrb_nil_value());
 
     if (mrb_nil_p(r_val) || mrb_nil_p(p_val) || mrb_nil_p(h_val))
         mrb_raise(mrb, E_ARGUMENT_ERROR, "helix requires radius:, pitch:, and height:");
 
     double radius = mrb_float_p(r_val) ? mrb_float(r_val) : (double)mrb_integer(r_val);
-    double pitch  = mrb_float_p(p_val) ? mrb_float(p_val) : (double)mrb_integer(p_val);
+    double pitch = mrb_float_p(p_val) ? mrb_float(p_val) : (double)mrb_integer(p_val);
     double height = mrb_float_p(h_val) ? mrb_float(h_val) : (double)mrb_integer(h_val);
 
     const char* err = NULL;
     void* result = rrcad_make_helix(radius, pitch, height, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* =========================================================================
+ * Phase 8 Tier 5: Advanced composition
+ *
+ *   fragment([a, b, c])               → Compound (all non-overlapping pieces)
+ *   shape.convex_hull                 → Shape
+ *   path_pattern(shape, path, n)      → Compound (n copies along path)
+ *   shape.sweep(path)                 → Shape  (existing)
+ *   shape.sweep(path, guide: guide)   → Shape  (guided sweep, new)
+ * =========================================================================
+ */
+
+/* fragment([a, b, c]) — top-level Kernel method */
+static mrb_value mrb_rrcad_fragment(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value ary;
+    mrb_get_args(mrb, "A", &ary);
+
+    mrb_int n = RARRAY_LEN(ary);
+    if (n < 1)
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "fragment: requires at least 1 shape");
+
+    /* Collect shape pointers into a temporary C array. */
+    const void** ptrs = (const void**)mrb_malloc(mrb, (size_t)n * sizeof(void*));
+    for (mrb_int i = 0; i < n; i++) {
+        mrb_value elem = mrb_ary_ref(mrb, ary, i);
+        void* p = shape_ptr(mrb, elem);
+        require_native_ptr(mrb, p);
+        ptrs[i] = p;
+    }
+
+    const char* err = NULL;
+    void* result = rrcad_shape_fragment(ptrs, (size_t)n, &err);
+    mrb_free(mrb, ptrs);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* shape.convex_hull */
+static mrb_value mrb_rrcad_shape_convex_hull(mrb_state* mrb, mrb_value self) {
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    void* result = rrcad_shape_convex_hull(ptr, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* path_pattern(shape, path, n) — top-level Kernel method */
+static mrb_value mrb_rrcad_path_pattern(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value shape_val, path_val;
+    mrb_int n;
+    mrb_get_args(mrb, "ooi", &shape_val, &path_val, &n);
+
+    void* ptr = shape_ptr(mrb, shape_val);
+    void* path_ptr = shape_ptr(mrb, path_val);
+    require_native_ptr(mrb, ptr);
+    require_native_ptr(mrb, path_ptr);
+
+    const char* err = NULL;
+    void* result = rrcad_shape_path_pattern(ptr, path_ptr, (int)n, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
@@ -2061,7 +2150,8 @@ void rrcad_register_shape_class(mrb_state* mrb) {
                       MRB_ARGS_REQ(1) | MRB_ARGS_KEY(1, 0)); /* (pts[, tangents:]) */
     mrb_define_method(mrb, mrb->kernel_module, "spline_3d", mrb_rrcad_spline_3d,
                       MRB_ARGS_REQ(1) | MRB_ARGS_KEY(1, 0)); /* (pts[, tangents:]) */
-    mrb_define_method(mrb, shape_class, "sweep", mrb_rrcad_shape_sweep, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "sweep", mrb_rrcad_shape_sweep,
+                      MRB_ARGS_REQ(1) | MRB_ARGS_KEY(1, 0)); /* (path[, guide:]) */
     mrb_define_method(mrb, mrb->kernel_module, "sweep_sections", mrb_rrcad_sweep_sections,
                       MRB_ARGS_REQ(2));
 
@@ -2076,8 +2166,7 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     /* Phase 4: Import */
     mrb_define_method(mrb, mrb->kernel_module, "import_step", mrb_rrcad_import_step,
                       MRB_ARGS_REQ(1));
-    mrb_define_method(mrb, mrb->kernel_module, "import_stl", mrb_rrcad_import_stl,
-                      MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, mrb->kernel_module, "import_stl", mrb_rrcad_import_stl, MRB_ARGS_REQ(1));
 
     /* Phase 4: 3-D operations */
     mrb_define_method(mrb, mrb->kernel_module, "loft", mrb_rrcad_loft,
@@ -2129,9 +2218,11 @@ void rrcad_register_shape_class(mrb_state* mrb) {
 
     /* Phase 8 Tier 1: Core Part Design */
     mrb_define_method(mrb, shape_class, "pad", mrb_rrcad_shape_pad,
-                      MRB_ARGS_REQ(1) | MRB_ARGS_KEY(1, 0) | MRB_ARGS_BLOCK()); /* (sel, height:) {} */
+                      MRB_ARGS_REQ(1) | MRB_ARGS_KEY(1, 0) |
+                          MRB_ARGS_BLOCK()); /* (sel, height:) {} */
     mrb_define_method(mrb, shape_class, "pocket", mrb_rrcad_shape_pocket,
-                      MRB_ARGS_REQ(1) | MRB_ARGS_KEY(1, 0) | MRB_ARGS_BLOCK()); /* (sel, depth:) {} */
+                      MRB_ARGS_REQ(1) | MRB_ARGS_KEY(1, 0) |
+                          MRB_ARGS_BLOCK()); /* (sel, depth:) {} */
     mrb_define_method(mrb, shape_class, "fillet_wire", mrb_rrcad_shape_fillet_wire,
                       MRB_ARGS_REQ(1));
     mrb_define_method(mrb, mrb->kernel_module, "datum_plane", mrb_rrcad_datum_plane,
@@ -2147,4 +2238,11 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     mrb_define_method(mrb, shape_class, "inertia", mrb_rrcad_shape_inertia, MRB_ARGS_NONE());
     mrb_define_method(mrb, shape_class, "min_thickness", mrb_rrcad_shape_min_thickness,
                       MRB_ARGS_NONE());
+
+    /* Phase 8 Tier 5: Advanced composition */
+    mrb_define_method(mrb, mrb->kernel_module, "fragment", mrb_rrcad_fragment, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "convex_hull", mrb_rrcad_shape_convex_hull,
+                      MRB_ARGS_NONE());
+    mrb_define_method(mrb, mrb->kernel_module, "path_pattern", mrb_rrcad_path_pattern,
+                      MRB_ARGS_REQ(3));
 }

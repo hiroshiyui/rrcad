@@ -134,6 +134,14 @@
 #include <fstream>
 #include <iomanip>
 
+// --- OCCT: Phase 8 Tier 5 — advanced composition ---
+#include <BRepAdaptor_CompCurve.hxx>
+#include <BRepAlgoAPI_BuilderAlgo.hxx>
+#include <BRepFill_TypeOfContact.hxx>
+#include <GCPnts_UniformAbscissa.hxx>
+#include <Poly_Triangulation.hxx>
+#include <TopLoc_Location.hxx>
+
 // --- OCCT: Phase 7 Tier 3 — surface modeling ---
 #include <BRepAlgoAPI_Section.hxx>
 #include <BRepFill.hxx>
@@ -2649,6 +2657,398 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view) {
     f << "  0\nENDSEC\n  0\nEOF\n";
     if (!f.good())
         throw std::runtime_error("export_dxf: write error on file: " + path_str);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8 Tier 5: Advanced composition
+// ---------------------------------------------------------------------------
+
+// --- fragment builder -------------------------------------------------------
+
+struct FragmentBuilder::Impl {
+    TopTools_ListOfShape shapes;
+};
+
+FragmentBuilder::FragmentBuilder() : impl(std::make_unique<Impl>()) {}
+FragmentBuilder::~FragmentBuilder() = default;
+
+std::unique_ptr<FragmentBuilder> fragment_new() { return std::make_unique<FragmentBuilder>(); }
+
+void fragment_add(FragmentBuilder& builder, const OcctShape& shape) {
+    builder.impl->shapes.Append(shape.get());
+}
+
+std::unique_ptr<OcctShape> fragment_build(FragmentBuilder& builder) {
+    if (builder.impl->shapes.IsEmpty())
+        throw std::runtime_error("fragment: no shapes added");
+
+    // BRepAlgoAPI_BuilderAlgo requires at least 2 shapes.  For a single shape,
+    // just wrap it in a compound and return immediately.
+    if (builder.impl->shapes.Size() == 1) {
+        TopoDS_Compound compound;
+        BRep_Builder bb;
+        bb.MakeCompound(compound);
+        bb.Add(compound, builder.impl->shapes.First());
+        return wrap(compound);
+    }
+
+    BRepAlgoAPI_BuilderAlgo algo;
+    algo.SetArguments(builder.impl->shapes);
+    algo.Build();
+    if (!algo.IsDone())
+        throw std::runtime_error("BRepAlgoAPI_BuilderAlgo (fragment) failed");
+
+    return wrap(algo.Shape());
+}
+
+// --- convex_hull ------------------------------------------------------------
+//
+// 3-D incremental convex hull (QuickHull variant).
+// All internal helpers live in an anonymous namespace so they do not pollute
+// the rrcad namespace.
+
+namespace {
+
+struct CHPt {
+    double x, y, z;
+};
+
+struct CHFace {
+    int a, b, c;
+    bool dead; // true when the face has been removed during expansion
+};
+
+// Signed volume (×6) of the tetrahedron (pa, pb, pc, pp).
+// Positive means pp is on the outward side of the face (cross(pb−pa, pc−pa)).
+static double ch_signed_vol(const CHPt& pa, const CHPt& pb, const CHPt& pc,
+                            const CHPt& pp) noexcept {
+    double ax = pb.x - pa.x, ay = pb.y - pa.y, az = pb.z - pa.z;
+    double bx = pc.x - pa.x, by = pc.y - pa.y, bz = pc.z - pa.z;
+    double nx = ay * bz - az * by;
+    double ny = az * bx - ax * bz;
+    double nz = ax * by - ay * bx;
+    return nx * (pp.x - pa.x) + ny * (pp.y - pa.y) + nz * (pp.z - pa.z);
+}
+
+// Build the convex hull from a set of points and return a vector of oriented
+// outward-facing triangles (by index into `pts`).
+static std::vector<CHFace> build_convex_hull(const std::vector<CHPt>& pts) {
+    int n = static_cast<int>(pts.size());
+    if (n < 4)
+        throw std::runtime_error("convex_hull: need at least 4 non-coplanar points");
+
+    // 1. Find extreme points: min-X and max-X.
+    int i0 = 0, i1 = 0;
+    for (int i = 1; i < n; i++) {
+        if (pts[i].x < pts[i0].x)
+            i0 = i;
+        if (pts[i].x > pts[i1].x)
+            i1 = i;
+    }
+    if (i0 == i1) {
+        // Fallback: try Y axis
+        i0 = 0;
+        i1 = 0;
+        for (int i = 1; i < n; i++) {
+            if (pts[i].y < pts[i0].y)
+                i0 = i;
+            if (pts[i].y > pts[i1].y)
+                i1 = i;
+        }
+    }
+
+    // 2. Find point i2 farthest from the line(i0, i1).
+    double dx = pts[i1].x - pts[i0].x;
+    double dy = pts[i1].y - pts[i0].y;
+    double dz = pts[i1].z - pts[i0].z;
+    double best2 = -1.0;
+    int i2 = -1;
+    for (int i = 0; i < n; i++) {
+        if (i == i0 || i == i1)
+            continue;
+        double ex = pts[i].x - pts[i0].x;
+        double ey = pts[i].y - pts[i0].y;
+        double ez = pts[i].z - pts[i0].z;
+        // |d × e|² = distance² from line × |d|²
+        double cx = dy * ez - dz * ey;
+        double cy = dz * ex - dx * ez;
+        double cz = dx * ey - dy * ex;
+        double dist2 = cx * cx + cy * cy + cz * cz;
+        if (dist2 > best2) {
+            best2 = dist2;
+            i2 = i;
+        }
+    }
+    if (i2 < 0 || best2 < 1e-20)
+        throw std::runtime_error("convex_hull: all points are collinear");
+
+    // 3. Find point i3 farthest from the plane(i0, i1, i2).
+    double best3 = -1.0;
+    int i3 = -1;
+    for (int i = 0; i < n; i++) {
+        if (i == i0 || i == i1 || i == i2)
+            continue;
+        double sv = std::fabs(ch_signed_vol(pts[i0], pts[i1], pts[i2], pts[i]));
+        if (sv > best3) {
+            best3 = sv;
+            i3 = i;
+        }
+    }
+    if (i3 < 0 || best3 < 1e-20)
+        throw std::runtime_error("convex_hull: all points are coplanar");
+
+    // 4. Centroid of the initial tetrahedron (always interior to the hull).
+    CHPt interior{(pts[i0].x + pts[i1].x + pts[i2].x + pts[i3].x) / 4.0,
+                  (pts[i0].y + pts[i1].y + pts[i2].y + pts[i3].y) / 4.0,
+                  (pts[i0].z + pts[i1].z + pts[i2].z + pts[i3].z) / 4.0};
+
+    // 5. Build the initial 4 faces; orient each so that `interior` (and the
+    //    4th vertex) is on the negative side.
+    auto make_face = [&](int a, int b, int c) -> CHFace {
+        if (ch_signed_vol(pts[a], pts[b], pts[c], interior) > 0)
+            std::swap(b, c);
+        return {a, b, c, false};
+    };
+
+    std::vector<CHFace> faces = {
+        make_face(i0, i1, i2),
+        make_face(i0, i1, i3),
+        make_face(i0, i2, i3),
+        make_face(i1, i2, i3),
+    };
+
+    // 6. Incrementally expand the hull.
+    for (int i = 0; i < n; i++) {
+        if (i == i0 || i == i1 || i == i2 || i == i3)
+            continue;
+        const CHPt& p = pts[i];
+
+        // Collect indices of faces visible from p (p is on their outward side).
+        std::vector<int> visible;
+        for (int fi = 0; fi < static_cast<int>(faces.size()); fi++) {
+            if (faces[fi].dead)
+                continue;
+            if (ch_signed_vol(pts[faces[fi].a], pts[faces[fi].b], pts[faces[fi].c], p) > 1e-12)
+                visible.push_back(fi);
+        }
+        if (visible.empty())
+            continue; // p is inside the current hull
+
+        // Build a set of all directed edges from visible faces.
+        std::set<std::pair<int, int>> vis_edges;
+        for (int fi : visible) {
+            auto& f = faces[fi];
+            vis_edges.insert({f.a, f.b});
+            vis_edges.insert({f.b, f.c});
+            vis_edges.insert({f.c, f.a});
+        }
+
+        // Horizon: directed edge (a,b) whose reverse (b,a) is NOT in a visible face.
+        std::vector<std::pair<int, int>> horizon;
+        for (auto& e : vis_edges) {
+            if (vis_edges.find({e.second, e.first}) == vis_edges.end())
+                horizon.push_back(e);
+        }
+
+        // Mark visible faces as dead.
+        for (int fi : visible)
+            faces[fi].dead = true;
+
+        // Add new faces connecting horizon edges to p.
+        // Orient each new face so that interior is on the negative side.
+        for (auto& e : horizon)
+            faces.push_back(make_face(e.first, e.second, i));
+    }
+
+    return faces;
+}
+
+} // anonymous namespace
+
+std::unique_ptr<OcctShape> shape_convex_hull(const OcctShape& shape) {
+    // Tessellate the shape.
+    BRepMesh_IncrementalMesh mesh(shape.get(), 0.5);
+    (void)mesh;
+
+    // Collect all mesh vertices (with location transforms applied).
+    std::vector<CHPt> pts;
+    for (TopExp_Explorer ex(shape.get(), TopAbs_FACE); ex.More(); ex.Next()) {
+        const TopoDS_Face& face = TopoDS::Face(ex.Current());
+        TopLoc_Location loc;
+        Handle(Poly_Triangulation) tri = BRep_Tool::Triangulation(face, loc);
+        if (tri.IsNull())
+            continue;
+        gp_Trsf trsf;
+        if (!loc.IsIdentity())
+            trsf = loc.Transformation();
+        for (int i = 1; i <= tri->NbNodes(); i++) {
+            gp_Pnt pnt = tri->Node(i).Transformed(trsf);
+            pts.push_back({pnt.X(), pnt.Y(), pnt.Z()});
+        }
+    }
+
+    if (pts.size() < 4)
+        throw std::runtime_error("convex_hull: shape has fewer than 4 mesh vertices");
+
+    auto hull_faces = build_convex_hull(pts);
+
+    // Build BRep solid from hull triangles using sewing.
+    BRepBuilderAPI_Sewing sewing(1e-6);
+    for (auto& f : hull_faces) {
+        if (f.dead)
+            continue;
+        gp_Pnt P0(pts[f.a].x, pts[f.a].y, pts[f.a].z);
+        gp_Pnt P1(pts[f.b].x, pts[f.b].y, pts[f.b].z);
+        gp_Pnt P2(pts[f.c].x, pts[f.c].y, pts[f.c].z);
+
+        BRepBuilderAPI_MakePolygon poly;
+        poly.Add(P0);
+        poly.Add(P1);
+        poly.Add(P2);
+        poly.Close();
+        if (!poly.IsDone())
+            continue;
+
+        BRepBuilderAPI_MakeFace face_maker(poly.Wire(), true);
+        if (!face_maker.IsDone())
+            continue;
+        sewing.Add(face_maker.Face());
+    }
+
+    sewing.Perform();
+    TopoDS_Shape sewn = sewing.SewedShape();
+
+    // Attempt to close into a solid.
+    BRepBuilderAPI_MakeSolid solid_maker;
+    for (TopExp_Explorer ex(sewn, TopAbs_SHELL); ex.More(); ex.Next())
+        solid_maker.Add(TopoDS::Shell(ex.Current()));
+    if (solid_maker.IsDone())
+        return wrap(solid_maker.Solid());
+    return wrap(sewn);
+}
+
+// --- path_pattern -----------------------------------------------------------
+
+std::unique_ptr<OcctShape> shape_path_pattern(const OcctShape& shape, const OcctShape& path,
+                                              int32_t n) {
+    if (n < 1)
+        throw std::runtime_error("path_pattern: n must be >= 1");
+
+    // Convert path to a Wire (accept Wire or bare Edge).
+    const TopoDS_Shape& psh = path.get();
+    TopoDS_Wire path_wire;
+    if (psh.ShapeType() == TopAbs_WIRE) {
+        path_wire = TopoDS::Wire(psh);
+    } else if (psh.ShapeType() == TopAbs_EDGE) {
+        BRepBuilderAPI_MakeWire mw(TopoDS::Edge(psh));
+        if (!mw.IsDone())
+            throw std::runtime_error("path_pattern: failed to convert Edge to Wire");
+        path_wire = mw.Wire();
+    } else {
+        throw std::runtime_error("path_pattern: path must be a Wire or Edge");
+    }
+
+    BRepAdaptor_CompCurve adaptor(path_wire, /*KnotByCurvilinearAbcissa=*/false);
+    double t0 = adaptor.FirstParameter();
+    double t1 = adaptor.LastParameter();
+
+    // Collect n arc-length-evenly-spaced parameter values.
+    std::vector<double> params(n);
+    if (n == 1) {
+        params[0] = t0;
+    } else {
+        GCPnts_UniformAbscissa splitter;
+        splitter.Initialize(adaptor, n, t0, t1);
+        if (!splitter.IsDone())
+            throw std::runtime_error("path_pattern: GCPnts_UniformAbscissa failed");
+        for (int i = 0; i < n; i++)
+            params[i] = splitter.Parameter(i + 1); // 1-indexed
+    }
+
+    // Build compound of n oriented copies.
+    TopoDS_Compound compound;
+    BRep_Builder bb;
+    bb.MakeCompound(compound);
+
+    // The shape's canonical "up" direction (local Z-axis to align with the tangent).
+    gp_Dir z_axis(0.0, 0.0, 1.0);
+
+    for (int i = 0; i < n; i++) {
+        gp_Pnt pnt;
+        gp_Vec tangent;
+        adaptor.D1(params[i], pnt, tangent);
+        if (tangent.Magnitude() < 1e-10)
+            tangent = gp_Vec(0.0, 0.0, 1.0);
+        tangent.Normalize();
+
+        gp_Dir tang_dir(tangent);
+        double cos_angle = tang_dir.Dot(z_axis);
+
+        // Rotation that maps Z → tangent.
+        gp_Trsf rot_trsf; // identity by default
+        if (std::fabs(cos_angle + 1.0) < 1e-9) {
+            // Antiparallel (tangent ≈ −Z): rotate 180° around X.
+            rot_trsf.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(1, 0, 0)), M_PI);
+        } else if (std::fabs(cos_angle - 1.0) > 1e-9) {
+            // General case: rotate around cross(Z, tangent).
+            gp_Vec cross = gp_Vec(z_axis).Crossed(tangent);
+            if (cross.Magnitude() > 1e-10) {
+                double angle = std::acos(std::max(-1.0, std::min(1.0, cos_angle)));
+                rot_trsf.SetRotation(gp_Ax1(gp_Pnt(0, 0, 0), gp_Dir(cross)), angle);
+            }
+        }
+
+        // Translation to the sample point on the path.
+        gp_Trsf trans_trsf;
+        trans_trsf.SetTranslation(gp_Vec(pnt.X(), pnt.Y(), pnt.Z()));
+
+        // Compose: first rotate (align Z→tangent), then translate.
+        gp_Trsf combined = trans_trsf;
+        combined.Multiply(rot_trsf);
+
+        TopoDS_Shape copy = BRepBuilderAPI_Transform(shape.get(), combined, /*copy=*/true).Shape();
+        bb.Add(compound, copy);
+    }
+
+    return wrap(compound);
+}
+
+// --- sweep_guide ------------------------------------------------------------
+
+std::unique_ptr<OcctShape> shape_sweep_guide(const OcctShape& profile, const OcctShape& path,
+                                             const OcctShape& guide) {
+    if (path.get().ShapeType() != TopAbs_WIRE)
+        throw std::runtime_error("sweep_guide: path must be a Wire (created with spline_3d)");
+    if (guide.get().ShapeType() != TopAbs_WIRE)
+        throw std::runtime_error("sweep_guide: guide must be a Wire (created with spline_3d)");
+
+    TopoDS_Wire spine = TopoDS::Wire(path.get());
+    TopoDS_Wire aux = TopoDS::Wire(guide.get());
+
+    BRepOffsetAPI_MakePipeShell pipe(spine);
+    // Auxiliary spine mode: the profile's local X-axis tracks the guide wire.
+    // CurvilinearEquivalence=true, contact type=BRepFill_ContactAtX.
+    pipe.SetMode(aux, Standard_True, BRepFill_Contact);
+
+    // Extract a Wire from the profile (accept Face or Wire).
+    TopoDS_Wire profile_wire;
+    if (profile.get().ShapeType() == TopAbs_FACE) {
+        profile_wire = BRepTools::OuterWire(TopoDS::Face(profile.get()));
+    } else if (profile.get().ShapeType() == TopAbs_WIRE) {
+        profile_wire = TopoDS::Wire(profile.get());
+    } else {
+        throw std::runtime_error("sweep_guide: profile must be a Wire or Face");
+    }
+
+    pipe.Add(profile_wire);
+    pipe.Build();
+    if (!pipe.IsDone())
+        throw std::runtime_error(
+            "BRepOffsetAPI_MakePipeShell (sweep_guide) failed — check that path and guide are "
+            "compatible Wires");
+
+    pipe.MakeSolid();
+    return wrap(pipe.Shape());
 }
 
 } // namespace rrcad

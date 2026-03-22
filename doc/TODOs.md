@@ -265,14 +265,20 @@ tessellate → set orthographic `HLRAlgo_Projector` → `Update()` → extract
 write SVG `<polyline>` (Y-flipped) or DXF `LINE` entities (Y-up).
 Three view directions: `:top` (XY plane, default), `:front` (XZ plane), `:side` (YZ plane).
 
-### Tier 5 — Advanced composition
+### Tier 5 — Advanced composition ✓
 
-| # | Feature | DSL | OCCT API |
-|---|---------|-----|----------|
-| 15 | **Boolean fragment** | `fragment([a, b, c])` → Array of solids | `BRepAlgoAPI_BuilderAlgo` (general fuser that keeps all fragments) |
-| 16 | **Convex hull** | `.convex_hull` | `BRepBuilderAPI_Copy` + `BRepAlgoAPI_Fuse` fold (no native OCCT hull; wrap qhull or approximate via point cloud + loft) |
-| 17 | **Path pattern** | `path_pattern(shape, path, n)` | `BRepGProp_SurfaceProperties` arc-length param → `n` equally spaced transforms |
-| 18 | **Pipe with guide** | `sweep(profile, path, guide:)` | `BRepFill_PipeShell::SetMode(guide_wire)` |
+| # | Feature | DSL | OCCT API | Status |
+|---|---------|-----|----------|--------|
+| 15 | **Boolean fragment** | `fragment([a, b, c])` → Compound | `BRepAlgoAPI_BuilderAlgo::SetArguments` + builder pattern | ✓ |
+| 16 | **Convex hull** | `.convex_hull` | Incremental 3-D QuickHull on tessellated mesh vertices; BRep solid via `BRepBuilderAPI_Sewing` + `BRepBuilderAPI_MakeSolid` | ✓ |
+| 17 | **Path pattern** | `path_pattern(shape, path, n)` | `GCPnts_UniformAbscissa` on `BRepAdaptor_CompCurve` for arc-length sampling; Z→tangent orientation per copy | ✓ |
+| 18 | **Pipe with guide** | `shape.sweep(path, guide: guide_wire)` | `BRepOffsetAPI_MakePipeShell::SetMode(auxiliary_spine, true, BRepFill_Contact)` | ✓ |
+
+**Implementation details:**
+- `fragment` uses a builder (`FragmentBuilder`) since `BRepAlgoAPI_BuilderAlgo` needs all shapes in a `TopTools_ListOfShape`; single-shape case returns a trivial Compound.
+- `convex_hull` uses an incremental QuickHull (seeded from 4 extreme points, then horizon-edge expansion). Hull triangles are sewn into a BRep solid.
+- `path_pattern` distributes `n` copies using arc-length-evenly-spaced parameter values; each copy is rotated so its local Z-axis aligns with the path tangent.
+- Guided sweep extends the existing `.sweep(path)` method by accepting an optional `guide:` keyword; the guide wire controls the profile's X-axis orientation using `BRepFill_Contact`.
 
 ### Implementation order
 
