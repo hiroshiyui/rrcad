@@ -72,6 +72,13 @@ let w = Shape::make_wedge(10.0, 8.0, 6.0, 4.0)?;
 |--------|-------------|
 | `Shape::loft(profiles: &[&Shape], ruled: bool) -> Result<Shape>` | Loft through a sequence of profile faces/wires. `ruled=false` gives smooth (BSpline) blending; `ruled=true` gives straight (ruled) surface between each pair. Uses `BRepOffsetAPI_ThruSections`. |
 
+#### Bézier Patch & Sewing
+
+| Method | Description |
+|--------|-------------|
+| `Shape::make_bezier_patch(pts: &[f64]) -> Result<Shape>` | Bicubic Bézier face from 16 control points. `pts` is a flat `[x0,y0,z0, x1,y1,z1, …]` slice (48 values, 4×4 row-major). Uses `Geom_BezierSurface` + `BRepBuilderAPI_MakeFace`. |
+| `Shape::sew(faces: &[&Shape], tolerance: f64) -> Result<Shape>` | Sew multiple faces into a closed shell/solid via `BRepBuilderAPI_Sewing` + `BRepBuilderAPI_MakeSolid`. Primary use case: assemble Utah Teapot Bézier patches. |
+
 ---
 
 ### Boolean Operations
@@ -319,6 +326,13 @@ fn thru_sections_add(builder: Pin<&mut ThruSectionsBuilder>, profile: &OcctShape
 fn thru_sections_build(builder: Pin<&mut ThruSectionsBuilder>)
                                                        -> Result<UniquePtr<OcctShape>>;
 
+// Bézier patch & sewing
+fn make_bezier_patch(pts: &[f64])                      -> Result<UniquePtr<OcctShape>>;
+fn sewing_new(tolerance: f64)                          -> Result<UniquePtr<SewingBuilder>>;
+fn sewing_add(builder: Pin<&mut SewingBuilder>,
+              shape: &OcctShape)                       -> Result<()>;
+fn sewing_build(builder: Pin<&mut SewingBuilder>)      -> Result<UniquePtr<OcctShape>>;
+
 // Boolean ops
 fn shape_fuse  (a: &OcctShape, b: &OcctShape)         -> Result<UniquePtr<OcctShape>>;
 fn shape_cut   (a: &OcctShape, b: &OcctShape)         -> Result<UniquePtr<OcctShape>>;
@@ -442,6 +456,8 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `spline_3d([[x,y,z], ...], tangents: [[t0x,t0y,t0z],[t1x,t1y,t1z]])` | Same with explicit tangent vectors |
 | `loft([profile1, profile2, ...])` | Loft through a sequence of circle/sketch profiles; `ruled: false` (default) gives smooth blending |
 | `sweep_sections(path, [profile1, profile2, ...])` | Variable-section sweep: each origin-centred profile is automatically placed at the corresponding spine point and swept along `path` (a `spline_3d` Wire). Uses `BRepOffsetAPI_MakePipeShell`; falls back to `ThruSections` loft for highly-curved paths. Supports `circle`, `rect`, `polygon`, `ellipse`, and `arc` profiles. |
+| `bezier_patch([[x,y,z], ...])` | Build a single bicubic Bézier face from exactly 16 control points (4×4 row-major grid). Uses `Geom_BezierSurface` + `BRepBuilderAPI_MakeFace`. Returns a `Face` suitable for passing to `sew`. |
+| `sew([face1, face2, ...], tolerance: 1e-4)` | Assemble multiple faces (typically Bézier patches) into a closed shell or solid via `BRepBuilderAPI_Sewing` + `BRepBuilderAPI_MakeSolid`. `tolerance` controls the maximum edge-gap that is considered coincident. |
 | `import_step("file.step")` | Import a STEP file as a Shape |
 | `import_stl("file.stl")` | Import an STL file as a triangulated Shape |
 | `linear_pattern(shape, n, [dx, dy, dz])` | `n` copies of `shape` translated along vector; copy `i` at `i*[dx,dy,dz]`. Returns a Compound. |
