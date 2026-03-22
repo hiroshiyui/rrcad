@@ -2078,6 +2078,13 @@ static mrb_value mrb_rrcad_path_pattern(mrb_state* mrb, mrb_value self) {
     require_native_ptr(mrb, ptr);
     require_native_ptr(mrb, path_ptr);
 
+    /* Guard against integer overflow: mrb_int is 64-bit but the C++ side
+     * expects a plain int (32-bit).  A caller passing n > INT_MAX would
+     * silently wrap to a negative value, causing undefined behaviour in the
+     * C++ loop.  Reject out-of-range values with a clear Ruby error. */
+    if (n < 1 || n > INT_MAX)
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "path_pattern count must be between 1 and INT_MAX");
+
     const char* err = NULL;
     void* result = rrcad_shape_path_pattern(ptr, path_ptr, (int)n, &err);
     if (err)
