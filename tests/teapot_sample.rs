@@ -49,23 +49,23 @@ fn teapot_body_loft_succeeds() {
 }
 
 #[test]
-fn teapot_spout_sweep_succeeds() {
+fn teapot_spout_loft_succeeds() {
     let out = tmp("rrcad_teapot_spout.step");
     let mut vm = MrubyVm::new();
     vm.eval(&format!(
         r#"
-        path = spline_3d([
-          [ 4.00, 0.0, 1.50],
-          [ 6.50, 0.0, 2.20],
-          [ 9.50, 0.0, 5.00],
-          [12.25, 0.0, 8.00],
+        spout = loft([
+          circle(2.20).translate( 4.00, 0.0, 1.50),
+          circle(1.60).translate( 6.50, 0.0, 2.80),
+          circle(1.10).translate( 9.50, 0.0, 4.50),
+          circle(0.85).translate(12.00, 0.0, 5.80),
+          circle(0.65).translate(14.00, 0.0, 6.50),
         ])
-        spout = circle(1.30).sweep(path)
         spout.export('{}')
         "#,
         out.display()
     ))
-    .expect("teapot spout sweep failed");
+    .expect("teapot tapered spout loft failed");
     assert_valid_step(&out);
 }
 
@@ -133,23 +133,22 @@ fn teapot_full_assembly_succeeds() {
           circle(4.90).translate(0, 0, 7.50),
         ])
 
-        spout_path = spline_3d([
-          [ 4.00, 0.0, 1.50],
-          [ 6.50, 0.0, 2.80],
-          [ 9.50, 0.0, 4.50],
-          [12.00, 0.0, 5.80],
-          [14.00, 0.0, 6.50],
-        ])
-        spout = circle(1.80).sweep(spout_path)
-
         handle_path = spline_3d([
           [-3.50,  0.0, 1.50],
           [-7.00,  0.0, 2.00],
           [-10.50, 0.0, 4.50],
           [-7.00,  0.0, 6.80],
           [-3.50,  0.0, 7.00],
+        ], tangents: [[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+        handle = circle(0.90).sweep(handle_path)
+
+        spout = loft([
+          circle(2.20).translate( 4.00, 0.0, 1.50),
+          circle(1.60).translate( 6.50, 0.0, 2.80),
+          circle(1.10).translate( 9.50, 0.0, 4.50),
+          circle(0.85).translate(12.00, 0.0, 5.80),
+          circle(0.65).translate(14.00, 0.0, 6.50),
         ])
-        handle = circle(1.00).sweep(handle_path)
 
         lid = loft([
           circle(0.30).translate(0, 0, 8.70),
@@ -163,7 +162,7 @@ fn teapot_full_assembly_succeeds() {
 
         body_handle = body.fuse(handle)
         body_handle_spout = body_handle.fuse(spout)
-        teapot = body_handle_spout.fuse(lid_assy)
+        teapot = body_handle_spout.fuse(lid_assy).color(0.96, 0.92, 0.84)
         teapot.export('{}')
         "#,
         out.display()

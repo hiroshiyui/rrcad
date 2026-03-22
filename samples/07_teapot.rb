@@ -1,6 +1,6 @@
 # Utah Teapot — samples/07_teapot.rb
 #
-# Approximation of the original Newell teapot using rrcad's Phase 4 DSL.
+# Approximation of the original Newell teapot using rrcad's Phase 5 DSL.
 # Built incrementally: body → handle → spout → lid+knob.
 #
 # Coordinate system (Z-up, scaled from Newell units):
@@ -13,6 +13,13 @@
 #   shoulder   Y=1.35 r=1.75  →  Z=4.50 r=6.13
 #   neck       Y=1.65 r=1.40  →  Z=5.50 r=4.90
 #   rim        Y=2.25 r=1.40  →  Z=7.50 r=4.90
+
+# ============================================================
+# Parametric glaze colour (override with e.g. --param glaze_r=0.8)
+# ============================================================
+glaze_r = param(:glaze_r, default: 0.96)  # cream white
+glaze_g = param(:glaze_g, default: 0.92)
+glaze_b = param(:glaze_b, default: 0.84)
 
 # ============================================================
 # Step 1 — Body loft
@@ -33,31 +40,34 @@ body = loft([
 ])
 
 # ============================================================
-# Step 2 — Handle sweep, fused into body
+# Step 2 — Handle sweep with tangent constraints
 # ============================================================
-# Both endpoints inside the body for clean attachment.
+# Tangent at start: exits body in −X direction (outward to the left).
+# Tangent at end:   returns to body in +X direction (back toward body centre).
+# The constraints suppress BSpline oscillation and produce smooth attachment.
 handle_path = spline_3d([
   [-3.50,  0.0, 1.50],   # inside body — bottom attachment
   [-7.00,  0.0, 2.00],   # lower handle arc
   [-10.50, 0.0, 4.50],   # outer apex
   [-7.00,  0.0, 6.80],   # upper handle arc
   [-3.50,  0.0, 7.00],   # inside body — top attachment
-])
-handle = circle(1.00).sweep(handle_path)
+], tangents: [[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
+handle = circle(0.90).sweep(handle_path)
 body_handle = body.fuse(handle)
 
 # ============================================================
-# Step 3 — Spout sweep, fused into body+handle
+# Step 3 — Tapered spout loft (wide at body → narrow at pour tip)
 # ============================================================
-# Path starts inside the body so the fuse produces a gap-free junction.
-spout_path = spline_3d([
-  [ 4.00, 0.0, 1.50],   # inside body at spout-junction height
-  [ 6.50, 0.0, 2.80],   # exit body surface
-  [ 9.50, 0.0, 4.50],   # mid-spout arc
-  [12.00, 0.0, 5.80],   # upper arc
-  [14.00, 0.0, 6.50],   # pour tip — further out, less high, so opening points forward
+# Five cross-section circles at the spout path positions with decreasing
+# radii.  The wide base (r=2.20) transitions to a narrow pour tip (r=0.65),
+# giving the spout its characteristic tapered silhouette.
+spout = loft([
+  circle(2.20).translate( 4.00, 0.0, 1.50),  # base — inside body
+  circle(1.60).translate( 6.50, 0.0, 2.80),  # lower arc
+  circle(1.10).translate( 9.50, 0.0, 4.50),  # mid arc
+  circle(0.85).translate(12.00, 0.0, 5.80),  # upper arc
+  circle(0.65).translate(14.00, 0.0, 6.50),  # pour tip
 ])
-spout = circle(1.80).sweep(spout_path)
 body_handle_spout = body_handle.fuse(spout)
 
 # ============================================================
@@ -77,9 +87,10 @@ knob = sphere(1.20).translate(0, 0, 9.10)
 lid_assy = lid.fuse(knob)
 
 # ============================================================
-# Step 5 — Final assembly
+# Step 5 — Final assembly and export
 # ============================================================
-teapot = body_handle_spout.fuse(lid_assy)
+teapot = body_handle_spout.fuse(lid_assy).color(glaze_r, glaze_g, glaze_b)
 
 teapot.export("07_teapot.step")
+teapot.export("07_teapot.glb")
 preview teapot
