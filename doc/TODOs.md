@@ -187,25 +187,40 @@ which is already linked.
 
 Goal: scripts with parameters, constraints, and design tables.
 
-- [ ] `param :width, default: 10, range: 1..100` DSL
-- [ ] Constraint solver integration (research options: SolveSpace lib, custom)
-- [ ] Design table: vary params across rows, export batch of STEP files
-- [ ] `--param width=20` CLI override
-
-### Spline tangent constraints
-
-**File:** `src/occt/bridge.cpp` — `make_spline_2d`, `make_spline_3d`
-
-**Problem:** Natural boundary conditions can cause endpoint oscillation on short
-splines (visible on the teapot spout sweep path).
-
-**Fix:** `GeomAPI_Interpolate::Load(startTangent, endTangent)` sets explicit end
-tangents before `Perform()`. Requires exposing a `tangents:` keyword argument
-in the DSL.
+Recommended implementation order: `param` DSL + `--param` CLI → design table →
+GLB colors → constraint solver spike → (spline tangents, `.simplify` as time permits).
 
 ---
 
-### GLB color/material support
+### Tier 1 — Core parametric primitives (implement together)
+
+#### [ ] `param` DSL — `param :width, default: 10, range: 1..100`
+
+Foundational primitive; everything else in Phase 5 depends on it. Pure Ruby DSL:
+store declared parameters in a global `$params` hash, validate against `range:`,
+expose values to the script. No OCCT involvement.
+
+#### [ ] `--param width=20` CLI override
+
+Trivially small once `param` exists. Parse `key=value` pairs in `main.rs` and
+inject them into the VM before `eval`. Ship together with the `param` DSL as a
+single atomic unit.
+
+---
+
+### Tier 1 — Design table (natural next step after params)
+
+#### [ ] Design table: vary params across rows, export batch of STEP files
+
+Read a CSV/TSV where each row is a parameter set; iterate rows, eval the script
+once per row, export a named STEP file per row (e.g. `bracket_50mm.step`).
+Useful for product families. No constraint solver required.
+
+---
+
+### Tier 2 — High visual impact, low risk
+
+#### [ ] GLB color/material support
 
 **File:** `src/occt/bridge.cpp` — `make_xde_doc` or `export_glb`
 
@@ -214,14 +229,43 @@ assemblies need per-part colors for useful preview.
 
 **Fix:** Attach colors to XDE shape labels via `XCAFDoc_ColorTool` before
 `RWGltf_CafWriter::Perform`. Requires a new DSL method (`.color(r, g, b)`) to
-carry color metadata through to the export path.
+carry color metadata through to the export path. Bridge change is mechanical;
+DSL addition is small. Payoff is immediate and visible in the live preview.
 
 ---
 
-### Feature removal — `.simplify`
+### Tier 3 — Research-heavy, high value if done well
 
-`BRepAlgoAPI_Defeaturing` (OCCT 7.4+) removes small holes/fillets for
-simplified simulation meshes. Not urgent; implement as `.simplify(min_feature_size)`.
+#### [ ] Constraint solver integration
+
+Most architecturally significant and riskiest item. SolveSpace's solver (`slvs`)
+is the only production-quality embeddable 2D/3D constraint solver with a C API —
+worth evaluating seriously. The alternative (custom) is months of work.
+
+**Key open question before committing:** does rrcad need full sketch-level
+constraints (dimensional + geometric) or just parameter-driven relationships?
+The answer shapes the whole design. Start with a spike/prototype.
+
+---
+
+### Tier 4 — Nice-to-have, low urgency
+
+#### [ ] Spline tangent constraints
+
+**File:** `src/occt/bridge.cpp` — `make_spline_2d`, `make_spline_3d`
+
+**Problem:** Natural boundary conditions can cause endpoint oscillation on short
+splines (visible on the teapot spout sweep path).
+
+**Fix:** `GeomAPI_Interpolate::Load(startTangent, endTangent)` sets explicit end
+tangents before `Perform()`. Requires exposing a `tangents:` keyword argument
+in the DSL. Small OCCT change; no dependencies on other Phase 5 work.
+
+#### [ ] Feature removal — `.simplify`
+
+`BRepAlgoAPI_Defeaturing` (OCCT 7.4+) removes small holes/fillets for simplified
+simulation meshes. Niche use case (pre-FEA mesh simplification). Implement as
+`.simplify(min_feature_size)` — or skip if Phase 5 priorities shift.
 
 ---
 
