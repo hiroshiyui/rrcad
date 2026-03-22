@@ -308,6 +308,120 @@ Sprint 5: Tier 5 (#15–18) — fragment, convex hull, path pattern, guided swee
 
 ---
 
+## Phase 9 — Model Context Protocol (MCP) Server
+
+**Goal:** expose rrcad's CAD engine as an MCP server so any MCP-compatible AI
+client (Claude Desktop, Claude Code, etc.) can generate and inspect 3D geometry
+via natural language — no Ruby knowledge required from the user.
+
+### Architecture
+
+```
+Claude Desktop / Claude Code
+        ↓  MCP (stdio transport)
+rrcad --mcp
+        ↓
+MrubyVm → OCCT kernel
+        ↓
+Shape results, exported files, preview URLs
+```
+
+A new `--mcp` CLI flag starts rrcad in MCP server mode.  The server runs on
+**stdio** (standard for local MCP servers).  mRuby is not thread-safe, so tool
+calls are processed serially on a single thread — stdio transport satisfies this
+naturally because requests arrive one at a time.
+
+### Dependency
+
+```toml
+# Cargo.toml
+rmcp = { version = "0.1", features = ["server", "transport-io"] }
+```
+
+`rmcp` is the official Rust MCP SDK maintained by the MCP community.
+
+### New source module: `src/mcp/mod.rs`
+
+- Instantiate one `MrubyVm` for the lifetime of the server process.
+- Register tools via `rmcp`'s `ServerHandler` trait.
+- Serve over stdio with `rmcp::transport::stdio()`.
+- Reuse the existing `axum` preview server from `src/preview/` for
+  `cad_preview`.
+
+### Tools
+
+| Tool | Input (JSON) | Output |
+|------|-------------|--------|
+| `cad_eval` | `{ "code": "<ruby dsl>" }` | `{ shape_type, volume, surface_area, bounding_box: {x,y,z,dx,dy,dz}, valid: bool }` |
+| `cad_export` | `{ "code": "<ruby dsl>", "format": "step\|stl\|glb\|obj" }` | `{ "path": "/tmp/rrcad_<hash>.<ext>" }` |
+| `cad_preview` | `{ "code": "<ruby dsl>" }` | `{ "url": "http://localhost:<PORT>" }` — starts the Three.js live preview server |
+| `cad_validate` | `{ "code": "<ruby dsl>" }` | `{ "status": "ok" }` or `{ "errors": ["..."] }` |
+
+#### `cad_eval` detail
+
+Evaluates the Ruby DSL code in a fresh `MrubyVm`, then calls `.shape_type`,
+`.volume`, `.surface_area`, `.bounding_box`, and `.validate` on the last
+returned shape.  Returns all properties in one response so the AI can reason
+about the geometry without a second round-trip.
+
+#### `cad_export` detail
+
+Evaluates the code, calls `shape.export("/tmp/rrcad_<uuid>.<ext>")`, and
+returns the absolute path.  The AI client or user can then open the file in
+their CAD tool of choice.  Supported formats: `step`, `stl`, `glb`, `gltf`,
+`obj`.
+
+#### `cad_preview` detail
+
+Evaluates the code and calls the existing `src/preview/` axum server.  If the
+server is not yet running it is started on a random free port.  Returns the
+`http://localhost:PORT` URL for the user to open in a browser.
+
+### Resources
+
+| URI | Description |
+|-----|-------------|
+| `rrcad://api` | Full DSL reference (`doc/api.md`) — lets the AI look up method signatures and examples without asking the user |
+| `rrcad://examples` | Contents of `samples/` — concrete Ruby DSL scripts the AI can adapt |
+
+### Example interaction
+
+```
+User:  "Make a 50×30×20 box with an M4 counterbore hole and show me the volume"
+
+Claude → cad_eval({
+           code: "box(50,30,20).cut(cbore(d:4, cbore_d:8, cbore_h:3, depth:25))"
+         })
+       ← { shape_type: "solid", volume: 28234.5, bounding_box: {...}, valid: true }
+
+Claude → cad_export({ code: "...", format: "step" })
+       ← { path: "/tmp/rrcad_a3f9.step" }
+```
+
+### Implementation order
+
+```
+Sprint 1: Add rmcp dependency; wire --mcp CLI flag; stub ServerHandler.
+Sprint 2: Implement cad_eval + cad_validate (pure MrubyVm, no file I/O).
+Sprint 3: Implement cad_export (reuse existing .export_* path).
+Sprint 4: Implement cad_preview (reuse src/preview/ axum server).
+Sprint 5: Expose rrcad://api and rrcad://examples resources.
+```
+
+### Notes
+
+- Keep the MCP server entirely in `src/mcp/`; do not entangle it with the
+  existing REPL (`src/main.rs`) or preview server (`src/preview/`) logic beyond
+  calling their public APIs.
+- Error handling: Ruby eval errors and OCCT exceptions must be caught and
+  returned as MCP `isError: true` tool results — never panic the server process.
+- The `MrubyVm` instance should be reset (or recreated) between tool calls to
+  prevent state leaking from one call to the next.
+- `cad_export` writes to `/tmp`; add a TTL cleanup or document that the user is
+  responsible for removing exported files.
+
+---
+
 ## Architecture Notes
 
 See `CLAUDE.md` and `doc/development.md` for the full architecture and
