@@ -83,7 +83,7 @@ C-arc).  See `tests/teapot_dsl.rs` (`sweep_sections_*` tests).
 ## ✓ Utah Teapot Sample
 
 `samples/07_teapot.rb` — rebuilt from the Newell triangle mesh
-(`doc/images/utah_teapot.obj`, sourced from https://graphics.cs.utah.edu/teapot/, ×3.0 scale).  Body via `loft` (8 OBJ-derived
+(sourced from https://graphics.cs.utah.edu/teapot/, ×3.0 scale).  Body via `loft` (8 OBJ-derived
 cross-sections, widest r=6.00 at Z=2.40); handle via `sweep_sections` along
 a 7-point C-arc with flared flanges (r=1.40) at the body-wall attachment
 points; spout via tapered `loft`; lid via `loft` dome + `sphere` knob.
