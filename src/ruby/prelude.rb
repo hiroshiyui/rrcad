@@ -200,6 +200,18 @@ class Shape
   def validate
     raise NotImplementedError, "Shape#validate is not yet implemented (Phase 7 Tier 2)"
   end
+
+  # --- Surface modeling — Phase 7 Tier 3 -----------------------------------
+
+  # Cross-section of this shape by an axis-aligned plane.
+  # Returns a compound of the section edges/wires.
+  #
+  #   solid.slice(plane: :xy, z: 5.0)   # XY plane at z=5
+  #   solid.slice(plane: :xz, y: 2.0)   # XZ plane at y=2
+  #   solid.slice(plane: :yz, x: 1.0)   # YZ plane at x=1
+  def slice(**_kwargs)
+    raise NotImplementedError, "Shape#slice is not yet implemented (Phase 7 Tier 3)"
+  end
 end
 
 # ---------------------------------------------------------------------------
@@ -293,6 +305,16 @@ module Kernel
   # cut_all(base, [t1, t2]) — subtract each tool from base in sequence.  Phase 7 Tier 1.
   def cut_all(_base, _tools)
     raise NotImplementedError, "cut_all() is not yet implemented (Phase 7 Tier 1)"
+  end
+
+  # ruled_surface(wire_a, wire_b) — ruled surface between two wires.  Phase 7 Tier 3.
+  def ruled_surface(_wire_a, _wire_b)
+    raise NotImplementedError, "ruled_surface() is not yet implemented (Phase 7 Tier 3)"
+  end
+
+  # fill_surface(boundary_wire) — smooth surface filling a closed wire boundary.  Phase 7 Tier 3.
+  def fill_surface(_boundary_wire)
+    raise NotImplementedError, "fill_surface() is not yet implemented (Phase 7 Tier 3)"
   end
 
   # Spline profiles — overridden natively after prelude runs.

@@ -183,6 +183,12 @@ extern int         rrcad_shape_is_closed(void* ptr, const char** error_out);
 extern int         rrcad_shape_is_manifold(void* ptr, const char** error_out);
 extern const char* rrcad_shape_validate(void* ptr, const char** error_out);
 
+/* Phase 7 Tier 3 — surface modeling */
+extern void* rrcad_ruled_surface(void* a, void* b, const char** error_out);
+extern void* rrcad_fill_surface(void* ptr, const char** error_out);
+extern void* rrcad_shape_slice(void* ptr, const char* plane, double offset,
+                               const char** error_out);
+
 /* mRuby data type descriptor — name appears in TypeError messages. */
 static void shape_dfree(mrb_state* mrb, void* ptr) {
     (void)mrb;
@@ -1556,6 +1562,103 @@ static mrb_value mrb_rrcad_shape_validate(mrb_state* mrb, mrb_value self) {
     return ary;
 }
 
+/* -------------------------------------------------------------------------
+ * Phase 7 Tier 3: ruled_surface / fill_surface / slice
+ * -------------------------------------------------------------------------
+ */
+
+/* ruled_surface(wire_a, wire_b) — Kernel-level method.
+ * Creates a ruled surface (TopoDS_Shell) connecting wire_a to wire_b.
+ * Both arguments must be Wire shapes produced by spline_2d/spline_3d/arc/etc.
+ */
+static mrb_value mrb_rrcad_ruled_surface(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value a, b;
+    mrb_get_args(mrb, "oo", &a, &b);
+
+    void* pa = shape_ptr(mrb, a);
+    require_native_ptr(mrb, pa);
+    void* pb = shape_ptr(mrb, b);
+    require_native_ptr(mrb, pb);
+
+    const char* err = NULL;
+    void* result = rrcad_ruled_surface(pa, pb, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* fill_surface(boundary_wire) — Kernel-level method.
+ * Fills the enclosed area of a closed Wire with a smooth NURBS surface.
+ * The wire's edges are used as C0 boundary constraints for BRepFill_Filling.
+ */
+static mrb_value mrb_rrcad_fill_surface(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value v;
+    mrb_get_args(mrb, "o", &v);
+
+    void* ptr = shape_ptr(mrb, v);
+    require_native_ptr(mrb, ptr);
+
+    const char* err = NULL;
+    void* result = rrcad_fill_surface(ptr, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* shape.slice(plane: :xy, z: 5.0)  — instance method.
+ *
+ * Slices self with an axis-aligned plane and returns the cross-section as a
+ * compound of edges/wires.  The plane is specified with keyword arguments:
+ *
+ *   solid.slice(plane: :xy, z: 5.0)   # XY plane at z=5
+ *   solid.slice(plane: :xz, y: 2.0)   # XZ plane at y=2
+ *   solid.slice(plane: :yz, x: 1.0)   # YZ plane at x=1
+ */
+static mrb_value mrb_rrcad_shape_slice(mrb_state* mrb, mrb_value self) {
+    void* ptr = shape_ptr(mrb, self);
+    require_native_ptr(mrb, ptr);
+
+    mrb_value kwargs = mrb_nil_value();
+    mrb_get_args(mrb, "H", &kwargs);
+
+    /* Require plane: keyword */
+    mrb_value plane_sym =
+        mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(mrb_intern_lit(mrb, "plane")),
+                       mrb_nil_value());
+    if (mrb_nil_p(plane_sym))
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "slice requires plane: :xy, :xz, or :yz");
+
+    if (!mrb_symbol_p(plane_sym))
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "slice: plane must be a Symbol (:xy, :xz, or :yz)");
+
+    const char* pname = mrb_sym_name(mrb, mrb_symbol(plane_sym));
+
+    /* Determine the offset keyword from the plane name */
+    mrb_sym offset_key;
+    if (strcmp(pname, "xy") == 0)
+        offset_key = mrb_intern_lit(mrb, "z");
+    else if (strcmp(pname, "xz") == 0)
+        offset_key = mrb_intern_lit(mrb, "y");
+    else if (strcmp(pname, "yz") == 0)
+        offset_key = mrb_intern_lit(mrb, "x");
+    else
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "slice: plane must be :xy, :xz, or :yz");
+
+    mrb_value offset_val =
+        mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(offset_key), mrb_float_value(mrb, 0.0));
+    double offset = mrb_float_p(offset_val)   ? (double)mrb_float(offset_val)
+                    : mrb_integer_p(offset_val) ? (double)mrb_integer(offset_val)
+                                                : 0.0;
+
+    const char* err = NULL;
+    void* result = rrcad_shape_slice(ptr, pname, offset, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
 /* =========================================================================
  * rrcad_register_shape_class
  *
@@ -1678,4 +1781,12 @@ void rrcad_register_shape_class(mrb_state* mrb) {
                       MRB_ARGS_REQ(1));
     mrb_define_method(mrb, mrb->kernel_module, "sew", mrb_rrcad_sew,
                       MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
+
+    /* Phase 7 Tier 3: surface modeling */
+    mrb_define_method(mrb, mrb->kernel_module, "ruled_surface", mrb_rrcad_ruled_surface,
+                      MRB_ARGS_REQ(2));
+    mrb_define_method(mrb, mrb->kernel_module, "fill_surface", mrb_rrcad_fill_surface,
+                      MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "slice", mrb_rrcad_shape_slice,
+                      MRB_ARGS_KEY(2, 0)); /* plane:, z:/y:/x: */
 }

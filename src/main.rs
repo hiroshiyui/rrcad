@@ -84,6 +84,11 @@ Validation & introspection
   s.manifold?               → true if all edges have exactly 2 adjacent faces
   s.validate                → :ok  or  [\"error1\", ...]
 
+Surface modeling
+  ruled_surface(a, b)       ruled surface (shell) between two wires
+  fill_surface(wire)        smooth NURBS surface filling a closed wire
+  s.slice(plane: :xy, z: d) cross-section by XY plane at z=d (also :xz/:yz)
+
 Parameters (Phase 5)
   param :name, default: val        declare a parameter (returns value)
   param :name, default: val,       same, with range validation
@@ -131,6 +136,8 @@ const TOP_LEVEL: &[&str] = &[
     "grid_pattern",
     "fuse_all",
     "cut_all",
+    "ruled_surface",
+    "fill_surface",
     "param", // REPL control
     "help",
     "exit",
@@ -194,6 +201,8 @@ const SHAPE_METHODS: &[&str] = &[
     "closed?",
     "manifold?",
     "validate",
+    // Phase 7 Tier 3 — surface modeling
+    "slice",
     // Phase 5 — color and mating
     "color",
     "mate",

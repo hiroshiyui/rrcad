@@ -208,6 +208,15 @@ mod ffi {
         fn shape_is_manifold(shape: &OcctShape) -> Result<bool>;
         fn shape_validate_str(shape: &OcctShape) -> Result<String>;
 
+        // --- Phase 7 Tier 3: Surface modeling ---
+        fn shape_ruled_surface(
+            wire_a: &OcctShape,
+            wire_b: &OcctShape,
+        ) -> Result<UniquePtr<OcctShape>>;
+        fn shape_fill_surface(boundary_wire: &OcctShape) -> Result<UniquePtr<OcctShape>>;
+        fn shape_slice(shape: &OcctShape, plane: &str, offset: f64)
+            -> Result<UniquePtr<OcctShape>>;
+
         // --- Export ---
         fn export_step(shape: &OcctShape, path: &str) -> Result<()>;
         fn export_stl(shape: &OcctShape, path: &str) -> Result<()>;
@@ -663,6 +672,33 @@ impl Shape {
     /// newline-separated list of error names if not.
     pub fn validate(&self) -> Result<String, String> {
         ffi::shape_validate_str(&self.inner).map_err(|e| e.to_string())
+    }
+
+    // --- Phase 7 Tier 3: Surface modeling ---
+
+    /// Build a ruled surface (shell) between two wires via `BRepFill::Shell`.
+    /// Both `wire_a` and `wire_b` must be Wire shapes.
+    pub fn ruled_surface(wire_a: &Shape, wire_b: &Shape) -> Result<Shape, String> {
+        ffi::shape_ruled_surface(&wire_a.inner, &wire_b.inner)
+            .map(|s| Shape { inner: s })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Fill the interior of a closed boundary wire with a smooth NURBS surface
+    /// using `BRepFill_Filling`.  `boundary_wire` must be a Wire.
+    pub fn fill_surface(boundary_wire: &Shape) -> Result<Shape, String> {
+        ffi::shape_fill_surface(&boundary_wire.inner)
+            .map(|s| Shape { inner: s })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Cross-section of `self` by an axis-aligned plane at `offset`.
+    /// `plane` is `"xy"`, `"xz"`, or `"yz"`.
+    /// Returns a compound of the section edges/wires via `BRepAlgoAPI_Section`.
+    pub fn slice(&self, plane: &str, offset: f64) -> Result<Shape, String> {
+        ffi::shape_slice(&self.inner, plane, offset)
+            .map(|s| Shape { inner: s })
+            .map_err(|e| e.to_string())
     }
 
     // --- Patterns ---

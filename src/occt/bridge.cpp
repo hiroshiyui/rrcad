@@ -114,6 +114,12 @@
 #include <Precision.hxx>
 #include <TColgp_Array2OfPnt.hxx>
 
+// --- OCCT: Phase 7 Tier 3 — surface modeling ---
+#include <BRepAlgoAPI_Section.hxx>
+#include <BRepFill.hxx>
+#include <BRepFill_Filling.hxx>
+#include <GeomAbs_Shape.hxx>
+
 // --- OCCT: STEP import / export ---
 #include <IFSelect_ReturnStatus.hxx>
 #include <STEPControl_Reader.hxx>
@@ -1820,6 +1826,85 @@ rust::String shape_validate_str(const OcctShape& shape) {
         result += e;
     }
     return rust::String(result.c_str());
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7 Tier 3: Surface modeling
+// ---------------------------------------------------------------------------
+
+// Build a ruled surface (TopoDS_Shell) by connecting corresponding vertices
+// of two wires with straight lines.  BRepFill::Shell handles wire orientation
+// and produces a properly-connected shell suitable for further sewing.
+std::unique_ptr<OcctShape> shape_ruled_surface(const OcctShape& wire_a, const OcctShape& wire_b) {
+    if (wire_a.get().ShapeType() != TopAbs_WIRE)
+        throw std::runtime_error("ruled_surface: first argument must be a Wire");
+    if (wire_b.get().ShapeType() != TopAbs_WIRE)
+        throw std::runtime_error("ruled_surface: second argument must be a Wire");
+
+    TopoDS_Shell shell = BRepFill::Shell(TopoDS::Wire(wire_a.get()), TopoDS::Wire(wire_b.get()));
+    if (shell.IsNull())
+        throw std::runtime_error("ruled_surface: BRepFill::Shell failed");
+
+    return wrap(shell);
+}
+
+// Build a smooth filling surface (TopoDS_Face) whose boundary follows the
+// edges of a single closed wire.  Each edge is added as a C0 free boundary
+// constraint; BRepFill_Filling solves a plate-energy minimisation problem to
+// produce a fair surface inside.
+std::unique_ptr<OcctShape> shape_fill_surface(const OcctShape& boundary_wire) {
+    if (boundary_wire.get().ShapeType() != TopAbs_WIRE)
+        throw std::runtime_error("fill_surface: argument must be a Wire");
+
+    BRepFill_Filling filler;
+    bool any = false;
+    for (TopExp_Explorer ex(boundary_wire.get(), TopAbs_EDGE); ex.More(); ex.Next()) {
+        filler.Add(TopoDS::Edge(ex.Current()), GeomAbs_C0, /* IsBound */ Standard_True);
+        any = true;
+    }
+    if (!any)
+        throw std::runtime_error("fill_surface: boundary wire contains no edges");
+
+    filler.Build();
+    if (!filler.IsDone())
+        throw std::runtime_error("fill_surface: BRepFill_Filling failed");
+
+    return wrap(filler.Face());
+}
+
+// Intersect a shape with an axis-aligned plane and return the cross-section
+// as a compound of edges/wires.  The section curves can be extruded or used
+// as profiles for further operations.
+//
+//   plane = "xy"  →  plane at z = offset  (normal +Z)
+//   plane = "xz"  →  plane at y = offset  (normal +Y)
+//   plane = "yz"  →  plane at x = offset  (normal +X)
+std::unique_ptr<OcctShape> shape_slice(const OcctShape& shape, rust::Str plane, double offset) {
+    std::string pname(plane.data(), plane.size());
+
+    gp_Pnt origin(0, 0, 0);
+    gp_Dir normal(0, 0, 1);
+
+    if (pname == "xy") {
+        origin = gp_Pnt(0, 0, offset);
+        normal = gp_Dir(0, 0, 1);
+    } else if (pname == "xz") {
+        origin = gp_Pnt(0, offset, 0);
+        normal = gp_Dir(0, 1, 0);
+    } else if (pname == "yz") {
+        origin = gp_Pnt(offset, 0, 0);
+        normal = gp_Dir(1, 0, 0);
+    } else {
+        throw std::runtime_error("slice: plane must be \"xy\", \"xz\", or \"yz\"");
+    }
+
+    gp_Pln pln(origin, normal);
+    BRepAlgoAPI_Section section(shape.get(), pln);
+    section.Build();
+    if (!section.IsDone())
+        throw std::runtime_error("slice: BRepAlgoAPI_Section failed");
+
+    return wrap(section.Shape());
 }
 
 // ---------------------------------------------------------------------------

@@ -337,6 +337,19 @@ bool shape_is_manifold(const OcctShape& shape);
 // newline-separated list of BRepCheck_Status names otherwise.
 rust::String shape_validate_str(const OcctShape& shape);
 
+// --- Phase 7 Tier 3: Surface modeling ---
+
+// Create a ruled surface (shell) between two wires using BRepFill::Shell.
+// Both arguments must be Wires.
+std::unique_ptr<OcctShape> shape_ruled_surface(const OcctShape& wire_a, const OcctShape& wire_b);
+// Fill the interior of a closed boundary wire with a smooth NURBS surface.
+// The wire's edges are added as C0 boundary constraints to BRepFill_Filling.
+std::unique_ptr<OcctShape> shape_fill_surface(const OcctShape& boundary_wire);
+// Cross-section of a shape by an axis-aligned plane.
+// plane: "xy" (offset along Z), "xz" (offset along Y), "yz" (offset along X).
+// Returns the section as a compound of edges / wires.
+std::unique_ptr<OcctShape> shape_slice(const OcctShape& shape, rust::Str plane, double offset);
+
 // --- Export ---
 void export_step(const OcctShape& shape, rust::Str path);
 void export_stl(const OcctShape& shape, rust::Str path);

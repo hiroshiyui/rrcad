@@ -267,6 +267,26 @@ assert_eq!(Shape::make_box(10.0, 20.0, 30.0)?.validate()?, "ok");
 
 ---
 
+### Surface Modeling (Phase 7 Tier 3)
+
+| Method | Description |
+|--------|-------------|
+| `Shape::ruled_surface(wire_a: &Shape, wire_b: &Shape) -> Result<Shape>` | Ruled surface (Shell) connecting `wire_a` to `wire_b` via `BRepFill::Shell`. Both must be Wire shapes. |
+| `Shape::fill_surface(boundary_wire: &Shape) -> Result<Shape>` | Fills the enclosed region of a closed boundary Wire with a smooth NURBS Face via `BRepFill_Filling`. |
+| `.slice(plane: &str, offset: f64) -> Result<Shape>` | Cross-section by an axis-aligned plane (`"xy"`, `"xz"`, `"yz"`) at `offset`. Returns a compound of section edges/wires via `BRepAlgoAPI_Section`. |
+
+```rust
+// Ruled surface between two wires
+let w1 = Shape::make_spline_3d(&[0.,0.,0., 1.,0.,0., 1.,1.,0.])?;
+let w2 = Shape::make_spline_3d(&[0.,0.,5., 1.,0.,5., 1.,1.,5.])?;
+let shell = Shape::ruled_surface(&w1, &w2)?;
+
+// Cross-section of a box at z=5
+let section = Shape::make_box(10.0, 10.0, 10.0)?.slice("xy", 5.0)?;
+```
+
+---
+
 ### Export
 
 | Method | Description |
@@ -406,6 +426,13 @@ fn shape_is_closed  (shape: &OcctShape)                -> Result<bool>;
 fn shape_is_manifold(shape: &OcctShape)                -> Result<bool>;
 fn shape_validate_str(shape: &OcctShape)               -> Result<String>;
 
+// Surface modeling (Phase 7 Tier 3)
+fn shape_ruled_surface(wire_a: &OcctShape,
+                       wire_b: &OcctShape)             -> Result<UniquePtr<OcctShape>>;
+fn shape_fill_surface(boundary_wire: &OcctShape)       -> Result<UniquePtr<OcctShape>>;
+fn shape_slice(shape: &OcctShape, plane: &str,
+               offset: f64)                            -> Result<UniquePtr<OcctShape>>;
+
 // Sub-shape selectors
 fn shape_faces_count(shape: &OcctShape, selector: &str)              -> Result<i32>;
 fn shape_faces_get(shape: &OcctShape, selector: &str, idx: i32)      -> Result<UniquePtr<OcctShape>>;
@@ -492,6 +519,8 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `grid_pattern(shape, nx, ny, dx, dy)` | `nx × ny` copies of `shape` in a 2-D grid; copy `(i,j)` at `(i*dx, j*dy, 0)`. Implemented as two nested `linear_pattern` calls. Returns a Compound. |
 | `fuse_all([shape1, shape2, ...])` | Fold-left union of two or more shapes. Requires at least 2 shapes. |
 | `cut_all(base, [tool1, tool2, ...])` | Subtract each tool from `base` in sequence. Requires at least 1 tool. |
+| `ruled_surface(wire_a, wire_b)` | Ruled surface (Shell) spanning from `wire_a` to `wire_b`. Both must be Wire shapes. Uses `BRepFill::Shell`. |
+| `fill_surface(boundary_wire)` | Smooth NURBS surface filling the region enclosed by a closed Wire. Uses `BRepFill_Filling` with C0 boundary constraints. |
 | `param(:name, default: val)` | Declare a named parameter. Returns `val` unless a `--param name=x` CLI override was supplied; coerces string overrides to the default's type (Integer/Float/String). |
 | `param(:name, default: val, range: lo..hi)` | Same with range validation; raises `ArgumentError` if the value is outside the range. |
 | `solid { ... }` | Block returning its last expression |
@@ -538,6 +567,7 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `.closed?` | `true` if every edge is shared by at least 2 faces (no open boundary) |
 | `.manifold?` | `true` if every edge is shared by exactly 2 faces (manifold mesh) |
 | `.validate` | Runs `BRepCheck_Analyzer`. Returns `:ok` if the shape is valid, or an `Array` of error description strings if not. |
+| `.slice(plane: :xy, z: d)` | Cross-section by an axis-aligned plane. `plane:` is `:xy` (offset along Z), `:xz` (offset along Y), or `:yz` (offset along X). The offset key matches the plane normal axis (`z:` for `:xy`, `y:` for `:xz`, `x:` for `:yz`). Returns a compound of the section edges/wires. Uses `BRepAlgoAPI_Section`. |
 | `.export("out.step")` | Write file; format determined by extension: `.step`/`.stp` → STEP, `.stl` → STL, `.glb` → GLB, `.gltf` → glTF, `.obj` → OBJ |
 
 ---

@@ -1302,6 +1302,55 @@ pub unsafe extern "C" fn rrcad_shape_is_manifold(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Phase 7 Tier 3: surface modeling
+// ---------------------------------------------------------------------------
+
+/// Create a ruled surface (shell) between two wires.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_ruled_surface(
+    a: *mut c_void,
+    b: *mut c_void,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let wa = unsafe { &*(a as *const Shape) };
+    let wb = unsafe { &*(b as *const Shape) };
+    unsafe { shape_result_to_ptr(Shape::ruled_surface(wa, wb), error_out) }
+}
+
+/// Fill the interior of a closed boundary wire with a smooth surface.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_fill_surface(
+    ptr: *mut c_void,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    unsafe { shape_result_to_ptr(Shape::fill_surface(shape), error_out) }
+}
+
+/// Cross-section of a shape by an axis-aligned plane.
+/// `plane` is a NUL-terminated C string: "xy", "xz", or "yz".
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_slice(
+    ptr: *mut c_void,
+    plane: *const c_char,
+    offset: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let plane_str = match unsafe { std::ffi::CStr::from_ptr(plane) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "plane is not valid UTF-8") };
+            return std::ptr::null_mut();
+        }
+    };
+    unsafe { shape_result_to_ptr(shape.slice(plane_str, offset), error_out) }
+}
+
 /// Run BRepCheck_Analyzer.  Returns a C string pointer: "ok" if valid, or a
 /// newline-separated list of error descriptions.  The pointer is valid until
 /// the next call on this thread.

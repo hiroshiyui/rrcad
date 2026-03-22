@@ -124,13 +124,15 @@ All four Tier 2 features are implemented and tested in `tests/phase7_tier2.rs` (
 | 7 | **Centroid** ✓ | `.centroid` → `[x, y, z]` | `BRepGProp::VolumeProperties/SurfaceProperties/LinearProperties` dispatch |
 | 8 | **Topology validation** ✓ | `.validate` → `:ok` or error list | `BRepCheck_Analyzer` (already used in export guard) |
 
-### Tier 3 — Surface modeling (next frontier)
+### ✓ Tier 3 — Surface modeling (next frontier)
+
+All three Tier 3 features are implemented and tested in `tests/phase7_tier3.rs` (10 tests).
 
 | # | Feature | DSL | OCCT API |
 |---|---------|-----|----------|
-| 9 | **Ruled surface** | `ruled_surface(wire_a, wire_b)` | `BRepFill_RuledSurface` |
-| 10 | **Fill surface** | `fill_surface([boundary_wires])` | `BRepFill_Filling` |
-| 11 | **Slice by plane** | `.slice(plane: :xy, z: 5.0)` → Face | `BRepAlgoAPI_Section` |
+| 9 | **Ruled surface** ✓ | `ruled_surface(wire_a, wire_b)` | `BRepFill::Shell` (static method) |
+| 10 | **Fill surface** ✓ | `fill_surface(boundary_wire)` | `BRepFill_Filling` with C0 edge constraints |
+| 11 | **Slice by plane** ✓ | `.slice(plane: :xy, z: 5.0)` → compound | `BRepAlgoAPI_Section` |
 
 ### Tier 4 — Interop (legacy CAD exchange)
 
