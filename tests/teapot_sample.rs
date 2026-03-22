@@ -70,26 +70,25 @@ fn teapot_spout_loft_succeeds() {
 }
 
 #[test]
-fn teapot_handle_sweep_succeeds() {
+fn teapot_handle_loft_succeeds() {
     let out = tmp("rrcad_teapot_handle.step");
     let mut vm = MrubyVm::new();
     vm.eval(&format!(
         r#"
-        path = spline_3d([
-          [-4.00, 0.0, 1.50],
-          [-6.00, 0.0, 1.50],
-          [-8.30, 0.0, 3.20],
-          [-8.54, 0.0, 4.80],
-          [-8.00, 0.0, 5.80],
-          [-5.10, 0.0, 6.30],
-          [-3.50, 0.0, 6.30],
+        handle = loft([
+          circle(1.40).translate(-4.50, 0.0, 1.50),
+          circle(0.70).translate(-6.80, 0.0, 2.20),
+          circle(0.70).translate(-8.30, 0.0, 3.50),
+          circle(0.70).translate(-8.54, 0.0, 4.80),
+          circle(0.70).translate(-8.00, 0.0, 5.80),
+          circle(0.70).translate(-6.20, 0.0, 6.20),
+          circle(1.40).translate(-4.00, 0.0, 6.30),
         ])
-        handle = circle(0.70).sweep(path)
         handle.export('{}')
         "#,
         out.display()
     ))
-    .expect("teapot handle sweep failed");
+    .expect("teapot handle loft failed");
     assert_valid_step(&out);
 }
 
@@ -135,16 +134,15 @@ fn teapot_full_assembly_succeeds() {
           circle(4.64).translate(0, 0, 6.60),
         ])
 
-        handle_path = spline_3d([
-          [-4.00, 0.0, 1.50],
-          [-6.00, 0.0, 1.50],
-          [-8.30, 0.0, 3.20],
-          [-8.54, 0.0, 4.80],
-          [-8.00, 0.0, 5.80],
-          [-5.10, 0.0, 6.30],
-          [-3.50, 0.0, 6.30],
+        handle = loft([
+          circle(1.40).translate(-4.50, 0.0, 1.50),
+          circle(0.70).translate(-6.80, 0.0, 2.20),
+          circle(0.70).translate(-8.30, 0.0, 3.50),
+          circle(0.70).translate(-8.54, 0.0, 4.80),
+          circle(0.70).translate(-8.00, 0.0, 5.80),
+          circle(0.70).translate(-6.20, 0.0, 6.20),
+          circle(1.40).translate(-4.00, 0.0, 6.30),
         ])
-        handle = circle(0.70).sweep(handle_path)
 
         spout = loft([
           circle(1.40).translate(4.50, 0.0, 1.50),
