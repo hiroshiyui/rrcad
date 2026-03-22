@@ -5,16 +5,14 @@
 A 3D CAD language expressed in Ruby. Write `.rb` scripts to describe solid geometry; the engine evaluates them through an embedded mRuby VM, builds exact BRep models with OpenCASCADE (OCCT), and exports to STEP, STL, or glTF.
 
 ```ruby
-body = spline_2d([
-  [0.0, 0.0], [2.8, 0.3], [3.5, 1.2], [4.2, 3.5],
-  [3.8, 6.0], [3.2, 7.2], [2.8, 7.8], [0.0, 7.8],
-]).revolve(360)
+# Solid box — 60×60×80 mm
+bucket = box(60, 60, 80)
 
-spout_path = spline_3d([[4.0,0.0,2.5],[5.5,0.0,3.5],[8.5,0.0,7.0]])
-spout = circle(0.7).sweep(spout_path)
+# Pocket the top face 70 mm deep, leaving 5 mm walls and a 10 mm base
+bucket = bucket.pocket(:top, depth: 70) { rect(50, 50) }
 
-teapot = solid { body.fuse(spout) }
-teapot.export("teapot.step")
+bucket.export("bucket.step")
+preview bucket
 ```
 
 See [`samples/`](samples/) for more complete examples.
