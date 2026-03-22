@@ -22,6 +22,11 @@ namespace rrcad {
 class OcctShape {
 public:
     explicit OcctShape(TopoDS_Shape s) noexcept : shape_(std::move(s)) {}
+
+    // Constructor with an sRGB color attached (r/g/b in [0, 1]).
+    OcctShape(TopoDS_Shape s, float r, float g, float b) noexcept
+        : shape_(std::move(s)), color_r_(r), color_g_(g), color_b_(b) {}
+
     ~OcctShape() = default;
 
     OcctShape(const OcctShape&) = delete;
@@ -32,14 +37,32 @@ public:
     const TopoDS_Shape& get() const noexcept { return shape_; }
     TopoDS_Shape& get() noexcept { return shape_; }
 
+    // Color accessors.  has_color() returns false when no color has been set.
+    bool has_color() const noexcept { return color_r_ >= 0.0f; }
+    float color_r() const noexcept { return color_r_; }
+    float color_g() const noexcept { return color_g_; }
+    float color_b() const noexcept { return color_b_; }
+
 private:
     TopoDS_Shape shape_;
+    // Negative sentinel means "no color set".
+    float color_r_ = -1.0f;
+    float color_g_ = -1.0f;
+    float color_b_ = -1.0f;
 };
 
-// Convenience factory used throughout bridge.cpp.
+// Convenience factories used throughout bridge.cpp.
 inline std::unique_ptr<OcctShape> wrap(TopoDS_Shape s) {
     return std::make_unique<OcctShape>(std::move(s));
 }
+inline std::unique_ptr<OcctShape> wrap_colored(TopoDS_Shape s, float r, float g, float b) {
+    return std::make_unique<OcctShape>(std::move(s), r, g, b);
+}
+
+// --- Color ---
+// Return a copy of shape with an sRGB color tag (r/g/b each in [0, 1]).
+// The color is written into the XDE document during GLB/glTF/OBJ export.
+std::unique_ptr<OcctShape> shape_set_color(const OcctShape& shape, double r, double g, double b);
 
 // --- Primitives ---
 std::unique_ptr<OcctShape> make_box(double dx, double dy, double dz);

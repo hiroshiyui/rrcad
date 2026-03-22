@@ -5,6 +5,14 @@ mod ffi {
 
         type OcctShape;
 
+        // --- Color ---
+        fn shape_set_color(
+            shape: &OcctShape,
+            r: f64,
+            g: f64,
+            b: f64,
+        ) -> Result<UniquePtr<OcctShape>>;
+
         // --- Primitives ---
         fn make_box(dx: f64, dy: f64, dz: f64) -> Result<UniquePtr<OcctShape>>;
         fn make_cylinder(radius: f64, height: f64) -> Result<UniquePtr<OcctShape>>;
@@ -233,6 +241,17 @@ impl Shape {
     /// Chamfer only edges matching `selector` (`:all` / `:vertical` / `:horizontal`).
     pub fn chamfer_sel(&self, dist: f64, selector: &str) -> Result<Shape, String> {
         ffi::shape_chamfer_sel(&self.inner, dist, selector)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    // --- Color ---
+
+    /// Return a copy of this shape with an sRGB surface color attached.
+    /// `r`, `g`, `b` are each in [0.0, 1.0].  The color is written into
+    /// the XDE document during GLB / glTF / OBJ export.
+    pub fn set_color(&self, r: f64, g: f64, b: f64) -> Result<Shape, String> {
+        ffi::shape_set_color(&self.inner, r, g, b)
             .map(|p| Shape { inner: p })
             .map_err(|e| e.to_string())
     }
@@ -686,5 +705,34 @@ mod tests {
             std::fs::metadata(&out).unwrap().len() > 0,
             "OBJ file is empty"
         );
+    }
+
+    // --- Color ---
+
+    #[test]
+    fn set_color_returns_new_shape() {
+        let b = Shape::make_box(10.0, 10.0, 10.0).unwrap();
+        // set_color must succeed and produce a usable shape.
+        let colored = b.set_color(1.0, 0.0, 0.0).expect("set_color failed");
+        // The colored shape should export cleanly to GLB.
+        let out = std::env::temp_dir().join("rrcad_test_colored.glb");
+        colored
+            .export_glb(out.to_str().unwrap(), 0.1)
+            .expect("export_glb on colored shape failed");
+        assert!(out.exists(), "GLB file was not created");
+        assert!(
+            std::fs::metadata(&out).unwrap().len() > 0,
+            "GLB file is empty"
+        );
+    }
+
+    #[test]
+    fn set_color_does_not_modify_original() {
+        let b = Shape::make_box(10.0, 10.0, 10.0).unwrap();
+        let _colored = b.set_color(0.0, 1.0, 0.0).expect("set_color failed");
+        // Original shape must still export without error.
+        let out = std::env::temp_dir().join("rrcad_test_uncolored.glb");
+        b.export_glb(out.to_str().unwrap(), 0.1)
+            .expect("original shape export failed after set_color");
     }
 }

@@ -537,3 +537,40 @@ fn e2e_export_glb() {
     assert!(out.exists());
     assert!(std::fs::metadata(&out).unwrap().len() > 0);
 }
+
+// ---------------------------------------------------------------------------
+// Phase 5 — color
+// ---------------------------------------------------------------------------
+
+#[test]
+fn e2e_color_returns_shape() {
+    let mut vm = MrubyVm::new();
+    // .color() should return a Shape, not raise.
+    let result = vm
+        .eval("box(10,10,10).color(1.0, 0.0, 0.0).class")
+        .unwrap();
+    assert_eq!(result, "Shape");
+}
+
+#[test]
+fn e2e_color_exports_glb() {
+    let mut vm = MrubyVm::new();
+    let out = std::env::temp_dir().join("rrcad_e2e_colored.glb");
+    let code = format!(
+        "box(10,10,10).color(0.2, 0.6, 0.9).export({:?})",
+        out.to_str().unwrap()
+    );
+    vm.eval(&code).expect("colored GLB export failed");
+    assert!(out.exists());
+    assert!(std::fs::metadata(&out).unwrap().len() > 0);
+}
+
+#[test]
+fn e2e_color_chained_with_transform() {
+    let mut vm = MrubyVm::new();
+    // color can be applied after transforms and before export.
+    let result = vm
+        .eval("box(5,5,5).translate(1,0,0).color(0.5,0.5,0.5).class")
+        .unwrap();
+    assert_eq!(result, "Shape");
+}

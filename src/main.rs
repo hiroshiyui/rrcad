@@ -33,6 +33,10 @@ Transforms                   (return a new Shape)
   s.scale(sx, sy, sz)       non-uniform scale
   s.mirror(:xy|:xz|:yz)     mirror about a plane
 
+Color (Phase 5)
+  s.color(r, g, b)          tag shape with sRGB color (each 0.0–1.0)
+                            written into GLB / glTF / OBJ on export
+
 Modifiers
   s.fillet(r[, :sel])       round all (or selected) edges
   s.chamfer(d[, :sel])      bevel all (or selected) edges
@@ -153,6 +157,8 @@ const SHAPE_METHODS: &[&str] = &[
     "faces",
     "edges",
     "vertices",
+    // Phase 5 — color
+    "color",
     // Ruby built-ins
     "class",
     "inspect",

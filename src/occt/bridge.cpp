@@ -103,13 +103,17 @@
 
 // --- OCCT: glTF / OBJ export (XDE pipeline) ---
 #include <Message_ProgressRange.hxx>
+#include <Quantity_Color.hxx>
 #include <RWGltf_CafWriter.hxx>
 #include <RWObj_CafWriter.hxx>
 #include <TColStd_IndexedDataMapOfStringString.hxx>
 #include <TCollection_AsciiString.hxx>
 #include <TCollection_ExtendedString.hxx>
+#include <TDF_Label.hxx>
 #include <TDocStd_Document.hxx>
 #include <XCAFApp_Application.hxx>
+#include <XCAFDoc_ColorTool.hxx>
+#include <XCAFDoc_ColorType.hxx>
 #include <XCAFDoc_DocumentTool.hxx>
 #include <XCAFDoc_ShapeTool.hxx>
 
@@ -169,6 +173,16 @@ std::unique_ptr<OcctShape> make_wedge(double dx, double dy, double dz, double lt
     if (!builder.IsDone())
         throw std::runtime_error("BRepPrimAPI_MakeWedge failed");
     return wrap(builder.Shape());
+}
+
+// ---------------------------------------------------------------------------
+// Color
+
+std::unique_ptr<OcctShape> shape_set_color(const OcctShape& shape, double r, double g, double b) {
+    // Return a new OcctShape wrapping the same BRep topology (cheap — TopoDS
+    // uses handle-based reference counting) with the sRGB color tag attached.
+    return wrap_colored(shape.get(), static_cast<float>(r), static_cast<float>(g),
+                        static_cast<float>(b));
 }
 
 // ---------------------------------------------------------------------------
@@ -1080,7 +1094,15 @@ static Handle(TDocStd_Document)
         throw std::runtime_error(std::string("Failed to create XDE document for ") + label);
 
     Handle(XCAFDoc_ShapeTool) shape_tool = XCAFDoc_DocumentTool::ShapeTool(doc->Main());
-    shape_tool->AddShape(shape.get());
+    TDF_Label shape_label = shape_tool->AddShape(shape.get());
+
+    // Attach sRGB surface color when the shape carries one (set via .color(r,g,b)).
+    if (shape.has_color()) {
+        Handle(XCAFDoc_ColorTool) color_tool = XCAFDoc_DocumentTool::ColorTool(doc->Main());
+        Quantity_Color color(shape.color_r(), shape.color_g(), shape.color_b(), Quantity_TOC_sRGB);
+        color_tool->SetColor(shape_label, color, XCAFDoc_ColorSurf);
+    }
+
     return doc;
 }
 

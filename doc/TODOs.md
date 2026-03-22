@@ -220,7 +220,7 @@ Useful for product families. No constraint solver required.
 
 ### Tier 2 — High visual impact, low risk
 
-#### [ ] GLB color/material support
+#### [x] GLB color/material support
 
 **File:** `src/occt/bridge.cpp` — `make_xde_doc` or `export_glb`
 

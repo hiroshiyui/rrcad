@@ -327,6 +327,23 @@ pub unsafe extern "C" fn rrcad_shape_common(
 }
 
 // ---------------------------------------------------------------------------
+// Color (Phase 5)
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_set_color(
+    ptr: *mut c_void,
+    r: f64,
+    g: f64,
+    b: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    unsafe { shape_result_to_ptr(shape.set_color(r, g, b), error_out) }
+}
+
+// ---------------------------------------------------------------------------
 // Transforms (Phase 2 — wiring existing OCCT ops)
 // ---------------------------------------------------------------------------
 

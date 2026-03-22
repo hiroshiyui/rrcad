@@ -104,6 +104,21 @@ class Shape
   def edges(_selector)
     raise NotImplementedError, "Shape#edges is not yet implemented (Phase 3)"
   end
+
+  # --- Color — Phase 5 ------------------------------------------------------
+
+  # Attach an sRGB surface color to this shape.  Returns a new Shape with the
+  # same geometry and the color tag stored; the original is unchanged.
+  # r, g, b must each be in [0.0, 1.0].  The color is written into the XDE
+  # document during GLB / glTF / OBJ export and is visible in the live preview.
+  #
+  #   body  = box(10, 20, 30).color(0.8, 0.5, 0.2)   # warm orange
+  #   knob  = sphere(2).color(0.2, 0.6, 0.9)          # sky blue
+  #
+  # Overridden by the native implementation after the prelude runs.
+  def color(_r, _g, _b)
+    raise NotImplementedError, "Shape#color is not yet implemented (Phase 5)"
+  end
 end
 
 # ---------------------------------------------------------------------------

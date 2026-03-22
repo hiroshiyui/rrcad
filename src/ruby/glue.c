@@ -74,6 +74,10 @@ extern void* rrcad_shape_fuse(void* a, void* b, const char** error_out);
 extern void* rrcad_shape_cut(void* a, void* b, const char** error_out);
 extern void* rrcad_shape_common(void* a, void* b, const char** error_out);
 
+/* Phase 5 */
+extern void* rrcad_shape_set_color(void* ptr, double r, double g, double b,
+                                   const char** error_out);
+
 /* Phase 2 */
 extern void* rrcad_shape_translate(void* ptr, double dx, double dy, double dz,
                                    const char** error_out);
@@ -346,6 +350,27 @@ static mrb_value mrb_rrcad_shape_common(mrb_state* mrb, mrb_value self) {
 
     const char* err = NULL;
     void* result = rrcad_shape_common(a, b, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* -------------------------------------------------------------------------
+ * Phase 5: Color
+ * -------------------------------------------------------------------------
+ */
+
+/* shape.color(r, g, b) → Shape
+ * r/g/b are Float values in [0.0, 1.0] (sRGB).
+ * Returns a new Shape with the same geometry and the color tag attached.
+ * The color is embedded in GLB / glTF / OBJ output during export. */
+static mrb_value mrb_rrcad_shape_color(mrb_state* mrb, mrb_value self) {
+    mrb_float r, g, b;
+    mrb_get_args(mrb, "fff", &r, &g, &b);
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    void* result = rrcad_shape_set_color(ptr, (double)r, (double)g, (double)b, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
@@ -1035,6 +1060,9 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     mrb_define_method(mrb, shape_class, "fuse", mrb_rrcad_shape_fuse, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "cut", mrb_rrcad_shape_cut, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "common", mrb_rrcad_shape_common, MRB_ARGS_REQ(1));
+
+    /* Phase 5: Color */
+    mrb_define_method(mrb, shape_class, "color", mrb_rrcad_shape_color, MRB_ARGS_REQ(3));
 
     /* Phase 2: Transforms */
     mrb_define_method(mrb, shape_class, "translate", mrb_rrcad_shape_translate, MRB_ARGS_REQ(3));
