@@ -78,15 +78,20 @@ rrcad/
 │       └── viewer.html     # Three.js viewer (embedded via include_str!)
 ├── samples/                # DSL example scripts
 │   ├── README.md
-│   ├── 01_hello_box.rb … 06_live_preview.rb
+│   ├── 01_hello_box.rb … 07_teapot.rb
+│   ├── 08_parametric_box.rb  # Phase 5: param DSL demo
+│   └── 08_box_sizes.csv      # design-table CSV for the parametric box
 ├── tests/                  # integration test suites
 │   ├── occt_layer.rs       # OCCT Rust API smoke tests
 │   ├── vm_layer.rs         # MrubyVm eval smoke tests
 │   ├── prelude_layer.rs    # DSL prelude + native override tests
-│   ├── e2e_dsl.rs          # Phase 1 end-to-end tests
+│   ├── e2e_dsl.rs          # Phase 1–5 end-to-end tests (export, color, mate, simplify)
 │   ├── phase2_dsl.rs       # Phase 2 end-to-end tests
-│   ├── teapot_dsl.rs       # Phase 3 spline/sweep + teapot e2e tests
-│   └── phase3_selectors.rs # Phase 3 face/edge sub-shape selector tests
+│   ├── teapot_dsl.rs       # Phase 3 spline/sweep (incl. tangent variants)
+│   ├── teapot_sample.rs    # Full Utah teapot sample smoke tests
+│   ├── phase3_selectors.rs # Phase 3 face/edge sub-shape selector tests
+│   ├── phase4_3d_ops.rs    # Phase 4: shell, offset, loft, extrude_ex, patterns
+│   └── phase5_params.rs    # Phase 5: param DSL, --param overrides, design table
 ├── vendor/
 │   └── mruby/              # git submodule — mRuby 3.4.0
 └── doc/
@@ -225,7 +230,7 @@ for (; exp.More(); exp.Next())
 The `TopoDS::Edge()` downcast is required — `exp.Current()` returns
 `TopoDS_Shape`.
 
-**Spline construction (Phase 3):**
+**Spline construction (Phase 3 + Tier 4):**
 
 `make_spline_2d` and `make_spline_3d` both use `GeomAPI_Interpolate` with a
 `TColgp_HArray1OfPnt` to fit a BSpline through the given control points.
@@ -233,6 +238,11 @@ The `TopoDS::Edge()` downcast is required — `exp.Current()` returns
 endpoints differ) and builds a `Face` via `BRepBuilderAPI_MakeFace` on the
 XZ plane — suitable for `revolve`. `make_spline_3d` returns a bare `Wire`
 — suitable for `sweep`.
+
+`make_spline_2d_tan` and `make_spline_3d_tan` are the tangent-constrained
+variants: they call `GeomAPI_Interpolate::Load(startTangent, endTangent)`
+before `Perform()` to suppress endpoint oscillation on short splines. The DSL
+exposes these via the optional `tangents:` keyword argument.
 
 **Pipe sweep (Phase 3):**
 
@@ -375,14 +385,17 @@ cargo clippy                      # lints
 
 | Test file | What it covers |
 |-----------|----------------|
-| `src/occt/mod.rs` (inline) | OCCT Rust API: box→fillet→STEP, boolean cut |
+| `src/occt/mod.rs` (inline) | OCCT Rust API: box→fillet→STEP, boolean cut, color, mate |
 | `tests/occt_layer.rs` | All OCCT primitives, booleans, transforms, fillets, export |
 | `tests/vm_layer.rs` | `MrubyVm` eval: types, errors, persistence, multiple VMs |
-| `tests/prelude_layer.rs` | DSL prelude stubs; native overrides for all implemented methods (Phases 1–4); Assembly |
-| `tests/e2e_dsl.rs` | Phase 1 end-to-end: box/cylinder/sphere/fuse/cut/common/export |
+| `tests/prelude_layer.rs` | DSL prelude stubs; native overrides for all implemented methods (Phases 1–5); Assembly |
+| `tests/e2e_dsl.rs` | Phase 1–5 end-to-end: export formats, color, mate, simplify |
 | `tests/phase2_dsl.rs` | Phase 2 end-to-end: transforms, mirror, rect/circle, extrude/revolve |
-| `tests/teapot_dsl.rs` | Phase 3: spline_2d, spline_3d, sweep |
+| `tests/teapot_dsl.rs` | Phase 3: spline_2d/3d (incl. tangent variants), sweep |
+| `tests/teapot_sample.rs` | Full Utah teapot sample: 4 part tests + 1 assembly |
 | `tests/phase3_selectors.rs` | Phase 3: `.faces(:top|:bottom|:side|:all)`, `.edges(:vertical|:horizontal|:all)` |
+| `tests/phase4_3d_ops.rs` | Phase 4: shell, offset, loft, extrude_ex (twist/scale), linear/polar patterns |
+| `tests/phase5_params.rs` | Phase 5: `param` DSL, `--param` overrides, design table batch export |
 
 Output files are written to `std::env::temp_dir()` (typically `/tmp` on Linux).
 
