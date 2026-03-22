@@ -10,7 +10,12 @@ use rrcad::ruby::vm::MrubyVm;
 // ---------------------------------------------------------------------------
 
 fn tmp(name: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(name)
+    // safe_path() rejects absolute paths outside the working directory, so
+    // test outputs must live inside the project tree.  target/ is already
+    // .gitignore-d and is writable in all CI environments.
+    let dir = std::path::PathBuf::from("target/e2e_test_outputs");
+    std::fs::create_dir_all(&dir).expect("could not create e2e output directory");
+    dir.join(name)
 }
 
 fn assert_valid_step(path: &std::path::Path) {
@@ -554,7 +559,7 @@ fn e2e_color_returns_shape() {
 #[test]
 fn e2e_color_exports_glb() {
     let mut vm = MrubyVm::new();
-    let out = std::env::temp_dir().join("rrcad_e2e_colored.glb");
+    let out = tmp("rrcad_e2e_colored.glb");
     let code = format!(
         "box(10,10,10).color(0.2, 0.6, 0.9).export({:?})",
         out.to_str().unwrap()
@@ -684,7 +689,7 @@ fn e2e_simplify_with_fillet_removes_small_faces() {
 #[test]
 fn e2e_simplify_exports_step() {
     let mut vm = MrubyVm::new();
-    let out = std::env::temp_dir().join("rrcad_simplify.step");
+    let out = tmp("rrcad_simplify.step");
     let code = format!(
         r#"box(30, 30, 30).fillet(2).simplify(10.0).export("{}")"#,
         out.display()

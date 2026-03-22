@@ -7,6 +7,12 @@
 
 use rrcad::ruby::vm::MrubyVm;
 
+fn tmp(name: &str) -> std::path::PathBuf {
+    let dir = std::path::PathBuf::from("target/e2e_test_outputs");
+    std::fs::create_dir_all(&dir).expect("could not create e2e output directory");
+    dir.join(name)
+}
+
 // ---------------------------------------------------------------------------
 // SVG export
 // ---------------------------------------------------------------------------
@@ -14,7 +20,7 @@ use rrcad::ruby::vm::MrubyVm;
 #[test]
 fn svg_top_view_creates_file() {
     let mut vm = MrubyVm::new();
-    let out = std::env::temp_dir().join("rrcad_test_top.svg");
+    let out = tmp("rrcad_test_top.svg");
     let code = format!("box(20,10,5).export('{}')", out.display());
     vm.eval(&code).unwrap();
     assert!(out.exists(), "SVG file was not created");
@@ -24,7 +30,7 @@ fn svg_top_view_creates_file() {
 #[test]
 fn svg_contains_xml_header() {
     let mut vm = MrubyVm::new();
-    let out = std::env::temp_dir().join("rrcad_test_xml.svg");
+    let out = tmp("rrcad_test_xml.svg");
     let code = format!("box(10,10,10).export('{}')", out.display());
     vm.eval(&code).unwrap();
     let content = std::fs::read_to_string(&out).unwrap();
@@ -37,7 +43,7 @@ fn svg_contains_xml_header() {
 #[test]
 fn svg_contains_polyline_elements() {
     let mut vm = MrubyVm::new();
-    let out = std::env::temp_dir().join("rrcad_test_poly.svg");
+    let out = tmp("rrcad_test_poly.svg");
     let code = format!("box(10,10,10).export('{}')", out.display());
     vm.eval(&code).unwrap();
     let content = std::fs::read_to_string(&out).unwrap();
@@ -50,7 +56,7 @@ fn svg_contains_polyline_elements() {
 #[test]
 fn svg_front_view() {
     let mut vm = MrubyVm::new();
-    let out = std::env::temp_dir().join("rrcad_test_front.svg");
+    let out = tmp("rrcad_test_front.svg");
     let code = format!("box(10,10,10).export('{}', view: :front)", out.display());
     vm.eval(&code).unwrap();
     assert!(out.exists(), "SVG front view file was not created");
@@ -61,7 +67,7 @@ fn svg_front_view() {
 #[test]
 fn svg_side_view() {
     let mut vm = MrubyVm::new();
-    let out = std::env::temp_dir().join("rrcad_test_side.svg");
+    let out = tmp("rrcad_test_side.svg");
     let code = format!("box(10,10,10).export('{}', view: :side)", out.display());
     vm.eval(&code).unwrap();
     assert!(out.exists(), "SVG side view file was not created");
@@ -73,7 +79,7 @@ fn svg_side_view() {
 fn svg_cylinder_top_view() {
     // Curved surfaces (circles) must be discretised into smooth polylines.
     let mut vm = MrubyVm::new();
-    let out = std::env::temp_dir().join("rrcad_test_cyl.svg");
+    let out = tmp("rrcad_test_cyl.svg");
     let code = format!("cylinder(5, 20).export('{}')", out.display());
     vm.eval(&code).unwrap();
     assert!(out.exists(), "cylinder SVG was not created");
@@ -86,7 +92,7 @@ fn svg_cylinder_top_view() {
 #[test]
 fn dxf_top_view_creates_file() {
     let mut vm = MrubyVm::new();
-    let out = std::env::temp_dir().join("rrcad_test_top.dxf");
+    let out = tmp("rrcad_test_top.dxf");
     let code = format!("box(20,10,5).export('{}')", out.display());
     vm.eval(&code).unwrap();
     assert!(out.exists(), "DXF file was not created");
@@ -96,7 +102,7 @@ fn dxf_top_view_creates_file() {
 #[test]
 fn dxf_contains_entities_section() {
     let mut vm = MrubyVm::new();
-    let out = std::env::temp_dir().join("rrcad_test_entities.dxf");
+    let out = tmp("rrcad_test_entities.dxf");
     let code = format!("box(10,10,10).export('{}')", out.display());
     vm.eval(&code).unwrap();
     let content = std::fs::read_to_string(&out).unwrap();
@@ -109,7 +115,7 @@ fn dxf_contains_entities_section() {
 #[test]
 fn dxf_contains_line_entities() {
     let mut vm = MrubyVm::new();
-    let out = std::env::temp_dir().join("rrcad_test_lines.dxf");
+    let out = tmp("rrcad_test_lines.dxf");
     let code = format!("box(10,10,10).export('{}')", out.display());
     vm.eval(&code).unwrap();
     let content = std::fs::read_to_string(&out).unwrap();
@@ -119,7 +125,7 @@ fn dxf_contains_line_entities() {
 #[test]
 fn dxf_front_view() {
     let mut vm = MrubyVm::new();
-    let out = std::env::temp_dir().join("rrcad_test_front.dxf");
+    let out = tmp("rrcad_test_front.dxf");
     let code = format!("box(10,10,10).export('{}', view: :front)", out.display());
     vm.eval(&code).unwrap();
     assert!(out.exists(), "DXF front view file was not created");
@@ -128,7 +134,7 @@ fn dxf_front_view() {
 #[test]
 fn dxf_ends_with_eof_marker() {
     let mut vm = MrubyVm::new();
-    let out = std::env::temp_dir().join("rrcad_test_eof.dxf");
+    let out = tmp("rrcad_test_eof.dxf");
     let code = format!("box(5,5,5).export('{}')", out.display());
     vm.eval(&code).unwrap();
     let content = std::fs::read_to_string(&out).unwrap();

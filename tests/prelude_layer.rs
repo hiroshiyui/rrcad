@@ -159,7 +159,9 @@ fn native_shape_inspect_returns_shape_string() {
 
 #[test]
 fn native_shape_export_step_creates_file() {
-    let out = std::env::temp_dir().join("rrcad_prelude_export_test.step");
+    let dir = std::path::PathBuf::from("target/e2e_test_outputs");
+    std::fs::create_dir_all(&dir).expect("could not create output directory");
+    let out = dir.join("rrcad_prelude_export_test.step");
     let code = format!("box(10.0, 20.0, 30.0).export('{}')", out.display());
     let mut vm = MrubyVm::new();
     vm.eval(&code).expect("export should succeed");

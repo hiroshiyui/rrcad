@@ -4,7 +4,9 @@
 use rrcad::ruby::vm::MrubyVm;
 
 fn tmp(name: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(name)
+    let dir = std::path::PathBuf::from("target/e2e_test_outputs");
+    std::fs::create_dir_all(&dir).expect("could not create e2e output directory");
+    dir.join(name)
 }
 
 fn assert_valid_step(path: &std::path::Path) {

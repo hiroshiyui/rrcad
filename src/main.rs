@@ -658,6 +658,49 @@ mod design_table_tests {
     }
 }
 
+// ---------------------------------------------------------------------------
+// safe_path security tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod safe_path_tests {
+    use super::safe_path;
+
+    #[test]
+    fn safe_path_accepts_simple_filename() {
+        // A bare filename resolves relative to cwd — always safe.
+        assert!(safe_path("output.step").is_ok());
+    }
+
+    #[test]
+    fn safe_path_accepts_subdirectory() {
+        // A path whose parent exists and is inside cwd is accepted.
+        // Use "src/dummy.rb" — src/ exists in every build tree.
+        assert!(safe_path("src/dummy.rb").is_ok());
+    }
+
+    #[test]
+    fn safe_path_rejects_dotdot_traversal() {
+        // ../../etc/passwd must be rejected: the resolved path escapes cwd.
+        let err = safe_path("../../etc/passwd");
+        assert!(err.is_err(), "path traversal via ../../ should be rejected");
+    }
+
+    #[test]
+    fn safe_path_rejects_single_dotdot() {
+        // ../escape.rb resolves one level above cwd — must be rejected.
+        let err = safe_path("../escape.rb");
+        assert!(err.is_err(), "path traversal via ../ should be rejected");
+    }
+
+    #[test]
+    fn safe_path_rejects_absolute_path_outside_cwd() {
+        // An absolute path pointing outside cwd must always be rejected.
+        let err = safe_path("/etc/passwd");
+        assert!(err.is_err(), "absolute path outside cwd should be rejected");
+    }
+}
+
 /// Generate a randomised path for the temporary preview GLB file.
 ///
 /// Security rationale: a hardcoded, predictable path like `/tmp/rrcad_preview.glb`

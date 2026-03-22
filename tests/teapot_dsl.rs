@@ -1,6 +1,12 @@
 /// Tests for Phase 3 spline/sweep primitives.
 use rrcad::ruby::vm::MrubyVm;
 
+fn tmp(name: &str) -> std::path::PathBuf {
+    let dir = std::path::PathBuf::from("target/e2e_test_outputs");
+    std::fs::create_dir_all(&dir).expect("could not create e2e output directory");
+    dir.join(name)
+}
+
 fn eval(code: &str) -> Result<String, String> {
     let mut vm = MrubyVm::new();
     vm.eval(code)
@@ -26,7 +32,7 @@ fn spline_2d_revolve_full_returns_shape() {
 #[test]
 fn spline_2d_revolve_exports_step() {
     let mut vm = MrubyVm::new();
-    let out = std::env::temp_dir().join("rrcad_spline2d_revolve.step");
+    let out = tmp("rrcad_spline2d_revolve.step");
     let code = format!(
         r#"
         profile = spline_2d([[0.0,0.0],[2.0,1.0],[3.0,3.0],[0.0,4.0]])
@@ -125,7 +131,7 @@ fn circle_sweep_returns_shape() {
 #[test]
 fn circle_sweep_exports_step() {
     let mut vm = MrubyVm::new();
-    let out = std::env::temp_dir().join("rrcad_sweep.step");
+    let out = tmp("rrcad_sweep.step");
     let code = format!(
         r#"
         path = spline_3d([[4.0,0.0,2.5],[5.5,0.0,3.5],[7.5,0.0,5.5]])
@@ -162,7 +168,7 @@ fn sweep_sections_variable_radius_returns_shape() {
 #[test]
 fn sweep_sections_exports_valid_step() {
     let mut vm = MrubyVm::new();
-    let out = std::env::temp_dir().join("rrcad_sweep_sections.step");
+    let out = tmp("rrcad_sweep_sections.step");
     let code = format!(
         r#"
         path = spline_3d([[0,0,0],[5,0,5],[10,0,0]])
