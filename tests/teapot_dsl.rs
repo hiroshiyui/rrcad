@@ -142,3 +142,43 @@ fn circle_sweep_exports_step() {
     let content = std::fs::read_to_string(&out).unwrap();
     assert!(content.contains("ISO-10303-21"), "not a valid STEP file");
 }
+
+// ---------------------------------------------------------------------------
+// sweep_sections — variable-section pipe sweep
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sweep_sections_variable_radius_returns_shape() {
+    let r = eval(
+        r#"
+        path = spline_3d([[-4.5,0,1.5], [-8.54,0,4.8], [-4.0,0,6.3]])
+        sweep_sections(path, [circle(1.4), circle(0.7), circle(1.4)]).class
+        "#,
+    )
+    .unwrap();
+    assert!(r.contains("Shape"), "expected Shape, got: {r}");
+}
+
+#[test]
+fn sweep_sections_exports_valid_step() {
+    let mut vm = MrubyVm::new();
+    let out = std::env::temp_dir().join("rrcad_sweep_sections.step");
+    let code = format!(
+        r#"
+        path = spline_3d([[0,0,0],[5,0,5],[10,0,0]])
+        sweep_sections(path, [circle(2.0), circle(0.5), circle(2.0)]).export("{}")
+        "#,
+        out.display()
+    );
+    vm.eval(&code).expect("sweep_sections failed");
+    assert!(out.exists(), "STEP file not created");
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(content.contains("ISO-10303-21"), "not a valid STEP file");
+}
+
+#[test]
+fn sweep_sections_requires_at_least_two_profiles() {
+    let mut vm = MrubyVm::new();
+    let result = vm.eval("sweep_sections(spline_3d([[0,0,0],[5,0,5]]), [circle(1.0)])");
+    assert!(result.is_err(), "expected error with one profile");
+}

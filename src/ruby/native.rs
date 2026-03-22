@@ -944,6 +944,24 @@ pub unsafe extern "C" fn rrcad_shape_sweep(
     unsafe { shape_result_to_ptr(sp.sweep(pa), error_out) }
 }
 
+/// Variable-section pipe sweep.
+/// `ptrs` is an array of `n` raw Shape pointers (the section profiles);
+/// `path` is the spine Wire produced by `spline_3d`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_sweep_sections(
+    ptrs: *const *const c_void,
+    n: usize,
+    path: *mut c_void,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let pa = unsafe { &*(path as *const Shape) };
+    let profiles: Vec<&Shape> = (0..n)
+        .map(|i| unsafe { &*(*ptrs.add(i) as *const Shape) })
+        .collect();
+    unsafe { shape_result_to_ptr(Shape::sweep_sections(&profiles, pa), error_out) }
+}
+
 // ---------------------------------------------------------------------------
 // Phase 4: 3-D operations — loft, shell, offset, extrude_ex
 // ---------------------------------------------------------------------------

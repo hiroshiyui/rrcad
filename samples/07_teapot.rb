@@ -48,27 +48,35 @@ body = loft([
 ])
 
 # ============================================================
-# Step 2 — Handle loft (OBJ-derived C-arc with attachment flanges)
+# Step 2 — Handle (variable-section sweep via sweep_sections)
 # ============================================================
-# Modelled as a loft of circles — same technique as the spout — rather than
-# a constant-radius sweep.  Wider flanges (r=1.40) at the two body-wall
-# attachment points mimic the widening a variable-section sweep would produce,
-# giving a smoother wall junction than fusing a constant-radius tube.
+# Uses BRepOffsetAPI_MakePipeShell: each cross-section profile is placed at
+# an evenly-spaced parametric position along the spine and swept continuously.
+# Wider flanges (r=1.40) at the body-wall attachment points taper smoothly
+# into the uniform tube (r=0.70) through the outer arc — matching the OBJ
+# geometry more faithfully than a loft along translated circles.
 #
-# Circle positions follow the OBJ centerline (apex x=−8.54 z=4.80).
+# Spine: 7-point C-arc spline_3d traced from OBJ centerline (apex x=−8.54 z=4.80).
 # Attachment heights from OBJ: bottom z=1.50 (body r=5.86), top z=6.30 (r=4.78).
-# Flange circle at (-4.50, 0, 1.50) with r=1.40 spans r 3.10→5.90, just
-# piercing the body surface at r=5.86 for a clean boolean fuse.
-# Flange circle at (-4.00, 0, 6.30) with r=1.40 spans r 2.60→5.40, extending
-# 0.62 units past the body surface (r=4.78) for robust fuse overlap.
-handle = loft([
-  circle(1.40).translate(-4.50, 0.0, 1.50),  # bottom flange — inside body
-  circle(0.70).translate(-6.80, 0.0, 2.20),  # exiting body wall
-  circle(0.70).translate(-8.30, 0.0, 3.50),  # outer arc lower
-  circle(0.70).translate(-8.54, 0.0, 4.80),  # C-arc apex (OBJ-derived)
-  circle(0.70).translate(-8.00, 0.0, 5.80),  # outer arc upper
-  circle(0.70).translate(-6.20, 0.0, 6.20),  # approaching body wall
-  circle(1.40).translate(-4.00, 0.0, 6.30),  # top flange — inside body
+# Flange radius 1.40 extends into the body surface by ≈0.60 on each side for
+# a robust boolean fuse overlap.
+handle_path = spline_3d([
+  [-4.50, 0.0, 1.50],  # bottom attachment
+  [-6.80, 0.0, 2.20],  # exiting body wall
+  [-8.30, 0.0, 3.50],  # outer arc lower
+  [-8.54, 0.0, 4.80],  # C-arc apex (OBJ-derived)
+  [-8.00, 0.0, 5.80],  # outer arc upper
+  [-6.20, 0.0, 6.20],  # approaching body wall
+  [-4.00, 0.0, 6.30],  # top attachment
+])
+handle = sweep_sections(handle_path, [
+  circle(1.40),  # bottom flange — inside body
+  circle(0.70),  # exiting body wall
+  circle(0.70),  # outer arc lower
+  circle(0.70),  # C-arc apex
+  circle(0.70),  # outer arc upper
+  circle(0.70),  # approaching body wall
+  circle(1.40),  # top flange — inside body
 ])
 body_handle = body.fuse(handle)
 

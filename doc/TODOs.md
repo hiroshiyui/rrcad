@@ -68,13 +68,26 @@ See `tests/phase5_params.rs`, `tests/e2e_dsl.rs`.
 
 ---
 
+## ✓ Phase 6 — Variable-Section Sweep
+
+`sweep_sections(path, [profile, ...])` DSL function backed by
+`BRepOffsetAPI_MakePipeShell`.  Each origin-centred profile is automatically
+translated to the corresponding spine point (evenly-distributed along the
+spline parameter) and swept with `WithCorrection=true` so cross-sections stay
+perpendicular to the spine tangent.  Falls back to `BRepOffsetAPI_ThruSections`
+when `MakeSolid()` fails on highly-curved spines (e.g., the teapot handle
+C-arc).  See `tests/teapot_dsl.rs` (`sweep_sections_*` tests).
+
+---
+
 ## ✓ Utah Teapot Sample
 
 `samples/07_teapot.rb` — rebuilt from the Newell triangle mesh
 (`doc/images/utah_teapot.obj`, sourced from https://graphics.cs.utah.edu/teapot/, ×3.0 scale).  Body via `loft` (8 OBJ-derived
-cross-sections, widest r=6.00 at Z=2.40); handle via `circle(0.70).sweep`
-along a 7-point C-arc traced from OBJ centerline; spout via tapered `loft`;
-lid via `loft` dome + `sphere` knob.  Body height = 6.60 units (rim at Z=6.60).
+cross-sections, widest r=6.00 at Z=2.40); handle via `sweep_sections` along
+a 7-point C-arc with flared flanges (r=1.40) at the body-wall attachment
+points; spout via tapered `loft`; lid via `loft` dome + `sphere` knob.
+Body height = 6.60 units (rim at Z=6.60).
 Validated by `tests/teapot_sample.rs` (5 tests).
 
 ---

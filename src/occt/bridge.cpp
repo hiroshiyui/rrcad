@@ -85,11 +85,15 @@
 
 // --- OCCT: Phase 4 — 3-D operations ---
 #include <BRepAlgoAPI_Defeaturing.hxx>
+#include <BRepBuilderAPI_MakeVertex.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepOffsetAPI_MakeOffsetShape.hxx>
+#include <BRepOffsetAPI_MakePipeShell.hxx>
 #include <BRepOffsetAPI_MakeThickSolid.hxx>
 #include <BRepOffsetAPI_ThruSections.hxx>
 #include <BRepTools.hxx>
+#include <BRepTools_WireExplorer.hxx>
+#include <Standard_Failure.hxx>
 #include <TopTools_ListOfShape.hxx>
 #include <TopoDS_Wire.hxx>
 #include <cmath>
@@ -615,6 +619,152 @@ std::unique_ptr<OcctShape> thru_sections_build(ThruSectionsBuilder& b) {
     if (!b.impl->IsDone())
         throw std::runtime_error("BRepOffsetAPI_ThruSections (loft) failed");
     return wrap(b.impl->Shape());
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3: PipeShellBuilder — variable-section sweep
+// ---------------------------------------------------------------------------
+//
+// Strategy: translate each origin-centred section to the spine point at
+// parameter t[i] = tFirst + i/(n-1)*(tLast-tFirst) before calling Add().
+// MakePipeShell finds the placement position by projecting the section centroid
+// onto the spine; pre-translating ensures each section has a unique projection
+// point.  WithCorrection=true then rotates each profile perpendicular to the
+// spine tangent, keeping circles truly circular.
+//
+// For highly-curved spines (e.g., the teapot handle C-arc), BRepOffsetAPI_
+// MakePipeShell::MakeSolid() may fail.  In that case pipe_shell_build falls
+// back to BRepOffsetAPI_ThruSections which is proven to produce valid solids
+// for the same translated-circle sections.
+
+// Internal state hidden from bridge.h so OCCT types don't leak into the header.
+struct PipeShellBuilder::Impl {
+    TopoDS_Wire spineWire;
+    TopoDS_Edge spineEdge;              // single edge that forms the wire (from spline_3d)
+    Handle(Geom_Curve) curve;           // the underlying BSpline curve
+    Standard_Real tFirst = 0.0;         // curve parameter at spine start
+    Standard_Real tLast = 1.0;          // curve parameter at spine end
+    std::vector<TopoDS_Shape> sections; // collected cross-section shapes (wires/vertices)
+};
+
+PipeShellBuilder::PipeShellBuilder(const OcctShape& path) : impl(std::make_unique<Impl>()) {
+    const TopoDS_Shape& s = path.get();
+    if (s.ShapeType() != TopAbs_WIRE)
+        throw std::runtime_error("sweep_sections: path must be a Wire (use spline_3d)");
+
+    impl->spineWire = TopoDS::Wire(s);
+
+    // Expect a single-edge wire (spline_3d always produces one).
+    BRepTools_WireExplorer wExp(impl->spineWire);
+    if (!wExp.More())
+        throw std::runtime_error("sweep_sections: spine wire has no edges");
+    impl->spineEdge = wExp.Current();
+
+    impl->curve = BRep_Tool::Curve(impl->spineEdge, impl->tFirst, impl->tLast);
+    if (impl->curve.IsNull())
+        throw std::runtime_error("sweep_sections: could not extract curve from spine edge");
+}
+
+PipeShellBuilder::~PipeShellBuilder() = default;
+
+std::unique_ptr<PipeShellBuilder> pipe_shell_new(const OcctShape& path) {
+    return std::make_unique<PipeShellBuilder>(path);
+}
+
+void pipe_shell_add(PipeShellBuilder& b, const OcctShape& profile) {
+    // Accumulate sections in order; they are placed in pipe_shell_build().
+    const TopoDS_Shape& s = profile.get();
+    if (s.ShapeType() == TopAbs_FACE) {
+        // MakePipeShell works with wires; extract the outer boundary wire here.
+        b.impl->sections.push_back(BRepTools::OuterWire(TopoDS::Face(s)));
+    } else if (s.ShapeType() == TopAbs_WIRE) {
+        b.impl->sections.push_back(s);
+    } else if (s.ShapeType() == TopAbs_VERTEX) {
+        b.impl->sections.push_back(s);
+    } else {
+        throw std::runtime_error("sweep_sections: each profile must be a Face, Wire, or Vertex");
+    }
+}
+
+// Helper: translate section[i] to the spine point at evenly-distributed
+// parameter t[i], return the moved shape.
+static TopoDS_Shape moveToSpinePoint(const TopoDS_Shape& section, int i, int n,
+                                     const Handle(Geom_Curve) & curve, Standard_Real tFirst,
+                                     Standard_Real tLast) {
+    const Standard_Real t = tFirst + static_cast<Standard_Real>(i) / (n - 1) * (tLast - tFirst);
+    gp_Pnt spinePt;
+    curve->D0(t, spinePt);
+
+    gp_Trsf trsf;
+    trsf.SetTranslation(gp_Vec(spinePt.X(), spinePt.Y(), spinePt.Z()));
+    BRepBuilderAPI_Transform mover(section, trsf, /*Copy=*/Standard_True);
+    return mover.Shape();
+}
+
+std::unique_ptr<OcctShape> pipe_shell_build(PipeShellBuilder& b) {
+    const int n = static_cast<int>(b.impl->sections.size());
+    if (n < 2)
+        throw std::runtime_error("sweep_sections: at least 2 profiles required");
+
+    try {
+        // --- Primary path: BRepOffsetAPI_MakePipeShell ---
+        //
+        // All DSL profiles are origin-centred (circle(r), rect, etc.).  Translate
+        // each section to its target spine point before Add() so that MakePipeShell's
+        // centroid→spine projection maps to the correct unique parametric position.
+        // WithCorrection=true asks OCCT to rotate each profile perpendicular to the
+        // spine tangent, keeping circles truly circular in cross-section.
+        BRepOffsetAPI_MakePipeShell mkPS(b.impl->spineWire);
+        mkPS.SetMode(/*IsFrenet=*/Standard_True);
+
+        for (int i = 0; i < n; i++) {
+            TopoDS_Shape moved = moveToSpinePoint(b.impl->sections[i], i, n, b.impl->curve,
+                                                  b.impl->tFirst, b.impl->tLast);
+            if (moved.ShapeType() == TopAbs_VERTEX)
+                mkPS.Add(TopoDS::Vertex(moved), Standard_False, Standard_False);
+            else
+                mkPS.Add(moved, Standard_False, /*WithCorrection=*/Standard_True);
+        }
+
+        if (mkPS.IsReady()) {
+            mkPS.Build();
+            if (mkPS.IsDone() && mkPS.MakeSolid())
+                return wrap(mkPS.Shape());
+        }
+
+        // --- Fallback: BRepOffsetAPI_ThruSections (loft through spine-positioned sections) ---
+        //
+        // MakePipeShell can fail to close into a solid for highly-curved paths
+        // (e.g., the teapot handle C-arc) where the built-in MakeSolid() is
+        // too strict.  ThruSections is proven to produce valid closed solids for
+        // the same translated-circle sections, and produces a geometrically
+        // equivalent result for tubes that are substantially circular in cross-section.
+        BRepOffsetAPI_ThruSections thru(/*isSolid=*/Standard_True, /*isRuled=*/Standard_False);
+        thru.CheckCompatibility(Standard_False);
+
+        for (int i = 0; i < n; i++) {
+            TopoDS_Shape moved = moveToSpinePoint(b.impl->sections[i], i, n, b.impl->curve,
+                                                  b.impl->tFirst, b.impl->tLast);
+            if (moved.ShapeType() == TopAbs_VERTEX)
+                thru.AddVertex(TopoDS::Vertex(moved));
+            else if (moved.ShapeType() == TopAbs_WIRE)
+                thru.AddWire(TopoDS::Wire(moved));
+            // Faces already extracted to wires in pipe_shell_add; should not reach here.
+        }
+
+        thru.Build();
+        if (thru.IsDone())
+            return wrap(thru.Shape());
+
+        throw std::runtime_error(
+            "sweep_sections: both MakePipeShell and ThruSections fallback failed");
+
+    } catch (const Standard_Failure& e) {
+        // OCCT exceptions (Standard_Failure and subclasses) do not inherit from
+        // std::exception, so cxx cannot catch them — they would terminate().
+        // Re-throw as std::runtime_error so cxx can surface them as Rust errors.
+        throw std::runtime_error(std::string("sweep_sections (OCCT): ") + e.GetMessageString());
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -92,6 +92,12 @@ mod ffi {
             builder: Pin<&mut ThruSectionsBuilder>,
         ) -> Result<UniquePtr<OcctShape>>;
 
+        // --- Phase 3: PipeShellBuilder (variable-section sweep) ---
+        type PipeShellBuilder;
+        fn pipe_shell_new(path: &OcctShape) -> Result<UniquePtr<PipeShellBuilder>>;
+        fn pipe_shell_add(builder: Pin<&mut PipeShellBuilder>, profile: &OcctShape) -> Result<()>;
+        fn pipe_shell_build(builder: Pin<&mut PipeShellBuilder>) -> Result<UniquePtr<OcctShape>>;
+
         // --- Phase 4: 3-D operations ---
         fn shape_shell(shape: &OcctShape, thickness: f64) -> Result<UniquePtr<OcctShape>>;
         fn shape_offset(shape: &OcctShape, distance: f64) -> Result<UniquePtr<OcctShape>>;
@@ -464,6 +470,23 @@ impl Shape {
 
     pub fn sweep(&self, path: &Shape) -> Result<Shape, String> {
         ffi::shape_sweep(&self.inner, &path.inner)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Variable-section pipe sweep using BRepOffsetAPI_MakePipeShell.
+    /// `path` is a Wire (from `spline_3d`); `profiles` are Faces, Wires, or
+    /// Vertices distributed along the spine (first at start, last at end).
+    /// Requires at least 2 profiles.
+    pub fn sweep_sections(profiles: &[&Shape], path: &Shape) -> Result<Shape, String> {
+        if profiles.len() < 2 {
+            return Err("sweep_sections requires at least 2 profiles".to_string());
+        }
+        let mut builder = ffi::pipe_shell_new(&path.inner).map_err(|e| e.to_string())?;
+        for p in profiles {
+            ffi::pipe_shell_add(builder.pin_mut(), &p.inner).map_err(|e| e.to_string())?;
+        }
+        ffi::pipe_shell_build(builder.pin_mut())
             .map(|p| Shape { inner: p })
             .map_err(|e| e.to_string())
     }

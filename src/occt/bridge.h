@@ -8,6 +8,7 @@
 // uses no namespace) so that ThruSectionsBuilder can store a unique_ptr to it
 // without pulling in the full OCCT header here.
 class BRepOffsetAPI_ThruSections;
+class BRepOffsetAPI_MakePipeShell;
 
 namespace rrcad {
 
@@ -158,6 +159,38 @@ std::unique_ptr<ThruSectionsBuilder> thru_sections_new(bool solid, bool ruled);
 // profile must be a Face, Wire, or Vertex (for a pointed cap/base)
 void thru_sections_add(ThruSectionsBuilder& builder, const OcctShape& profile);
 std::unique_ptr<OcctShape> thru_sections_build(ThruSectionsBuilder& builder);
+
+// --- Phase 3: PipeShellBuilder (variable-section sweep) ---
+//
+// Builder for BRepOffsetAPI_MakePipeShell.  Create via pipe_shell_new(path),
+// add section profiles via pipe_shell_add(), then call pipe_shell_build() to
+// get the finished solid.
+//
+// The path must be a Wire (from spline_3d).  Each section must be a Face,
+// Wire, or Vertex.  Sections are distributed along the spine at evenly-spaced
+// parametric positions: first profile at t=0, last at t=1, others between.
+//
+// Rules: non-copyable, non-movable, heap-allocated, always transferred as
+// unique_ptr<PipeShellBuilder>.
+class PipeShellBuilder {
+public:
+    explicit PipeShellBuilder(const OcctShape& path);
+    ~PipeShellBuilder(); // defined in bridge.cpp (Impl is an incomplete type here)
+
+    PipeShellBuilder(const PipeShellBuilder&) = delete;
+    PipeShellBuilder& operator=(const PipeShellBuilder&) = delete;
+    PipeShellBuilder(PipeShellBuilder&&) = delete;
+    PipeShellBuilder& operator=(PipeShellBuilder&&) = delete;
+
+    struct Impl; // fully defined in bridge.cpp; holds OCCT types
+    std::unique_ptr<Impl> impl;
+};
+
+std::unique_ptr<PipeShellBuilder> pipe_shell_new(const OcctShape& path);
+// profile must be a Face (outer wire extracted), Wire, or Vertex.
+// WithCorrection=true rotates each profile to be orthogonal to the spine tangent.
+void pipe_shell_add(PipeShellBuilder& builder, const OcctShape& profile);
+std::unique_ptr<OcctShape> pipe_shell_build(PipeShellBuilder& builder);
 
 // --- Phase 4: 3-D operations ---
 // .shell(thickness) — hollow out a solid by removing the topmost face

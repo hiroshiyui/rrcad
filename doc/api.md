@@ -438,9 +438,10 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `arc(r, start_deg, end_deg)` | Circular arc wire in XY plane (counterclockwise) |
 | `spline_2d([[r,z], ...])` | Closed XZ-plane profile (for `revolve`) |
 | `spline_2d([[r,z], ...], tangents: [[t0r,t0z],[t1r,t1z]])` | Same with explicit start/end tangent vectors; suppresses endpoint oscillation on short splines |
-| `spline_3d([[x,y,z], ...])` | 3D wire path (for `sweep`) |
+| `spline_3d([[x,y,z], ...])` | 3D wire path (for `sweep` and `sweep_sections`) |
 | `spline_3d([[x,y,z], ...], tangents: [[t0x,t0y,t0z],[t1x,t1y,t1z]])` | Same with explicit tangent vectors |
 | `loft([profile1, profile2, ...])` | Loft through a sequence of circle/sketch profiles; `ruled: false` (default) gives smooth blending |
+| `sweep_sections(path, [profile1, profile2, ...])` | Variable-section sweep: each origin-centred profile is automatically placed at the corresponding spine point and swept along `path` (a `spline_3d` Wire). Uses `BRepOffsetAPI_MakePipeShell`; falls back to `ThruSections` loft for highly-curved paths. Supports `circle`, `rect`, `polygon`, `ellipse`, and `arc` profiles. |
 | `import_step("file.step")` | Import a STEP file as a Shape |
 | `import_stl("file.stl")` | Import an STL file as a triangulated Shape |
 | `linear_pattern(shape, n, [dx, dy, dz])` | `n` copies of `shape` translated along vector; copy `i` at `i*[dx,dy,dz]`. Returns a Compound. |

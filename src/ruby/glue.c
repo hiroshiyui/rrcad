@@ -113,6 +113,8 @@ extern void* rrcad_make_spline_2d_tan(const double* pts, size_t n_pts, const dou
 extern void* rrcad_make_spline_3d_tan(const double* pts, size_t n_pts, const double* tangents,
                                       const char** error_out);
 extern void* rrcad_shape_sweep(void* profile, void* path, const char** error_out);
+extern void* rrcad_shape_sweep_sections(const void** ptrs, size_t n, void* path,
+                                        const char** error_out);
 
 /* Phase 3 — live preview */
 extern void rrcad_preview_shape(void* ptr, const char** error_out);
@@ -823,6 +825,53 @@ static mrb_value mrb_rrcad_shape_sweep(mrb_state* mrb, mrb_value self) {
     return shape_from_ptr(mrb, result);
 }
 
+/* sweep_sections(path, profiles)
+ *
+ * Kernel-level method.  Sweeps multiple section profiles along `path` (a Wire
+ * from spline_3d), morphing smoothly between them.  The first profile is placed
+ * at the spine start, the last at the spine end, and any intermediate profiles
+ * at evenly spaced parametric positions.
+ *
+ * `path`     — Shape (Wire) produced by spline_3d.
+ * `profiles` — Array of Shape objects; each must be a Face (e.g. circle, rect),
+ *              Wire, or Vertex (pointed cap).  At least 2 required.
+ *
+ * Example:
+ *   path = spline_3d([[-4.5,0,1.5], [-8.54,0,4.8], [-4.0,0,6.3]])
+ *   handle = sweep_sections(path, [circle(1.4), circle(0.7), circle(1.4)])
+ */
+static mrb_value mrb_rrcad_sweep_sections(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value path_val;
+    mrb_value arr;
+    mrb_get_args(mrb, "oA", &path_val, &arr);
+
+    void* path = shape_ptr(mrb, path_val);
+    require_native_ptr(mrb, path);
+
+    int n = (int)RARRAY_LEN(arr);
+    if (n < 2)
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "sweep_sections requires at least 2 profiles");
+
+    const void** ptrs = (const void**)malloc((size_t)n * sizeof(void*));
+    if (!ptrs)
+        mrb_raise(mrb, E_RUNTIME_ERROR, "out of memory");
+
+    for (int i = 0; i < n; i++) {
+        mrb_value elem = mrb_ary_ref(mrb, arr, i);
+        void* p = shape_ptr(mrb, elem);
+        require_native_ptr(mrb, p);
+        ptrs[i] = p;
+    }
+
+    const char* err = NULL;
+    void* result = rrcad_shape_sweep_sections(ptrs, (size_t)n, path, &err);
+    free(ptrs);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
 /* -------------------------------------------------------------------------
  * Phase 4: Sketch profiles — polygon, ellipse, arc
  * -------------------------------------------------------------------------
@@ -1198,6 +1247,8 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     mrb_define_method(mrb, mrb->kernel_module, "spline_3d", mrb_rrcad_spline_3d,
                       MRB_ARGS_REQ(1) | MRB_ARGS_KEY(1, 0)); /* (pts[, tangents:]) */
     mrb_define_method(mrb, shape_class, "sweep", mrb_rrcad_shape_sweep, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, mrb->kernel_module, "sweep_sections", mrb_rrcad_sweep_sections,
+                      MRB_ARGS_REQ(2));
 
     /* Phase 3: Live preview */
     mrb_define_method(mrb, mrb->kernel_module, "preview", mrb_rrcad_preview, MRB_ARGS_REQ(1));
