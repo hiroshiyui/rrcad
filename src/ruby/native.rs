@@ -1201,3 +1201,128 @@ pub unsafe extern "C" fn rrcad_sew(
     let face_refs: Vec<&Shape> = faces.to_vec();
     unsafe { shape_result_to_ptr(Shape::sew(&face_refs, tolerance), error_out) }
 }
+
+// ---------------------------------------------------------------------------
+// Phase 7 Tier 2: validation & introspection
+// ---------------------------------------------------------------------------
+
+thread_local! {
+    /// Holds the last string return value so its pointer remains valid until
+    /// the next call on this thread.  Separate from LAST_ERR so that an error
+    /// and a string result can coexist if needed.
+    static LAST_STR: std::cell::RefCell<Option<CString>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Store `s` in the LAST_STR slot and write its pointer to `*out`.
+/// The pointer is valid until the next call to `set_str` on this thread.
+unsafe fn set_str(out: *mut *const c_char, s: &str) {
+    let cstr = CString::new(s).unwrap_or_else(|_| c"<string contains nul>".to_owned());
+    LAST_STR.with(|cell| {
+        unsafe {
+            *out = cstr.as_ptr();
+        }
+        *cell.borrow_mut() = Some(cstr);
+    });
+}
+
+/// Returns a C string pointer to the shape type name (e.g. "solid", "shell").
+/// The pointer is valid until the next call on this thread.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_type_name(
+    ptr: *mut c_void,
+    error_out: *mut *const c_char,
+) -> *const c_char {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.shape_type_name() {
+        Ok(s) => {
+            let mut raw: *const c_char = std::ptr::null();
+            unsafe {
+                set_str(&mut raw as *mut *const c_char, &s);
+            }
+            raw
+        }
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null()
+        }
+    }
+}
+
+/// Fill `out[0..3]` with the centroid (x, y, z) of the shape.
+/// `out` must point to a caller-allocated array of at least 3 doubles.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_centroid(
+    ptr: *mut c_void,
+    out: *mut f64,
+    error_out: *mut *const c_char,
+) {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.centroid() {
+        Ok(arr) => unsafe { std::ptr::copy_nonoverlapping(arr.as_ptr(), out, 3) },
+        Err(e) => unsafe { set_err(error_out, &e) },
+    }
+}
+
+/// Returns 1 if the shape is closed (every edge shared by ≥2 faces), 0 otherwise.
+/// Returns -1 and sets *error_out on error.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_is_closed(
+    ptr: *mut c_void,
+    error_out: *mut *const c_char,
+) -> std::ffi::c_int {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.is_closed() {
+        Ok(b) => b as std::ffi::c_int,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            -1
+        }
+    }
+}
+
+/// Returns 1 if the shape is manifold (every edge shared by exactly 2 faces), 0 otherwise.
+/// Returns -1 and sets *error_out on error.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_is_manifold(
+    ptr: *mut c_void,
+    error_out: *mut *const c_char,
+) -> std::ffi::c_int {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.is_manifold() {
+        Ok(b) => b as std::ffi::c_int,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            -1
+        }
+    }
+}
+
+/// Run BRepCheck_Analyzer.  Returns a C string pointer: "ok" if valid, or a
+/// newline-separated list of error descriptions.  The pointer is valid until
+/// the next call on this thread.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_validate(
+    ptr: *mut c_void,
+    error_out: *mut *const c_char,
+) -> *const c_char {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.validate() {
+        Ok(s) => {
+            let mut raw: *const c_char = std::ptr::null();
+            unsafe {
+                set_str(&mut raw as *mut *const c_char, &s);
+            }
+            raw
+        }
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            std::ptr::null()
+        }
+    }
+}

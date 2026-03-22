@@ -247,6 +247,26 @@ let simple = part.simplify(1.0)?;   // remove features smaller than ~1 mm
 
 ---
 
+### Validation & Introspection (Phase 7 Tier 2)
+
+| Method | Description |
+|--------|-------------|
+| `.shape_type_name() -> Result<String>` | Returns the topological type as a string: `"solid"`, `"shell"`, `"face"`, `"wire"`, `"edge"`, `"vertex"`, `"compound"`, `"compsolid"`, or `"other"`. |
+| `.centroid() -> Result<[f64; 3]>` | Centre of mass as `[x, y, z]`. Dispatches to `BRepGProp::VolumeProperties` (solids/compounds), `SurfaceProperties` (shells/faces), or `LinearProperties` (wires/edges). |
+| `.is_closed() -> Result<bool>` | `true` if every edge has at least 2 adjacent faces (no open boundary). Uses `TopTools_IndexedDataMapOfShapeListOfShape`. |
+| `.is_manifold() -> Result<bool>` | `true` if every edge has exactly 2 adjacent faces (manifold mesh). |
+| `.validate() -> Result<String>` | Runs `BRepCheck_Analyzer`. Returns `"ok"` if valid, or a newline-separated string of error names. |
+
+```rust
+assert_eq!(Shape::make_box(10.0, 20.0, 30.0)?.shape_type_name()?, "solid");
+let c = Shape::make_box(10.0, 20.0, 30.0)?.centroid()?;
+assert!((c[0] - 5.0).abs() < 1e-6);
+assert!(Shape::make_box(10.0, 20.0, 30.0)?.is_manifold()?);
+assert_eq!(Shape::make_box(10.0, 20.0, 30.0)?.validate()?, "ok");
+```
+
+---
+
 ### Export
 
 | Method | Description |
@@ -379,6 +399,13 @@ fn shape_bounding_box(shape: &OcctShape, out: &mut [f64]);
 fn shape_volume      (shape: &OcctShape)               -> f64;
 fn shape_surface_area(shape: &OcctShape)               -> f64;
 
+// Validation & introspection (Phase 7 Tier 2)
+fn shape_type_str   (shape: &OcctShape)                -> Result<String>;
+fn shape_centroid   (shape: &OcctShape, out: &mut [f64]) -> Result<()>;
+fn shape_is_closed  (shape: &OcctShape)                -> Result<bool>;
+fn shape_is_manifold(shape: &OcctShape)                -> Result<bool>;
+fn shape_validate_str(shape: &OcctShape)               -> Result<String>;
+
 // Sub-shape selectors
 fn shape_faces_count(shape: &OcctShape, selector: &str)              -> Result<i32>;
 fn shape_faces_get(shape: &OcctShape, selector: &str, idx: i32)      -> Result<UniquePtr<OcctShape>>;
@@ -506,6 +533,11 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `.bounding_box` | Returns `{x:, y:, z:, dx:, dy:, dz:}` — minimum corner and extents |
 | `.volume` | Volume of the solid (float) |
 | `.surface_area` | Total surface area (float) |
+| `.shape_type` | Returns a Symbol naming the topological type: `:compound`, `:compsolid`, `:solid`, `:shell`, `:face`, `:wire`, `:edge`, `:vertex` |
+| `.centroid` | Returns `[x, y, z]` centre of mass. Uses `BRepGProp::VolumeProperties` for solids/compounds, `SurfaceProperties` for shells/faces, `LinearProperties` for wires/edges. |
+| `.closed?` | `true` if every edge is shared by at least 2 faces (no open boundary) |
+| `.manifold?` | `true` if every edge is shared by exactly 2 faces (manifold mesh) |
+| `.validate` | Runs `BRepCheck_Analyzer`. Returns `:ok` if the shape is valid, or an `Array` of error description strings if not. |
 | `.export("out.step")` | Write file; format determined by extension: `.step`/`.stp` → STEP, `.stl` → STL, `.glb` → GLB, `.gltf` → glTF, `.obj` → OBJ |
 
 ---

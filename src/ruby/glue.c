@@ -176,6 +176,13 @@ extern void* rrcad_shape_fuse_all(const void** ptrs, size_t n, const char** erro
 extern void* rrcad_shape_cut_all(void* base, const void** ptrs, size_t n,
                                  const char** error_out);
 
+/* Phase 7 Tier 2 — validation & introspection */
+extern const char* rrcad_shape_type_name(void* ptr, const char** error_out);
+extern void        rrcad_shape_centroid(void* ptr, double* out, const char** error_out);
+extern int         rrcad_shape_is_closed(void* ptr, const char** error_out);
+extern int         rrcad_shape_is_manifold(void* ptr, const char** error_out);
+extern const char* rrcad_shape_validate(void* ptr, const char** error_out);
+
 /* mRuby data type descriptor — name appears in TypeError messages. */
 static void shape_dfree(mrb_state* mrb, void* ptr) {
     (void)mrb;
@@ -1463,6 +1470,92 @@ static mrb_value mrb_rrcad_sew(mrb_state* mrb, mrb_value self) {
     return shape_from_ptr(mrb, result);
 }
 
+/* -------------------------------------------------------------------------
+ * Phase 7 Tier 2: shape_type / centroid / closed? / manifold? / validate
+ * -------------------------------------------------------------------------
+ */
+
+/* shape.shape_type  → :solid, :shell, :face, :wire, :edge, :vertex, ... */
+static mrb_value mrb_rrcad_shape_type(mrb_state* mrb, mrb_value self) {
+    void* ptr = shape_ptr(mrb, self);
+    require_native_ptr(mrb, ptr);
+
+    const char* err = NULL;
+    const char* type_str = rrcad_shape_type_name(ptr, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return mrb_symbol_value(mrb_intern_cstr(mrb, type_str));
+}
+
+/* shape.centroid  → [x, y, z] */
+static mrb_value mrb_rrcad_shape_centroid(mrb_state* mrb, mrb_value self) {
+    void* ptr = shape_ptr(mrb, self);
+    require_native_ptr(mrb, ptr);
+
+    double out[3] = {0.0, 0.0, 0.0};
+    const char* err = NULL;
+    rrcad_shape_centroid(ptr, out, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+
+    mrb_value ary = mrb_ary_new_capa(mrb, 3);
+    mrb_ary_push(mrb, ary, mrb_float_value(mrb, (mrb_float)out[0]));
+    mrb_ary_push(mrb, ary, mrb_float_value(mrb, (mrb_float)out[1]));
+    mrb_ary_push(mrb, ary, mrb_float_value(mrb, (mrb_float)out[2]));
+    return ary;
+}
+
+/* shape.closed?  → true/false */
+static mrb_value mrb_rrcad_shape_closed(mrb_state* mrb, mrb_value self) {
+    void* ptr = shape_ptr(mrb, self);
+    require_native_ptr(mrb, ptr);
+
+    const char* err = NULL;
+    int result = rrcad_shape_is_closed(ptr, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return mrb_bool_value(result != 0);
+}
+
+/* shape.manifold?  → true/false */
+static mrb_value mrb_rrcad_shape_manifold(mrb_state* mrb, mrb_value self) {
+    void* ptr = shape_ptr(mrb, self);
+    require_native_ptr(mrb, ptr);
+
+    const char* err = NULL;
+    int result = rrcad_shape_is_manifold(ptr, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return mrb_bool_value(result != 0);
+}
+
+/* shape.validate  → :ok  or  ["error1", "error2", ...] */
+static mrb_value mrb_rrcad_shape_validate(mrb_state* mrb, mrb_value self) {
+    void* ptr = shape_ptr(mrb, self);
+    require_native_ptr(mrb, ptr);
+
+    const char* err = NULL;
+    const char* report = rrcad_shape_validate(ptr, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+
+    /* "ok" → :ok; anything else → split on "\n" and return Array of strings */
+    if (strcmp(report, "ok") == 0)
+        return mrb_symbol_value(mrb_intern_lit(mrb, "ok"));
+
+    mrb_value ary = mrb_ary_new(mrb);
+    const char* p = report;
+    while (*p) {
+        const char* nl = strchr(p, '\n');
+        size_t len = nl ? (size_t)(nl - p) : strlen(p);
+        mrb_ary_push(mrb, ary, mrb_str_new(mrb, p, (mrb_int)len));
+        p += len;
+        if (*p == '\n')
+            p++;
+    }
+    return ary;
+}
+
 /* =========================================================================
  * rrcad_register_shape_class
  *
@@ -1572,6 +1665,13 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     mrb_define_method(mrb, shape_class, "volume", mrb_rrcad_shape_volume, MRB_ARGS_NONE());
     mrb_define_method(mrb, shape_class, "surface_area", mrb_rrcad_shape_surface_area,
                       MRB_ARGS_NONE());
+
+    /* Phase 7 Tier 2: validation & introspection */
+    mrb_define_method(mrb, shape_class, "shape_type", mrb_rrcad_shape_type, MRB_ARGS_NONE());
+    mrb_define_method(mrb, shape_class, "centroid", mrb_rrcad_shape_centroid, MRB_ARGS_NONE());
+    mrb_define_method(mrb, shape_class, "closed?", mrb_rrcad_shape_closed, MRB_ARGS_NONE());
+    mrb_define_method(mrb, shape_class, "manifold?", mrb_rrcad_shape_manifold, MRB_ARGS_NONE());
+    mrb_define_method(mrb, shape_class, "validate", mrb_rrcad_shape_validate, MRB_ARGS_NONE());
 
     /* Phase 7: Bézier patch and sewing */
     mrb_define_method(mrb, mrb->kernel_module, "bezier_patch", mrb_rrcad_bezier_patch,

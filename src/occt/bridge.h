@@ -319,6 +319,24 @@ void shape_bounding_box(const OcctShape& shape, rust::Slice<double> out);
 double shape_volume(const OcctShape& shape);
 double shape_surface_area(const OcctShape& shape);
 
+// --- Phase 7 Tier 2: Validation & introspection ---
+// Returns the shape type as a lowercase string: "solid", "shell", "face",
+// "wire", "edge", "vertex", "compound", or "other".
+rust::String shape_type_str(const OcctShape& shape);
+// Fills out[0..3] with [x, y, z] centroid of the shape.
+// Uses VolumeProperties for solids, SurfaceProperties for shells/faces.
+void shape_centroid(const OcctShape& shape, rust::Slice<double> out);
+// True if the shape has no free (boundary) edges — i.e., every edge is
+// shared by at least two faces.  Implies the shape is a closed manifold
+// when combined with is_manifold.
+bool shape_is_closed(const OcctShape& shape);
+// True if every edge is shared by exactly two faces (no T-junctions or
+// non-manifold edges).  A valid solid satisfies both is_closed and is_manifold.
+bool shape_is_manifold(const OcctShape& shape);
+// Returns "ok" if BRepCheck_Analyzer reports no errors, or a
+// newline-separated list of BRepCheck_Status names otherwise.
+rust::String shape_validate_str(const OcctShape& shape);
+
 // --- Export ---
 void export_step(const OcctShape& shape, rust::Str path);
 void export_stl(const OcctShape& shape, rust::Str path);

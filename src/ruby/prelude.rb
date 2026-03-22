@@ -169,6 +169,37 @@ class Shape
   def mate(_from_face, _to_face, _offset = 0.0)
     raise NotImplementedError, "Shape#mate is not yet implemented (Phase 5)"
   end
+
+  # --- Validation & introspection — Phase 7 Tier 2 --------------------------
+
+  # Return a Symbol naming the topological shape type:
+  #   :compound, :compsolid, :solid, :shell, :face, :wire, :edge, :vertex
+  def shape_type
+    raise NotImplementedError, "Shape#shape_type is not yet implemented (Phase 7 Tier 2)"
+  end
+
+  # Return the centroid of the shape as [x, y, z].
+  # Uses volume properties for solids, surface properties for shells/faces,
+  # and linear properties for wires/edges.
+  def centroid
+    raise NotImplementedError, "Shape#centroid is not yet implemented (Phase 7 Tier 2)"
+  end
+
+  # Return true if every edge is shared by at least 2 faces (no open boundary).
+  def closed?
+    raise NotImplementedError, "Shape#closed? is not yet implemented (Phase 7 Tier 2)"
+  end
+
+  # Return true if every edge is shared by exactly 2 faces (manifold mesh).
+  def manifold?
+    raise NotImplementedError, "Shape#manifold? is not yet implemented (Phase 7 Tier 2)"
+  end
+
+  # Run BRepCheck_Analyzer on this shape.
+  # Returns :ok if the shape is valid, or an Array of error description strings.
+  def validate
+    raise NotImplementedError, "Shape#validate is not yet implemented (Phase 7 Tier 2)"
+  end
 end
 
 # ---------------------------------------------------------------------------

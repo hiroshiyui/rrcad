@@ -76,6 +76,9 @@
 
 // --- OCCT: shape validity check ---
 #include <BRepCheck_Analyzer.hxx>
+#include <BRepCheck_ListOfStatus.hxx>
+#include <BRepCheck_Result.hxx>
+#include <BRepCheck_Status.hxx>
 
 // --- OCCT: Phase 4 — query / introspection ---
 #include <BRepBndLib.hxx>
@@ -103,6 +106,8 @@
 #include <TopoDS_Wire.hxx>
 #include <cmath>
 #include <limits>
+#include <set>
+#include <string>
 
 // --- OCCT: Bézier surface patch ---
 #include <Geom_BezierSurface.hxx>
@@ -1601,6 +1606,220 @@ double shape_surface_area(const OcctShape& shape) {
     GProp_GProps props;
     BRepGProp::SurfaceProperties(shape.get(), props);
     return props.Mass();
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7 Tier 2: Validation & introspection
+// ---------------------------------------------------------------------------
+
+// Map TopAbs_ShapeEnum to a lowercase string name.
+rust::String shape_type_str(const OcctShape& shape) {
+    switch (shape.get().ShapeType()) {
+    case TopAbs_COMPOUND:
+        return rust::String("compound");
+    case TopAbs_COMPSOLID:
+        return rust::String("compsolid");
+    case TopAbs_SOLID:
+        return rust::String("solid");
+    case TopAbs_SHELL:
+        return rust::String("shell");
+    case TopAbs_FACE:
+        return rust::String("face");
+    case TopAbs_WIRE:
+        return rust::String("wire");
+    case TopAbs_EDGE:
+        return rust::String("edge");
+    case TopAbs_VERTEX:
+        return rust::String("vertex");
+    default:
+        return rust::String("other");
+    }
+}
+
+// Centroid of the shape.  Uses VolumeProperties for solids and compounds;
+// SurfaceProperties for shells/faces; LinearProperties for wires/edges.
+void shape_centroid(const OcctShape& shape, rust::Slice<double> out) {
+    if (out.size() < 3)
+        throw std::runtime_error("centroid: output slice must have at least 3 elements");
+    GProp_GProps props;
+    switch (shape.get().ShapeType()) {
+    case TopAbs_SOLID:
+    case TopAbs_COMPOUND:
+    case TopAbs_COMPSOLID:
+        BRepGProp::VolumeProperties(shape.get(), props);
+        break;
+    case TopAbs_SHELL:
+    case TopAbs_FACE:
+        BRepGProp::SurfaceProperties(shape.get(), props);
+        break;
+    default: // wire, edge, vertex, compound of lower-dim shapes
+        BRepGProp::LinearProperties(shape.get(), props);
+        break;
+    }
+    gp_Pnt c = props.CentreOfMass();
+    out[0] = c.X();
+    out[1] = c.Y();
+    out[2] = c.Z();
+}
+
+// A shape is "closed" if it has no free (boundary) edges — every edge is
+// shared by at least two faces.  Empty shapes (no edges) return false.
+bool shape_is_closed(const OcctShape& shape) {
+    TopTools_IndexedDataMapOfShapeListOfShape edge_face_map;
+    TopExp::MapShapesAndAncestors(shape.get(), TopAbs_EDGE, TopAbs_FACE, edge_face_map);
+    if (edge_face_map.IsEmpty())
+        return false;
+    for (int i = 1; i <= edge_face_map.Extent(); ++i) {
+        if (edge_face_map(i).Size() < 2)
+            return false;
+    }
+    return true;
+}
+
+// A shape is "manifold" if every edge is shared by exactly two faces.
+// This rules out both boundary edges (< 2 faces) and T-junction edges (> 2 faces).
+bool shape_is_manifold(const OcctShape& shape) {
+    TopTools_IndexedDataMapOfShapeListOfShape edge_face_map;
+    TopExp::MapShapesAndAncestors(shape.get(), TopAbs_EDGE, TopAbs_FACE, edge_face_map);
+    if (edge_face_map.IsEmpty())
+        return false;
+    for (int i = 1; i <= edge_face_map.Extent(); ++i) {
+        if (edge_face_map(i).Size() != 2)
+            return false;
+    }
+    return true;
+}
+
+// Convert a BRepCheck_Status value to a human-readable name string.
+static const char* brep_check_status_name(BRepCheck_Status s) {
+    switch (s) {
+    case BRepCheck_NoError:
+        return nullptr;
+    case BRepCheck_InvalidPointOnCurve:
+        return "InvalidPointOnCurve";
+    case BRepCheck_InvalidPointOnCurveOnSurface:
+        return "InvalidPointOnCurveOnSurface";
+    case BRepCheck_InvalidPointOnSurface:
+        return "InvalidPointOnSurface";
+    case BRepCheck_No3DCurve:
+        return "No3DCurve";
+    case BRepCheck_Multiple3DCurve:
+        return "Multiple3DCurve";
+    case BRepCheck_Invalid3DCurve:
+        return "Invalid3DCurve";
+    case BRepCheck_NoCurveOnSurface:
+        return "NoCurveOnSurface";
+    case BRepCheck_InvalidCurveOnSurface:
+        return "InvalidCurveOnSurface";
+    case BRepCheck_InvalidCurveOnClosedSurface:
+        return "InvalidCurveOnClosedSurface";
+    case BRepCheck_InvalidSameRangeFlag:
+        return "InvalidSameRangeFlag";
+    case BRepCheck_InvalidSameParameterFlag:
+        return "InvalidSameParameterFlag";
+    case BRepCheck_InvalidDegeneratedFlag:
+        return "InvalidDegeneratedFlag";
+    case BRepCheck_FreeEdge:
+        return "FreeEdge";
+    case BRepCheck_InvalidMultiConnexity:
+        return "InvalidMultiConnexity";
+    case BRepCheck_InvalidRange:
+        return "InvalidRange";
+    case BRepCheck_EmptyWire:
+        return "EmptyWire";
+    case BRepCheck_RedundantEdge:
+        return "RedundantEdge";
+    case BRepCheck_SelfIntersectingWire:
+        return "SelfIntersectingWire";
+    case BRepCheck_NoSurface:
+        return "NoSurface";
+    case BRepCheck_InvalidWire:
+        return "InvalidWire";
+    case BRepCheck_RedundantWire:
+        return "RedundantWire";
+    case BRepCheck_IntersectingWires:
+        return "IntersectingWires";
+    case BRepCheck_InvalidImbricationOfWires:
+        return "InvalidImbricationOfWires";
+    case BRepCheck_EmptyShell:
+        return "EmptyShell";
+    case BRepCheck_RedundantFace:
+        return "RedundantFace";
+    case BRepCheck_UnorientableShape:
+        return "UnorientableShape";
+    case BRepCheck_NotClosed:
+        return "NotClosed";
+    case BRepCheck_NotConnected:
+        return "NotConnected";
+    case BRepCheck_SubshapeNotInShape:
+        return "SubshapeNotInShape";
+    case BRepCheck_BadOrientation:
+        return "BadOrientation";
+    case BRepCheck_BadOrientationOfSubshape:
+        return "BadOrientationOfSubshape";
+    case BRepCheck_InvalidToleranceValue:
+        return "InvalidToleranceValue";
+    case BRepCheck_CheckFail:
+        return "CheckFail";
+    default:
+        return "UnknownError";
+    }
+}
+
+// Collect BRepCheck errors for sub-shapes of a given type and add their
+// names (deduplicated) into `errors`.
+static void collect_check_errors(const BRepCheck_Analyzer& checker, const TopoDS_Shape& root,
+                                 TopAbs_ShapeEnum sub_type, std::set<std::string>& errors) {
+    for (TopExp_Explorer ex(root, sub_type); ex.More(); ex.Next()) {
+        const Handle(BRepCheck_Result) & res = checker.Result(ex.Current());
+        if (res.IsNull())
+            continue;
+        const BRepCheck_ListOfStatus& lst = res->StatusOnShape(ex.Current());
+        for (BRepCheck_ListIteratorOfListOfStatus it(lst); it.More(); it.Next()) {
+            const char* name = brep_check_status_name(it.Value());
+            if (name)
+                errors.insert(name);
+        }
+    }
+}
+
+// Run BRepCheck_Analyzer over the shape.  Returns "ok" if valid, or a
+// newline-separated list of distinct error names if not.
+rust::String shape_validate_str(const OcctShape& shape) {
+    BRepCheck_Analyzer checker(shape.get());
+    if (checker.IsValid())
+        return rust::String("ok");
+
+    std::set<std::string> errors;
+    static const TopAbs_ShapeEnum sub_types[] = {TopAbs_SOLID, TopAbs_SHELL, TopAbs_FACE,
+                                                 TopAbs_WIRE,  TopAbs_EDGE,  TopAbs_VERTEX};
+    for (TopAbs_ShapeEnum t : sub_types)
+        collect_check_errors(checker, shape.get(), t, errors);
+
+    if (errors.empty()) {
+        // Analyzer said invalid but returned no per-sub-shape errors:
+        // the top-level shape itself may be flagged.
+        const Handle(BRepCheck_Result) & res = checker.Result(shape.get());
+        if (!res.IsNull()) {
+            const BRepCheck_ListOfStatus& lst = res->StatusOnShape(shape.get());
+            for (BRepCheck_ListIteratorOfListOfStatus it(lst); it.More(); it.Next()) {
+                const char* name = brep_check_status_name(it.Value());
+                if (name)
+                    errors.insert(name);
+            }
+        }
+    }
+
+    if (errors.empty())
+        return rust::String("invalid");
+
+    std::string result;
+    for (const auto& e : errors) {
+        if (!result.empty())
+            result += '\n';
+        result += e;
+    }
+    return rust::String(result.c_str());
 }
 
 // ---------------------------------------------------------------------------

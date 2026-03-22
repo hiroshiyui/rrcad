@@ -92,7 +92,8 @@ rrcad/
 │   ├── phase3_selectors.rs # Phase 3 face/edge sub-shape selector tests
 │   ├── phase4_3d_ops.rs    # Phase 4: shell, offset, loft, extrude_ex, patterns
 │   ├── phase5_params.rs    # Phase 5: param DSL, --param overrides, design table
-│   └── phase7_tier1.rs    # Phase 7 Tier 1: chamfer_asym, offset_2d, grid_pattern, fuse_all, cut_all
+│   ├── phase7_tier1.rs    # Phase 7 Tier 1: chamfer_asym, offset_2d, grid_pattern, fuse_all, cut_all
+│   └── phase7_tier2.rs    # Phase 7 Tier 2: shape_type, centroid, closed?, manifold?, validate
 ├── vendor/
 │   └── mruby/              # git submodule — mRuby 3.4.0
 └── doc/
@@ -398,6 +399,7 @@ cargo clippy                      # lints
 | `tests/phase4_3d_ops.rs` | Phase 4: shell, offset, loft, extrude_ex (twist/scale), linear/polar patterns |
 | `tests/phase5_params.rs` | Phase 5: `param` DSL, `--param` overrides, design table batch export |
 | `tests/phase7_tier1.rs` | Phase 7 Tier 1: asymmetric chamfer, `offset_2d`, `grid_pattern`, `fuse_all`, `cut_all`; 12 tests |
+| `tests/phase7_tier2.rs` | Phase 7 Tier 2: `shape_type`, `centroid`, `closed?`, `manifold?`, `validate`; 12 tests |
 
 Output files are written to `std::env::temp_dir()` (typically `/tmp` on Linux).
 

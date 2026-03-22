@@ -113,14 +113,16 @@ All four Tier 1 features are implemented and tested in `tests/phase7_tier1.rs` (
 | 3 | **Grid pattern** ✓ | `grid_pattern(s, nx, ny, dx, dy)` | Pure Rust: two nested `linear_pattern` calls |
 | 4 | **Multi-shape fuse/cut** ✓ | `fuse_all([a,b,c])`, `cut_all(base,[t1,t2])` | Fold-left over existing `.fuse` / `.cut` in Rust |
 
-### Tier 2 — Validation & introspection (robustness for real workflows)
+### ✓ Tier 2 — Validation & introspection (robustness for real workflows)
+
+All four Tier 2 features are implemented and tested in `tests/phase7_tier2.rs` (12 tests).
 
 | # | Feature | DSL | OCCT API |
 |---|---------|-----|----------|
-| 5 | **Shape type query** | `.shape_type` → `:solid/:shell/:face/:wire/:edge/:vertex` | `shape.ShapeType()` → `TopAbs_ShapeEnum` |
-| 6 | **Closed / manifold check** | `.closed?`, `.manifold?` | `ShapeAnalysis` + edge-sharing loop |
-| 7 | **Centroid** | `.centroid` → `[x, y, z]` | `BRepGProp::VolumeProperties` (already have `volume`) |
-| 8 | **Topology validation** | `.validate` → `:ok` or error list | `BRepCheck_Analyzer` (already used in export guard) |
+| 5 | **Shape type query** ✓ | `.shape_type` → `:solid/:shell/:face/:wire/:edge/:vertex` | `shape.ShapeType()` → `TopAbs_ShapeEnum` |
+| 6 | **Closed / manifold check** ✓ | `.closed?`, `.manifold?` | `TopTools_IndexedDataMapOfShapeListOfShape` edge→face map |
+| 7 | **Centroid** ✓ | `.centroid` → `[x, y, z]` | `BRepGProp::VolumeProperties/SurfaceProperties/LinearProperties` dispatch |
+| 8 | **Topology validation** ✓ | `.validate` → `:ok` or error list | `BRepCheck_Analyzer` (already used in export guard) |
 
 ### Tier 3 — Surface modeling (next frontier)
 

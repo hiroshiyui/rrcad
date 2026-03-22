@@ -201,6 +201,12 @@ mod ffi {
         fn shape_bounding_box(shape: &OcctShape, out: &mut [f64]) -> Result<()>;
         fn shape_volume(shape: &OcctShape) -> Result<f64>;
         fn shape_surface_area(shape: &OcctShape) -> Result<f64>;
+        // Phase 7 Tier 2: validation & introspection.
+        fn shape_type_str(shape: &OcctShape) -> Result<String>;
+        fn shape_centroid(shape: &OcctShape, out: &mut [f64]) -> Result<()>;
+        fn shape_is_closed(shape: &OcctShape) -> Result<bool>;
+        fn shape_is_manifold(shape: &OcctShape) -> Result<bool>;
+        fn shape_validate_str(shape: &OcctShape) -> Result<String>;
 
         // --- Export ---
         fn export_step(shape: &OcctShape, path: &str) -> Result<()>;
@@ -628,6 +634,35 @@ impl Shape {
 
     pub fn surface_area(&self) -> Result<f64, String> {
         ffi::shape_surface_area(&self.inner).map_err(|e| e.to_string())
+    }
+
+    /// Shape type as a lowercase string: `"solid"`, `"shell"`, `"face"`,
+    /// `"wire"`, `"edge"`, `"vertex"`, `"compound"`, or `"other"`.
+    pub fn shape_type_name(&self) -> Result<String, String> {
+        ffi::shape_type_str(&self.inner).map_err(|e| e.to_string())
+    }
+
+    /// Centroid of the shape as `[x, y, z]`.
+    pub fn centroid(&self) -> Result<[f64; 3], String> {
+        let mut out = [0f64; 3];
+        ffi::shape_centroid(&self.inner, &mut out).map_err(|e| e.to_string())?;
+        Ok(out)
+    }
+
+    /// `true` if every edge is shared by at least two faces (no free/boundary edges).
+    pub fn is_closed(&self) -> Result<bool, String> {
+        ffi::shape_is_closed(&self.inner).map_err(|e| e.to_string())
+    }
+
+    /// `true` if every edge is shared by exactly two faces (no T-junctions).
+    pub fn is_manifold(&self) -> Result<bool, String> {
+        ffi::shape_is_manifold(&self.inner).map_err(|e| e.to_string())
+    }
+
+    /// Run `BRepCheck_Analyzer`.  Returns `"ok"` if valid, or a
+    /// newline-separated list of error names if not.
+    pub fn validate(&self) -> Result<String, String> {
+        ffi::shape_validate_str(&self.inner).map_err(|e| e.to_string())
     }
 
     // --- Patterns ---

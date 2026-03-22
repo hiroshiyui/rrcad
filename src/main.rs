@@ -77,6 +77,13 @@ Boolean multi-shape
 2D profile
   s.offset_2d(d)            offset a Wire/Face inward (<0) or outward (>0)
 
+Validation & introspection
+  s.shape_type              → :solid/:shell/:face/:wire/:edge/:vertex (Symbol)
+  s.centroid                → [x, y, z] centre of mass
+  s.closed?                 → true if all edges have ≥2 adjacent faces
+  s.manifold?               → true if all edges have exactly 2 adjacent faces
+  s.validate                → :ok  or  [\"error1\", ...]
+
 Parameters (Phase 5)
   param :name, default: val        declare a parameter (returns value)
   param :name, default: val,       same, with range validation
@@ -181,6 +188,12 @@ const SHAPE_METHODS: &[&str] = &[
     "simplify",
     // Phase 7 Tier 1
     "chamfer_asym",
+    // Phase 7 Tier 2 — validation & introspection
+    "shape_type",
+    "centroid",
+    "closed?",
+    "manifold?",
+    "validate",
     // Phase 5 — color and mating
     "color",
     "mate",
