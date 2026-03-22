@@ -71,8 +71,8 @@ See [`doc/TODOs.md`](doc/TODOs.md) for the phased implementation plan:
 - **Phase 1** ✓ — mRuby embedded; end-to-end Ruby → STEP; REPL with tab-completion and `help`
 - **Phase 2** ✓ — DSL enrichment (transforms, fillets, mirror, assemblies, sketches, extrude/revolve)
 - **Phase 3** ✓ — Spline profiles + sweep; sub-shape selectors (`.faces`, `.edges`); live browser preview (`axum` + Three.js + WebSocket file watcher; `--preview` CLI)
-- **Phase 4** (in progress) — OCCT coverage: `cone`, `torus`, `wedge`, `polygon`, `ellipse`, `arc` done; `loft`, `shell`, `offset`, selective fillet/chamfer, patterns, STEP import, bounding box / volume queries remaining
-- **Phase 5** — Parametric design and constraints
+- **Phase 4** ✓ — OCCT coverage: `cone`, `torus`, `wedge`, `polygon`, `ellipse`, `arc`, `loft`, `shell`, `offset`, `simplify`; selective fillet/chamfer; linear/polar patterns; STEP/STL import; bounding box / volume / surface area queries
+- **Phase 5** ✓ — Parametric design: `param` DSL + `--param` CLI override; design table batch export (`--design-table`); GLB color/material (`.color(r,g,b)`); assembly mating (`Shape#mate`, `Assembly#mate`); spline tangent constraints; feature removal (`.simplify`)
 
 ## Third-party components
 
