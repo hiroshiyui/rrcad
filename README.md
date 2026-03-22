@@ -2,8 +2,6 @@
 
 # rrcad
 
-> **Work in Progress** — this project is in early development and not yet ready for use.
-
 A 3D CAD language expressed in Ruby. Write `.rb` scripts to describe solid geometry; the engine evaluates them through an embedded mRuby VM, builds exact BRep models with OpenCASCADE (OCCT), and exports to STEP, STL, or glTF.
 
 ```ruby
