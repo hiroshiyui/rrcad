@@ -21,7 +21,7 @@ teapot.export("teapot.step")
 
 See [`samples/`](samples/) for more complete examples.
 
-![Web-based preview of rendered object](doc/images/Screenshot%202026-03-21%20at%2022-49-38%20rrcad%20preview.png)
+![Web-based preview of rendered object](doc/images/Screenshot%202026-03-22%20at%2014-39-04%20rrcad%20preview.png)
 
 ## Stack
 
