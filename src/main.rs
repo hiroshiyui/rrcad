@@ -93,8 +93,13 @@ Part Design (Phase 8)
   s.pad(face_sel, height: h) { sk }   extrude sketch on face, fuse with s
   s.pocket(face_sel, depth: d) { sk } cut sketch pocket from s
   s.fillet_wire(r)           round corners of a 2D Wire/Face profile
+  s.extrude(h, draft: a)     extrude with draft angle a (degrees, tapers top)
   datum_plane(origin: [x,y,z], normal: [nx,ny,nz], x_dir: [xx,xy,xz])
                              finite reference plane (Face) for design ops
+  helix(radius: r, pitch: p, height: h)   helical Wire path (for thread sweep)
+  thread(solid, :side, pitch: p, depth: d) cut helical thread groove into solid
+  cbore(d:, cbore_d:, cbore_h:, depth:)  counterbore hole tool (use with .cut)
+  csink(d:, csink_d:, csink_angle:, depth:) countersink tool (use with .cut)
 
 Parameters (Phase 5)
   param :name, default: val        declare a parameter (returns value)
@@ -146,6 +151,10 @@ const TOP_LEVEL: &[&str] = &[
     "ruled_surface",
     "fill_surface",
     "datum_plane",
+    "helix",
+    "thread",
+    "cbore",
+    "csink",
     "param", // REPL control
     "help",
     "exit",

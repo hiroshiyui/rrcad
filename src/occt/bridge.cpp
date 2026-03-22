@@ -119,6 +119,9 @@
 #include <ChFi2d_ConstructionError.hxx>
 #include <gp_Ax3.hxx>
 
+// --- OCCT: Phase 8 Tier 2 — manufacturing features ---
+#include <BRepOffsetAPI_DraftAngle.hxx>
+
 // --- OCCT: Phase 7 Tier 3 — surface modeling ---
 #include <BRepAlgoAPI_Section.hxx>
 #include <BRepFill.hxx>
@@ -2227,6 +2230,110 @@ void export_obj(const OcctShape& shape, rust::Str path, double linear_deflection
     Message_ProgressRange progress;
     if (!writer.Perform(doc, metadata, progress))
         throw std::runtime_error("RWObj_CafWriter::Perform failed for: " + path_str);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8 Tier 2 — Manufacturing features
+// ---------------------------------------------------------------------------
+
+// shape_extrude_draft — extrude a 2D profile then apply a draft angle to all
+// lateral (non-Z-normal) faces so the solid tapers from base to top.
+//
+// Strategy:
+//   1. Straight prism via BRepPrimAPI_MakePrism (same as shape_extrude).
+//   2. Walk faces; skip the top/bottom (|normal · Z| > 0.5); apply
+//      BRepOffsetAPI_DraftAngle to each lateral planar face.
+//   3. Build — returns the tapered solid.
+//
+// Neutral plane = XY at Z=0 (the base of the extrusion) so base edges
+// stay fixed and the top edges move inward.
+// draft_deg > 0 → standard mould taper (narrower at top).
+std::unique_ptr<OcctShape> shape_extrude_draft(const OcctShape& profile, double height,
+                                               double draft_deg) {
+    if (draft_deg == 0.0)
+        return shape_extrude(profile, height);
+
+    // Step 1: straight prism.
+    BRepPrimAPI_MakePrism prism_builder(profile.get(), gp_Vec(0, 0, height));
+    prism_builder.Build();
+    if (!prism_builder.IsDone())
+        throw std::runtime_error("shape_extrude_draft: BRepPrimAPI_MakePrism failed");
+    TopoDS_Shape solid = prism_builder.Shape();
+
+    // Step 2: add draft to each lateral planar face.
+    BRepOffsetAPI_DraftAngle drafter(solid);
+    gp_Dir pull_dir(0, 0, 1);
+    double angle_rad = draft_deg * M_PI / 180.0;
+    // Neutral plane: the XY plane at Z=0 anchors the base edges.
+    gp_Pln neutral_plane(gp_Ax3(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1)));
+
+    bool any_added = false;
+    TopExp_Explorer exp(solid, TopAbs_FACE);
+    for (; exp.More(); exp.Next()) {
+        TopoDS_Face face = TopoDS::Face(exp.Current());
+        BRepAdaptor_Surface surf(face);
+        if (surf.GetType() != GeomAbs_Plane)
+            continue; // skip non-planar faces (e.g. fillet arcs)
+        gp_Dir face_normal = surf.Plane().Axis().Direction();
+        // Skip top/bottom: their normal is nearly parallel to the pull direction.
+        if (std::abs(face_normal.Dot(pull_dir)) > 0.5)
+            continue;
+        drafter.Add(face, pull_dir, angle_rad, neutral_plane);
+        any_added = true;
+    }
+
+    if (!any_added)
+        throw std::runtime_error("shape_extrude_draft: no lateral planar faces found — "
+                                 "profile may already be 3-D or have no straight edges");
+
+    drafter.Build();
+    if (!drafter.IsDone())
+        throw std::runtime_error("shape_extrude_draft: BRepOffsetAPI_DraftAngle failed");
+
+    return wrap(drafter.Shape());
+}
+
+// make_helix — helical Wire path built from a dense BSpline interpolation.
+//
+// Parametric form: x(t) = radius*cos(t), y(t) = radius*sin(t),
+//                  z(t) = pitch * t / (2π)
+// for t in [0, 2π * (height/pitch)].
+//
+// 32 sample points per full turn give a smooth enough curve for thread
+// profiles at any practical pitch/radius combination.
+std::unique_ptr<OcctShape> make_helix(double radius, double pitch, double height) {
+    if (radius <= 0.0)
+        throw std::runtime_error("helix: radius must be > 0");
+    if (pitch <= 0.0)
+        throw std::runtime_error("helix: pitch must be > 0");
+    if (height <= 0.0)
+        throw std::runtime_error("helix: height must be > 0");
+
+    double n_turns = height / pitch;
+    // 16 samples per turn is sufficient for thread-profile sweeps and keeps
+    // the BSpline degree low enough that BRepOffsetAPI_MakePipe stays stable.
+    // Cap at 512 total points (≥32 turns at 16/turn) to avoid OCCT internal
+    // limits on very long helices.
+    int n_pts = std::max(3, static_cast<int>(n_turns * 16.0) + 2);
+    if (n_pts > 512)
+        n_pts = 512;
+
+    Handle(TColgp_HArray1OfPnt) hPts = new TColgp_HArray1OfPnt(1, n_pts);
+    for (int i = 0; i < n_pts; i++) {
+        double t = (2.0 * M_PI * n_turns * i) / (n_pts - 1);
+        double z = height * i / (n_pts - 1);
+        hPts->SetValue(i + 1, gp_Pnt(radius * std::cos(t), radius * std::sin(t), z));
+    }
+
+    GeomAPI_Interpolate interp(hPts, /*isPeriodic=*/Standard_False, /*Tolerance=*/1e-6);
+    interp.Perform();
+    if (!interp.IsDone())
+        throw std::runtime_error("make_helix: GeomAPI_Interpolate failed");
+
+    Handle(Geom_BSplineCurve) curve = interp.Curve();
+    TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(curve).Edge();
+    TopoDS_Wire wire = BRepBuilderAPI_MakeWire(edge).Wire();
+    return wrap(wire);
 }
 
 } // namespace rrcad

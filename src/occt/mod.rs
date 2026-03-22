@@ -236,6 +236,14 @@ mod ffi {
             xz: f64,
         ) -> Result<UniquePtr<OcctShape>>;
 
+        // --- Phase 8 Tier 2: Manufacturing features ---
+        fn shape_extrude_draft(
+            profile: &OcctShape,
+            height: f64,
+            draft_deg: f64,
+        ) -> Result<UniquePtr<OcctShape>>;
+        fn make_helix(radius: f64, pitch: f64, height: f64) -> Result<UniquePtr<OcctShape>>;
+
         // --- Phase 7 Tier 3: Surface modeling ---
         fn shape_ruled_surface(
             wire_a: &OcctShape,
@@ -742,6 +750,27 @@ impl Shape {
         xz: f64,
     ) -> Result<Shape, String> {
         ffi::make_datum_plane(ox, oy, oz, nx, ny, nz, xx, xy, xz)
+            .map(|s| Shape { inner: s })
+            .map_err(|e| e.to_string())
+    }
+
+    // --- Phase 8 Tier 2: Manufacturing features ---
+
+    /// Extrude a 2D profile and taper the lateral walls by `draft_deg` degrees.
+    /// The neutral plane is Z=0 (the base), so base edges stay fixed.
+    /// Positive `draft_deg` narrows the cross-section toward the top (standard mould taper).
+    /// Falls through to a straight extrude when `draft_deg == 0`.
+    pub fn extrude_draft(&self, height: f64, draft_deg: f64) -> Result<Shape, String> {
+        ffi::shape_extrude_draft(&self.inner, height, draft_deg)
+            .map(|s| Shape { inner: s })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Helical Wire path — 32 sample points per turn via `GeomAPI_Interpolate`.
+    /// `radius`: distance from Z axis; `pitch`: axial rise per revolution;
+    /// `height`: total Z extent (= pitch × number of turns).
+    pub fn make_helix(radius: f64, pitch: f64, height: f64) -> Result<Shape, String> {
+        ffi::make_helix(radius, pitch, height)
             .map(|s| Shape { inner: s })
             .map_err(|e| e.to_string())
     }

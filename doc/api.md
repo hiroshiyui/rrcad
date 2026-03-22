@@ -297,6 +297,25 @@ let boss  = Shape::make_circle_face(10.0)?;
 let part2 = body.pad(&plane, &boss, 6.0)?;
 ```
 
+---
+
+### Manufacturing features (Phase 8 Tier 2)
+
+| Method | Description |
+|--------|-------------|
+| `.extrude_draft(height: f64, draft_deg: f64) -> Result<Shape>` | Straight extrude then taper all lateral (non-Z-normal) planar faces via `BRepOffsetAPI_DraftAngle`. Neutral plane is Z=0 (base edges stay fixed). Positive `draft_deg` → wider at base, narrower at top. `draft_deg == 0` falls through to a straight extrude. |
+| `Shape::make_helix(radius: f64, pitch: f64, height: f64) -> Result<Shape>` | Helical Wire path built from a `GeomAPI_Interpolate` BSpline (16 samples/turn, max 512 points). Use as the `path` argument to `.sweep()` to create thread tools. |
+
+```rust
+// Draft-angle extrude (e.g. for injection-moulded ribs)
+let rib = Shape::make_rect(5.0, 40.0)?.extrude_draft(15.0, 2.0)?;
+
+// Helical sweep for a thread tool
+let path    = Shape::make_helix(5.0, 1.5, 12.0)?;
+let profile = Shape::make_polygon(&[0.0, 0.0,  -0.6, 0.75,  0.0, 1.5])?;
+let thread  = profile.sweep(&path)?;
+```
+
 ```rust
 // Ruled surface between two wires
 let w1 = Shape::make_spline_3d(&[0.,0.,0., 1.,0.,0., 1.,1.,0.])?;
@@ -466,6 +485,12 @@ fn make_datum_plane(ox: f64, oy: f64, oz: f64,
                     nx: f64, ny: f64, nz: f64,
                     xx: f64, xy: f64, xz: f64)         -> Result<UniquePtr<OcctShape>>;
 
+// Manufacturing (Phase 8 Tier 2)
+fn shape_extrude_draft(profile: &OcctShape,
+                       height: f64, draft_deg: f64)    -> Result<UniquePtr<OcctShape>>;
+fn make_helix(radius: f64, pitch: f64,
+              height: f64)                             -> Result<UniquePtr<OcctShape>>;
+
 // Sub-shape selectors
 fn shape_faces_count(shape: &OcctShape, selector: &str)              -> Result<i32>;
 fn shape_faces_get(shape: &OcctShape, selector: &str, idx: i32)      -> Result<UniquePtr<OcctShape>>;
@@ -555,6 +580,10 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `ruled_surface(wire_a, wire_b)` | Ruled surface (Shell) spanning from `wire_a` to `wire_b`. Both must be Wire shapes. Uses `BRepFill::Shell`. |
 | `fill_surface(boundary_wire)` | Smooth NURBS surface filling the region enclosed by a closed Wire. Uses `BRepFill_Filling` with C0 boundary constraints. |
 | `datum_plane(origin: [ox,oy,oz], normal: [nx,ny,nz], x_dir: [xx,xy,xz])` | Reference plane Face at the given origin/normal/x_dir. Can be used as the `face_sel` argument to `.pad` / `.pocket`. |
+| `helix(radius:, pitch:, height:)` | Helical Wire path (16 samples/turn). Use as the `path` argument to `.sweep` for thread-profile sweeps. |
+| `thread(solid, face_sym, pitch:, depth:)` | Cut a helical groove into `solid`. `face_sym` is reserved (pass `:side`); geometry is inferred from the bounding box. Returns the threaded solid. Pure Ruby DSL — composes `helix` + `polygon` + `.sweep` + `.cut`. |
+| `cbore(d:, cbore_d:, cbore_h:, depth:)` | Counterbore 3-D hole tool. Subtract from a plate with `.cut`. All dimensions are diameters. Pure Ruby DSL. |
+| `csink(d:, csink_d:, csink_angle:, depth:)` | Countersink 3-D hole tool. `csink_angle` is the cone half-angle in degrees (45° = 90° included angle for flat-head screws). Subtract from a plate with `.cut`. Pure Ruby DSL. |
 | `param(:name, default: val)` | Declare a named parameter. Returns `val` unless a `--param name=x` CLI override was supplied; coerces string overrides to the default's type (Integer/Float/String). |
 | `param(:name, default: val, range: lo..hi)` | Same with range validation; raises `ArgumentError` if the value is outside the range. |
 | `solid { ... }` | Block returning its last expression |
@@ -605,6 +634,7 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `.pad(face_sel, height:) { sketch }` | Extrude the block's sketch along the outward normal of `face_sel` and fuse with `self`. `face_sel` can be a Symbol (`:top`, `:bottom`, `">X"`, etc.) or an explicit face Shape. The sketch block is evaluated in the XY plane; it is automatically repositioned onto the target face. Returns a Solid. |
 | `.pocket(face_sel, depth:) { sketch }` | Same as `pad` but extrudes inward and subtracts from `self`. Returns a Solid. |
 | `.fillet_wire(r)` | Round all corners of a 2D Wire or Face by radius `r`. Returns a Face. Raises an error if `self` is a Solid or Shell. |
+| `.extrude(h, draft: a)` | Extrude with draft angle `a` degrees. Positive → narrower at top (standard mould taper). Uses `BRepOffsetAPI_DraftAngle` on the straight prism's lateral faces. |
 | `.export("out.step")` | Write file; format determined by extension: `.step`/`.stp` → STEP, `.stl` → STL, `.glb` → GLB, `.gltf` → glTF, `.obj` → OBJ |
 
 ---

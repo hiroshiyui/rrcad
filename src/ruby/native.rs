@@ -1418,6 +1418,38 @@ pub unsafe extern "C" fn rrcad_shape_slice(
     unsafe { shape_result_to_ptr(shape.slice(plane_str, offset), error_out) }
 }
 
+// ---------------------------------------------------------------------------
+// Phase 8 Tier 2 — Manufacturing features
+// ---------------------------------------------------------------------------
+
+/// Extrude `profile` to `height` then apply a draft angle of `draft_deg` degrees
+/// to all lateral (non-Z-normal) planar faces.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_extrude_draft(
+    ptr: *mut c_void,
+    height: f64,
+    draft_deg: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    unsafe { shape_result_to_ptr(shape.extrude_draft(height, draft_deg), error_out) }
+}
+
+/// Construct a helical Wire path.
+/// `radius`: distance from Z axis; `pitch`: axial rise per revolution;
+/// `height`: total Z extent.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_make_helix(
+    radius: f64,
+    pitch: f64,
+    height: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    unsafe { shape_result_to_ptr(Shape::make_helix(radius, pitch, height), error_out) }
+}
+
 /// Run BRepCheck_Analyzer.  Returns a C string pointer: "ok" if valid, or a
 /// newline-separated list of error descriptions.  The pointer is valid until
 /// the next call on this thread.

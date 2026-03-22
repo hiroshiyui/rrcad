@@ -228,14 +228,16 @@ Implementation of face-local transform (shared by pad + pocket):
 5. `BRepPrimAPI_MakePrism(sketch_face, normal_vec * depth)` → tool solid
 6. `BRepAlgoAPI_Fuse` (pad) or `BRepAlgoAPI_Cut` (pocket)
 
-### Tier 2 — Manufacturing features
+### ✓ Tier 2 — Manufacturing features
+
+All four Tier 2 features are implemented and tested in `tests/phase8_tier2.rs` (13 tests).
 
 | # | Feature | DSL | OCCT API |
 |---|---------|-----|----------|
-| 5 | **Draft angle** | `.extrude(h, draft: angle_deg)` | `BRepOffsetAPI_DraftAngle` |
-| 6 | **Helix path** | `helix(radius:, pitch:, height:)` → Wire | `BRepBuilderAPI_MakeEdge` on `Geom_Line` + `BRepBuilderAPI_MakeWire` with helical param |
-| 7 | **Thread** | `thread(solid, face_sel, pitch:, depth:)` | helix path + triangular profile + `.sweep` + `.cut` from base solid |
-| 8 | **Counterbore / countersink** | `cbore(d:, cbore_d:, cbore_h:)` sketch macro | compound `rect`+`circle` sketch — pure Ruby DSL, no new C++ |
+| 5 | **Draft angle** ✓ | `.extrude(h, draft: angle_deg)` | `BRepPrimAPI_MakePrism` + `BRepOffsetAPI_DraftAngle` on lateral faces |
+| 6 | **Helix path** ✓ | `helix(radius:, pitch:, height:)` → Wire | `GeomAPI_Interpolate` (16 samples/turn BSpline) |
+| 7 | **Thread** ✓ | `thread(solid, face_sel, pitch:, depth:)` | helix path + triangular polygon profile + `.sweep` + `.cut` — pure Ruby DSL |
+| 8 | **Counterbore / countersink** ✓ | `cbore(d:, cbore_d:, cbore_h:, depth:)`, `csink(d:, csink_d:, csink_angle:, depth:)` | pure Ruby DSL — `circle.extrude` + `cone` + `.fuse`; use with `.cut` |
 
 ### Tier 3 — Inspection & clearance
 

@@ -361,6 +361,21 @@ std::unique_ptr<OcctShape> shape_fillet_wire(const OcctShape& profile, double ra
 std::unique_ptr<OcctShape> make_datum_plane(double ox, double oy, double oz, double nx, double ny,
                                             double nz, double xx, double xy, double xz);
 
+// --- Phase 8 Tier 2: Manufacturing features ---
+
+// Draft angle extrude: straight prism then taper all lateral faces via
+// BRepOffsetAPI_DraftAngle.  draft_deg > 0 tapers inward (standard mould
+// taper — wider at base, narrower at top).  Neutral plane is Z=0.
+std::unique_ptr<OcctShape> shape_extrude_draft(const OcctShape& profile, double height,
+                                               double draft_deg);
+
+// Helix path: Wire approximated by GeomAPI_Interpolate (32 samples/turn).
+// radius: distance from Z axis.
+// pitch:  axial rise per full revolution.
+// height: total Z extent of the helix (= pitch × number of turns).
+// Returns a Wire suitable for use as a sweep path.
+std::unique_ptr<OcctShape> make_helix(double radius, double pitch, double height);
+
 // --- Phase 7 Tier 3: Surface modeling ---
 
 // Create a ruled surface (shell) between two wires using BRepFill::Shell.

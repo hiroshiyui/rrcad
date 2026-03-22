@@ -361,6 +361,93 @@ module Kernel
     raise NotImplementedError, "datum_plane() is not yet implemented (Phase 8 Tier 1)"
   end
 
+  # helix(radius:, pitch:, height:) — Phase 8 Tier 2 helical Wire path.
+  # Returns a Wire approximated by 32 samples per turn via GeomAPI_Interpolate.
+  #   path = helix(radius: 5, pitch: 1.5, height: 12)
+  # Overridden by the native implementation after the prelude runs.
+  def helix(radius:, pitch:, height:)
+    raise NotImplementedError, "helix() is not yet implemented (Phase 8 Tier 2)"
+  end
+
+  # thread(solid, face_sym, pitch:, depth:) — Phase 8 Tier 2 compound feature.
+  # Cuts a helical thread groove into +solid+ by sweeping a triangular profile
+  # along a helix derived from the solid's bounding box and removing the result.
+  #
+  # Conventions:
+  #   face_sym  — ignored for geometry (reserved for future face-local thread);
+  #               pass :side for ISO-style external threads.
+  #   pitch:    — thread pitch in mm (distance between crests).
+  #   depth:    — radial groove depth in mm (how far the triangle cuts in).
+  #
+  #   bolt = cylinder(5, 20)
+  #   bolt = thread(bolt, :side, pitch: 1.0, depth: 0.6)
+  def thread(solid, _face_sym = :side, pitch:, depth:)
+    bb = solid.bounding_box
+    height  = bb[:dz]
+    # Infer radius from bounding box (assumes shape roughly centred on Z axis).
+    radius  = [bb[:dx], bb[:dy]].min / 2.0
+    n_turns = (height / pitch).to_i
+    return solid if n_turns < 1
+
+    actual_h = n_turns * pitch
+
+    # Helical path starting at the surface of the cylinder.
+    path = helix(radius: radius, pitch: pitch, height: actual_h)
+
+    # Isosceles triangle profile: base width = pitch, height = depth.
+    # Positioned at world origin; sweep will carry it along the helix.
+    hp = pitch / 2.0
+    profile = polygon([[0.0, 0.0], [-depth, hp], [0.0, pitch]])
+
+    thread_tool = profile.sweep(path)
+    solid.cut(thread_tool)
+  end
+
+  # cbore(d:, cbore_d:, cbore_h:, depth:) — Phase 8 Tier 2 counterbore tool.
+  # Returns a 3-D solid hole tool.  Subtract it from a plate with `.cut` to
+  # leave a stepped counterbore hole: a large-diameter shallow bore over a
+  # narrower through-hole.  Position the tool before cutting.
+  #
+  # All dimensions are diameters (not radii).
+  #   d:       — clearance hole diameter (the narrow through-hole).
+  #   cbore_d: — counterbore diameter (must be > d).
+  #   cbore_h: — counterbore depth (shallower than depth).
+  #   depth:   — total depth of the hole.
+  #
+  # Example — centred counterbore on a 50×50×20 plate:
+  #   plate = box(50, 50, 20)
+  #   hole  = cbore(d: 5, cbore_d: 9, cbore_h: 4, depth: 20)
+  #   result = plate.cut(hole)
+  def cbore(d:, cbore_d:, cbore_h:, depth:)
+    clearance   = circle(d / 2.0).extrude(depth)
+    counterbore = circle(cbore_d / 2.0).extrude(cbore_h)
+    counterbore.fuse(clearance)
+  end
+
+  # csink(d:, csink_d:, csink_angle:, depth:) — Phase 8 Tier 2 countersink tool.
+  # Returns a 3-D solid hole tool.  Subtract it from a plate with `.cut` to
+  # leave a conical countersink over a clearance hole.  Position the tool before cutting.
+  #
+  # All diameters are in mm; csink_angle is the cone half-angle in degrees
+  # (45° gives a 90° included angle — standard for flat-head screws).
+  #   d:           — clearance hole diameter.
+  #   csink_d:     — countersink opening diameter at the surface (must be > d).
+  #   csink_angle: — half-angle of the cone in degrees (e.g. 45 for 90° included).
+  #   depth:       — total depth of the clearance hole below the countersink.
+  #
+  # Example:
+  #   plate = box(50, 50, 20)
+  #   hole  = csink(d: 4, csink_d: 8, csink_angle: 45, depth: 20)
+  #   result = plate.cut(hole)
+  def csink(d:, csink_d:, csink_angle:, depth:)
+    clearance = circle(d / 2.0).extrude(depth)
+    # Cone height from the difference in radii and the half-angle.
+    csink_h = (csink_d - d) / 2.0 / Math.tan(csink_angle * Math::PI / 180.0)
+    # cone(r_base, r_top, h): wide end at Z=0, narrows upward.
+    conical = cone(csink_d / 2.0, d / 2.0, csink_h)
+    conical.fuse(clearance)
+  end
+
   # Spline profiles — overridden natively after prelude runs.
   #
   # Optional +tangents:+ keyword suppresses natural-boundary oscillation at

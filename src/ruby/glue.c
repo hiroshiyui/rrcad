@@ -198,6 +198,12 @@ extern void* rrcad_shape_fillet_wire(void* ptr, double radius, const char** erro
 extern void* rrcad_datum_plane(double ox, double oy, double oz, double nx, double ny, double nz,
                                double xx, double xy, double xz, const char** error_out);
 
+/* Phase 8 Tier 2 — Manufacturing features */
+extern void* rrcad_shape_extrude_draft(void* ptr, double height, double draft_deg,
+                                       const char** error_out);
+extern void* rrcad_make_helix(double radius, double pitch, double height,
+                              const char** error_out);
+
 /* mRuby data type descriptor — name appears in TypeError messages. */
 static void shape_dfree(mrb_state* mrb, void* ptr) {
     (void)mrb;
@@ -666,6 +672,7 @@ static mrb_value mrb_rrcad_shape_extrude(mrb_state* mrb, mrb_value self) {
 
     double twist_deg = 0.0;
     double scale = 1.0;
+    double draft_deg = 0.0;
 
     if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
         mrb_value twist_val =
@@ -674,6 +681,9 @@ static mrb_value mrb_rrcad_shape_extrude(mrb_state* mrb, mrb_value self) {
         mrb_value scale_val = mrb_hash_fetch(mrb, opts,
                                               mrb_symbol_value(mrb_intern_lit(mrb, "scale")),
                                               mrb_float_value(mrb, 1.0));
+        mrb_value draft_val =
+            mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "draft")),
+                           mrb_float_value(mrb, 0.0));
         if (mrb_float_p(twist_val))
             twist_deg = (double)mrb_float(twist_val);
         else if (mrb_integer_p(twist_val))
@@ -682,11 +692,24 @@ static mrb_value mrb_rrcad_shape_extrude(mrb_state* mrb, mrb_value self) {
             scale = (double)mrb_float(scale_val);
         else if (mrb_integer_p(scale_val))
             scale = (double)mrb_integer(scale_val);
+        if (mrb_float_p(draft_val))
+            draft_deg = (double)mrb_float(draft_val);
+        else if (mrb_integer_p(draft_val))
+            draft_deg = (double)mrb_integer(draft_val);
     }
 
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
     const char* err = NULL;
+
+    /* draft: keyword routes to BRepOffsetAPI_DraftAngle path. */
+    if (draft_deg != 0.0) {
+        void* result = rrcad_shape_extrude_draft(ptr, (double)height, draft_deg, &err);
+        if (err)
+            mrb_raise(mrb, E_RUNTIME_ERROR, err);
+        return shape_from_ptr(mrb, result);
+    }
+
     /* rrcad_shape_extrude_ex falls back to MakePrism when twist≈0 and scale≈1 */
     void* result = rrcad_shape_extrude_ex(ptr, (double)height, twist_deg, scale, &err);
     if (err)
@@ -1850,6 +1873,42 @@ static mrb_value mrb_rrcad_datum_plane(mrb_state* mrb, mrb_value self) {
 }
 
 /* =========================================================================
+ * Phase 8 Tier 2: Manufacturing features
+ * =========================================================================
+ */
+
+/* helix(radius:, pitch:, height:)
+ *
+ * Top-level Kernel method.  Returns a Wire suitable for use as a sweep path
+ * for thread profiles.  radius/pitch/height must be positive floats. */
+static mrb_value mrb_rrcad_helix(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value kwargs = mrb_nil_value();
+    mrb_get_args(mrb, "H", &kwargs);
+
+    mrb_sym radius_key = mrb_intern_lit(mrb, "radius");
+    mrb_sym pitch_key  = mrb_intern_lit(mrb, "pitch");
+    mrb_sym height_key = mrb_intern_lit(mrb, "height");
+
+    mrb_value r_val = mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(radius_key), mrb_nil_value());
+    mrb_value p_val = mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(pitch_key),  mrb_nil_value());
+    mrb_value h_val = mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(height_key), mrb_nil_value());
+
+    if (mrb_nil_p(r_val) || mrb_nil_p(p_val) || mrb_nil_p(h_val))
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "helix requires radius:, pitch:, and height:");
+
+    double radius = mrb_float_p(r_val) ? mrb_float(r_val) : (double)mrb_integer(r_val);
+    double pitch  = mrb_float_p(p_val) ? mrb_float(p_val) : (double)mrb_integer(p_val);
+    double height = mrb_float_p(h_val) ? mrb_float(h_val) : (double)mrb_integer(h_val);
+
+    const char* err = NULL;
+    void* result = rrcad_make_helix(radius, pitch, height, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* =========================================================================
  * rrcad_register_shape_class
  *
  * Called from Rust (MrubyVm::new) after the DSL prelude has been evaluated.
@@ -1989,4 +2048,8 @@ void rrcad_register_shape_class(mrb_state* mrb) {
                       MRB_ARGS_REQ(1));
     mrb_define_method(mrb, mrb->kernel_module, "datum_plane", mrb_rrcad_datum_plane,
                       MRB_ARGS_KEY(3, 0)); /* origin:, normal:, x_dir: */
+
+    /* Phase 8 Tier 2: Manufacturing features */
+    mrb_define_method(mrb, mrb->kernel_module, "helix", mrb_rrcad_helix,
+                      MRB_ARGS_KEY(3, 0)); /* radius:, pitch:, height: */
 }
