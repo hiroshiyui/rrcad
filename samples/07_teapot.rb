@@ -1,6 +1,7 @@
 # Utah Teapot — samples/07_teapot.rb
 #
-# Rebuilt from the Newell triangle mesh (doc/images/utah_teapot.obj).
+# Rebuilt from the Newell triangle mesh (doc/images/utah_teapot.obj,
+# sourced from https://graphics.cs.utah.edu/teapot/).
 # All coordinates are OBJ-native values scaled ×3.0 to rrcad working units.
 #
 # OBJ coordinate system (already Z-up):
