@@ -388,6 +388,9 @@ std::unique_ptr<OcctShape> shape_fuse(const OcctShape& a, const OcctShape& b) {
         BRepAlgoAPI_Fuse op;
         op.SetArguments(args);
         op.SetTools(tools);
+        // SetRunParallel: use TBB thread pool for sub-operations (OCCT 7.4+).
+        // SetFuzzyValue: merge vertices/edges within 1e-6 mm to tolerate near-coincident
+        // geometry that would otherwise leave gap artefacts.
         op.SetRunParallel(Standard_True);
         op.SetFuzzyValue(1e-6);
         op.Build();
@@ -409,6 +412,7 @@ std::unique_ptr<OcctShape> shape_cut(const OcctShape& a, const OcctShape& b) {
         BRepAlgoAPI_Cut op;
         op.SetArguments(args);
         op.SetTools(tools);
+        // Same parallel + fuzzy settings as shape_fuse — see comments there.
         op.SetRunParallel(Standard_True);
         op.SetFuzzyValue(1e-6);
         op.Build();
@@ -430,6 +434,7 @@ std::unique_ptr<OcctShape> shape_common(const OcctShape& a, const OcctShape& b) 
         BRepAlgoAPI_Common op;
         op.SetArguments(args);
         op.SetTools(tools);
+        // Same parallel + fuzzy settings as shape_fuse — see comments there.
         op.SetRunParallel(Standard_True);
         op.SetFuzzyValue(1e-6);
         op.Build();
@@ -1120,6 +1125,12 @@ void pipe_shell_add(PipeShellBuilder& b, const OcctShape& profile) {
 
 // Helper: translate section[i] to the spine point at evenly-distributed
 // parameter t[i], return the moved shape.
+//
+// Note: positions are evenly spaced in *parametric* space, not arc-length.
+// This is intentional — for the common case of circular profiles on smooth
+// curves the difference is negligible, and parametric spacing avoids an extra
+// GCPnts_UniformAbscissa pass at a cost of slight non-uniformity on highly
+// curved paths.
 static TopoDS_Shape moveToSpinePoint(const TopoDS_Shape& section, int i, int n,
                                      const Handle(Geom_Curve) & curve, Standard_Real tFirst,
                                      Standard_Real tLast) {
@@ -1147,6 +1158,9 @@ std::unique_ptr<OcctShape> pipe_shell_build(PipeShellBuilder& b) {
         // WithCorrection=true asks OCCT to rotate each profile perpendicular to the
         // spine tangent, keeping circles truly circular in cross-section.
         BRepOffsetAPI_MakePipeShell mkPS(b.impl->spineWire);
+        // Frenet mode: at each spine point, OCCT computes the Frenet frame
+        // (tangent / normal / binormal) and aligns the profile to it.  This keeps
+        // circular cross-sections truly circular even on curved paths.
         mkPS.SetMode(/*IsFrenet=*/Standard_True);
 
         for (int i = 0; i < n; i++) {
@@ -3462,6 +3476,9 @@ std::unique_ptr<OcctShape> shape_path_pattern(const OcctShape& shape, const Occt
         double t1 = adaptor.LastParameter();
 
         // Collect n arc-length-evenly-spaced parameter values.
+        // GCPnts_UniformAbscissa walks the curve and returns parameter values at
+        // positions equally spaced by arc-length — so copies are physically
+        // equidistant along the path regardless of parameterisation.
         std::vector<double> params(n);
         if (n == 1) {
             params[0] = t0;

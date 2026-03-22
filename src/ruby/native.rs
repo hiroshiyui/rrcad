@@ -95,6 +95,8 @@ thread_local! {
 unsafe fn set_err(error_out: *mut *const c_char, msg: &str) {
     let cstr = CString::new(msg).unwrap_or_else(|_| c"<error contains nul>".to_owned());
     LAST_ERR.with(|cell| {
+        // Rust 2024: an `unsafe fn` body is not implicitly unsafe — raw pointer
+        // writes still require an explicit `unsafe` block inside a closure.
         unsafe {
             *error_out = cstr.as_ptr();
         }
