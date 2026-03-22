@@ -48,24 +48,26 @@ body = loft([
 ])
 
 # ============================================================
-# Step 2 — Handle sweep (OBJ-derived C-arc, ear style)
+# Step 2 — Handle sweep (peg + OBJ-arc + peg, ear style)
 # ============================================================
-# Centerline traced directly from OBJ mesh cross-sections (x < −2.0 filter).
-# Apex at x=−8.54 z=4.80 (obj: cx=−2.85, z=1.60).
 # Tube radius 0.70 matches OBJ ry=0.225 × 3.0 = 0.68 (rounded to 0.70).
+# Apex at x=−8.54 z=4.80 (obj: cx=−2.85, z=1.60).
 #
-# Endpoints extend to x=−4.0 (inside body by ≈1.8 units at both attachment
-# heights) to ensure solid volume overlap for a clean boolean fuse.
-# The sweep tube crosses the body wall on the way out and back in, creating
-# two neat circular openings — the classic ear-handle look.
+# Peg strategy: two consecutive same-Z points at each wall crossing force the
+# sweep tube to exit the body wall perpendicularly, producing a clean circular
+# opening instead of an oblique elliptical smear.
+#   Bottom peg at z=1.50: body r=5.86; outer peg at x=−6.00 (r=6.00),
+#     tube inner edge at r=5.30 — 0.56 inside body → robust fuse overlap.
+#   Top peg at z=6.30: body r=4.78; outer peg at x=−5.10 (r=5.10),
+#     tube inner edge at r=4.40 — 0.38 inside body → robust fuse overlap.
 handle_path = spline_3d([
-  [-4.00, 0.0, 1.50],  # inside body — bottom attachment (body r=5.86 here)
-  [-7.00, 0.0, 2.40],  # outside body — lower outer curve
-  [-8.30, 0.0, 3.60],  # outside body — outer arc rising
-  [-8.54, 0.0, 4.80],  # C-arc apex   (obj cx=−8.54, z=4.80)
-  [-8.10, 0.0, 5.40],  # outside body — outer arc descending
-  [-7.00, 0.0, 6.00],  # outside body — upper outer curve
-  [-3.50, 0.0, 6.30],  # inside body — top attachment    (body r=4.78 here)
+  [-4.00, 0.0, 1.50],  # inside body — bottom peg inner  (body r=5.86)
+  [-6.00, 0.0, 1.50],  # bottom peg outer — same Z, perpendicular wall exit
+  [-8.30, 0.0, 3.20],  # outer arc lower  (OBJ-derived)
+  [-8.54, 0.0, 4.80],  # C-arc apex       (obj cx=−8.54, z=4.80)
+  [-8.00, 0.0, 5.80],  # outer arc upper  (OBJ-derived)
+  [-5.10, 0.0, 6.30],  # top peg outer    — same Z, perpendicular wall exit
+  [-3.50, 0.0, 6.30],  # inside body — top peg inner     (body r=4.78)
 ])
 handle = circle(0.70).sweep(handle_path)
 body_handle = body.fuse(handle)
