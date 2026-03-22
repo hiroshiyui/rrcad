@@ -5,11 +5,11 @@
 A 3D CAD language expressed in Ruby. Write `.rb` scripts to describe solid geometry; the engine evaluates them through an embedded mRuby VM, builds exact BRep models with OpenCASCADE (OCCT), and exports to STEP, STL, or glTF.
 
 ```ruby
-# Solid box — 60×60×80 mm
-bucket = box(60, 60, 80)
+# Outer cylinder — radius 30 mm, height 80 mm
+bucket = cylinder(30, 80)
 
 # Pocket the top face 70 mm deep, leaving 5 mm walls and a 10 mm base
-bucket = bucket.pocket(:top, depth: 70) { rect(50, 50) }
+bucket = bucket.pocket(:top, depth: 70) { circle(25) }
 
 bucket.export("bucket.stl")
 preview bucket
