@@ -43,6 +43,29 @@ impl MrubyVm {
         vm
     }
 
+    /// Inject CLI parameter overrides into the VM as the `$_rrcad_params` global.
+    ///
+    /// Must be called after `new()` and before evaluating the user script.
+    /// Values are injected as Ruby strings; the `param` DSL method coerces them
+    /// to the type of the declared default.
+    pub fn set_params(&mut self, params: &[(String, String)]) -> Result<(), String> {
+        if params.is_empty() {
+            return Ok(());
+        }
+        let entries: String = params
+            .iter()
+            .map(|(k, v)| {
+                // Escape double-quotes so the generated Ruby literal is safe.
+                let k = k.replace('"', "\\\"");
+                let v = v.replace('"', "\\\"");
+                format!("\"{k}\" => \"{v}\"")
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let code = format!("$_rrcad_params = {{{entries}}}");
+        self.eval(&code).map(|_| ())
+    }
+
     /// Evaluate `code` as Ruby source and return the `inspect` string of
     /// the result, or an error description if an exception was raised.
     pub fn eval(&mut self, code: &str) -> Result<String, String> {

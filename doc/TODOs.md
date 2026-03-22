@@ -194,13 +194,13 @@ GLB colors → constraint solver spike → (spline tangents, `.simplify` as time
 
 ### Tier 1 — Core parametric primitives (implement together)
 
-#### [ ] `param` DSL — `param :width, default: 10, range: 1..100`
+#### [x] `param` DSL — `param :width, default: 10, range: 1..100`
 
 Foundational primitive; everything else in Phase 5 depends on it. Pure Ruby DSL:
 store declared parameters in a global `$params` hash, validate against `range:`,
 expose values to the script. No OCCT involvement.
 
-#### [ ] `--param width=20` CLI override
+#### [x] `--param width=20` CLI override
 
 Trivially small once `param` exists. Parse `key=value` pairs in `main.rs` and
 inject them into the VM before `eval`. Ship together with the `param` DSL as a

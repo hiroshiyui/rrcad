@@ -59,6 +59,13 @@ Patterns
   linear_pattern(s,n,[dx,dy,dz]) n copies translated along vector
   polar_pattern(s, n, angle_deg) n copies rotated around Z axis
 
+Parameters (Phase 5)
+  param :name, default: val        declare a parameter (returns value)
+  param :name, default: val,       same, with range validation
+       range: lo..hi
+  # Override at the command line:
+  #   rrcad --param name=value script.rb
+
 Builders
   solid do ... end          block returning last shape
   assembly(\"name\") do |a|
@@ -88,7 +95,8 @@ const TOP_LEVEL: &[&str] = &[
     "assembly",
     "preview",
     "linear_pattern",
-    "polar_pattern", // REPL control
+    "polar_pattern",
+    "param", // REPL control
     "help",
     "exit",
     "quit", // Ruby keywords
@@ -194,19 +202,79 @@ impl Helper for DslHelper {}
 // Entry point
 // ---------------------------------------------------------------------------
 
-fn main() {
-    let args: Vec<String> = std::env::args().collect();
+// ---------------------------------------------------------------------------
+// CLI argument parsing
+// ---------------------------------------------------------------------------
 
-    match args.get(1).map(String::as_str) {
-        None | Some("--repl") => run_repl(),
-        Some("--preview") => match args.get(2) {
-            Some(path) => run_preview(path),
+enum Mode {
+    Repl,
+    Script(String),
+    Preview(String),
+}
+
+struct CliArgs {
+    mode: Mode,
+    /// Key-value pairs from --param key=value flags.
+    params: Vec<(String, String)>,
+}
+
+/// Parse command-line arguments, extracting any number of `--param key=value`
+/// flags (which may appear in any position) and the run mode.
+///
+/// Usage:
+///   rrcad                                       # REPL
+///   rrcad --repl                                # REPL (explicit)
+///   rrcad [--param k=v]... <script.rb>          # run script
+///   rrcad --preview [--param k=v]... <script.rb> # live preview
+fn parse_args() -> CliArgs {
+    let raw: Vec<String> = std::env::args().skip(1).collect();
+    let mut params: Vec<(String, String)> = Vec::new();
+    // Non-param args that determine the run mode.
+    let mut rest: Vec<String> = Vec::new();
+
+    let mut i = 0;
+    while i < raw.len() {
+        if raw[i] == "--param" {
+            i += 1;
+            if i >= raw.len() {
+                eprintln!("error: --param requires a key=value argument");
+                std::process::exit(1);
+            }
+            match raw[i].split_once('=') {
+                Some((k, v)) => params.push((k.to_string(), v.to_string())),
+                None => {
+                    eprintln!("error: --param requires key=value format, got: {}", raw[i]);
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            rest.push(raw[i].clone());
+        }
+        i += 1;
+    }
+
+    let mode = match rest.first().map(String::as_str) {
+        None | Some("--repl") => Mode::Repl,
+        Some("--preview") => match rest.get(1) {
+            Some(path) => Mode::Preview(path.clone()),
             None => {
-                eprintln!("usage: rrcad --preview <script.rb>");
+                eprintln!("usage: rrcad --preview [--param key=val]... <script.rb>");
                 std::process::exit(1);
             }
         },
-        Some(path) => run_script(path),
+        Some(path) => Mode::Script(path.to_string()),
+    };
+
+    CliArgs { mode, params }
+}
+
+fn main() {
+    let CliArgs { mode, params } = parse_args();
+
+    match mode {
+        Mode::Repl => run_repl(),
+        Mode::Script(path) => run_script(&path, &params),
+        Mode::Preview(path) => run_preview(&path, &params),
     }
 }
 
@@ -251,7 +319,7 @@ fn run_repl() {
     }
 }
 
-fn run_script(path: &str) {
+fn run_script(path: &str, params: &[(String, String)]) {
     let code = match std::fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -260,13 +328,17 @@ fn run_script(path: &str) {
         }
     };
     let mut vm = MrubyVm::new();
+    if let Err(e) = vm.set_params(params) {
+        eprintln!("{path}: error setting params: {e}");
+        std::process::exit(1);
+    }
     if let Err(e) = vm.eval(&code) {
         eprintln!("{path}: {e}");
         std::process::exit(1);
     }
 }
 
-fn run_preview(script_path: &str) {
+fn run_preview(script_path: &str, params: &[(String, String)]) {
     use notify::{RecursiveMode, Watcher};
     use rrcad::preview;
 
@@ -274,10 +346,14 @@ fn run_preview(script_path: &str) {
     let _rt = preview::start(glb_path, 3000);
 
     // Helper: read and eval the script, reporting errors to stderr.
+    // Each eval creates a fresh VM; params are re-injected every time so that
+    // live-reload picks up the same overrides as the initial run.
     let eval_script = |path: &str| match std::fs::read_to_string(path) {
         Ok(code) => {
             let mut vm = MrubyVm::new();
-            if let Err(e) = vm.eval(&code) {
+            if let Err(e) = vm.set_params(params) {
+                eprintln!("{path}: error setting params: {e}");
+            } else if let Err(e) = vm.eval(&code) {
                 eprintln!("{path}: {e}");
             }
         }

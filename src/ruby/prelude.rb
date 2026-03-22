@@ -197,4 +197,46 @@ module Kernel
   def preview(_shape)
     raise NotImplementedError, "preview() is not yet implemented (Phase 3)"
   end
+
+  # ---------------------------------------------------------------------------
+  # param — Phase 5 parametric DSL
+  # ---------------------------------------------------------------------------
+  # Declare a named script parameter with a default value and an optional
+  # range constraint.  Returns the effective value, giving precedence to any
+  # CLI override supplied via --param key=value.
+  #
+  # CLI values arrive as strings; they are coerced to the same Ruby type as
+  # +default+ (Integer, Float, or String).
+  #
+  #   width  = param :width,  default: 50,  range: 1..200
+  #   scale  = param :scale,  default: 1.0, range: 0.1..10.0
+  #   label  = param :label,  default: "part"
+  #
+  # $_rrcad_params is populated by the Rust CLI layer before the user script
+  # is evaluated.  Keys are strings.
+  $_rrcad_params ||= {}
+
+  def param(name, default:, range: nil)
+    key = name.to_s
+    raw = $_rrcad_params.key?(key) ? $_rrcad_params[key] : default
+
+    # Coerce CLI string values to the declared default's type.
+    val = if raw.is_a?(String)
+      case default
+      when Integer then raw.to_i
+      when Float   then raw.to_f
+      when TrueClass, FalseClass then raw == "true"
+      else raw
+      end
+    else
+      raw
+    end
+
+    if range && !range.include?(val)
+      raise ArgumentError,
+            "param :#{name} value #{val.inspect} is outside range #{range.inspect}"
+    end
+
+    val
+  end
 end
