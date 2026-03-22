@@ -183,14 +183,9 @@ which is already linked.
 
 ---
 
-## Phase 5 — Parametric Design & Constraints
+## ✓ Phase 5 — Parametric Design & Constraints (complete)
 
-Goal: scripts with parameters, constraints, and design tables.
-
-Recommended implementation order: `param` DSL + `--param` CLI → design table →
-GLB colors → constraint solver spike → (spline tangents, `.simplify` as time permits).
-
----
+Goal: scripts with parameters, constraints, and design tables. All tiers complete.
 
 ### Tier 1 — Core parametric primitives (implement together)
 
@@ -344,25 +339,8 @@ silhouette data.
 
 ## Architecture Notes
 
-```
-Ruby DSL (.rb script)
-      │ mRuby VM
-Rust binding layer
-  • native.rs: extern "C" entry points
-  • glue.c: C shim hiding mrb_value from Rust
-  • Shape: Box<occt::Shape> raw pointer in mRuby RData void*
-  • dfree callback drops the Box on GC
-      │ cxx bridge (C++ ABI)
-OCCT geometry kernel
-  • BRep modeling · splines
-  • Tessellation
-  • STEP / STL / glTF export
-```
+See `CLAUDE.md` and `doc/development.md` for the authoritative architecture
+and development guide. Key points:
 
-**Memory model:** Each native `Shape` is a heap-allocated `Box<occt::Shape>`.
-The raw pointer lives in the mRuby `RData void*` slot. `dfree` drops it.
-No SlotMap, no cross-language reference counting.
-
-**Rendering (current):** OCCT tessellation → GLB → `axum` HTTP → Three.js browser viewer → WebSocket live reload. Activated with `rrcad --preview <script.rb>`.
-
-**Rendering:** Web-based preview via axum + Three.js is the long-term approach; native egui/wgpu viewer has been dropped.
+- **Memory:** each `Shape` is a `Box<occt::Shape>` raw pointer in mRuby `RData void*`; `dfree` drops it on GC. No SlotMap, no reference counting.
+- **Preview:** OCCT tessellation → GLB → `axum` HTTP → Three.js browser viewer → WebSocket live reload. Activated with `rrcad --preview <script.rb>`. Web-based preview is the long-term approach; a native egui/wgpu viewer is not planned.
