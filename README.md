@@ -11,11 +11,13 @@ bucket = box(60, 60, 80)
 # Pocket the top face 70 mm deep, leaving 5 mm walls and a 10 mm base
 bucket = bucket.pocket(:top, depth: 70) { rect(50, 50) }
 
-bucket.export("bucket.step")
+bucket.export("bucket.stl")
 preview bucket
 ```
 
 See [`samples/`](samples/) for more complete examples.
+
+> **3D preview:** open [`doc/bucket.stl`](doc/bucket.stl) in GitHub to view the model interactively in your browser.
 
 ![Web-based preview of rendered object](doc/images/Screenshot%202026-03-22%20at%2014-39-04%20rrcad%20preview.png)
 
