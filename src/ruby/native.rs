@@ -1100,6 +1100,6 @@ pub unsafe extern "C" fn rrcad_sew(
     let faces: Vec<&Shape> = (0..n)
         .map(|i| unsafe { &*(*ptrs.add(i) as *const Shape) })
         .collect();
-    let face_refs: Vec<&Shape> = faces.iter().copied().collect();
+    let face_refs: Vec<&Shape> = faces.to_vec();
     unsafe { shape_result_to_ptr(Shape::sew(&face_refs, tolerance), error_out) }
 }

@@ -411,7 +411,7 @@ fn parse_csv(content: &str) -> Result<(Vec<String>, Vec<Vec<String>>), String> {
         |line: &str| -> Vec<String> { line.split(delim).map(|f| f.trim().to_string()).collect() };
 
     let headers = split(header_line);
-    let rows: Vec<Vec<String>> = lines.map(|l| split(l)).collect();
+    let rows: Vec<Vec<String>> = lines.map(split).collect();
 
     if rows.is_empty() {
         return Err("design table has a header but no data rows".to_string());
