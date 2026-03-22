@@ -119,8 +119,9 @@ fn sew_four_rim_patches_produces_shape() {
 fn teapot_bezier_patches_sew_succeeds() {
     // Full teapot from 28 Newell Bézier patches (the actual sample script).
     let out = tmp("rrcad_teapot_bezier.step");
-    let script = std::fs::read_to_string("/home/yhh/MyProjects/rrcad/samples/07_teapot.rb")
-        .expect("could not read samples/07_teapot.rb");
+    let script_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("samples/07_teapot.rb");
+    let script =
+        std::fs::read_to_string(&script_path).expect("could not read samples/07_teapot.rb");
     // Replace the export path to write to /tmp.
     let script = script
         .replace(
