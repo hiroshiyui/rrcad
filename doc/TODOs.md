@@ -249,18 +249,21 @@ All three Tier 3 features are implemented and tested in `tests/phase8_tier3.rs` 
 | 10 | **Moment of inertia** ✓ | `.inertia` → `{ixx:, iyy:, izz:, ixy:, …}` | `BRepGProp::VolumeProperties` → `GProp_GProps::MatrixOfInertia` |
 | 11 | **Minimum wall thickness** ✓ | `.min_thickness` → Float | Ray-casting via `IntCurvesFace_ShapeIntersector` — shoots inward ray from each face centroid, returns shortest intersection distance |
 
-### Tier 4 — 2D drawing output
+### ✓ Tier 4 — 2D drawing output
+
+All three Tier 4 features are implemented and tested in `tests/phase8_tier4.rs` (11 tests).
 
 | # | Feature | DSL | OCCT API |
 |---|---------|-----|----------|
-| 12 | **Slice to face** | `.slice(plane: :xy, at: 5.0)` → Face | `BRepAlgoAPI_Section` |
-| 13 | **SVG export** | `shape.export("part.svg", view: :top)` | `HLRBRep_Algo` (hidden-line removal) + `HLRBRep_HLRToShape` → polylines → SVG |
-| 14 | **DXF export** | `shape.export("part.dxf")` | slice → wire edges → `DXF_Writer` (lightweight hand-rolled or via `IFSelect`) |
+| 12 | **Slice to face** ✓ | `.slice(plane: :xy, z: 5.0)` → compound | Already landed in Phase 7 Tier 3 (`BRepAlgoAPI_Section`) |
+| 13 | **SVG export** ✓ | `shape.export("part.svg")`, `shape.export("part.svg", view: :front\|:side)` | `HLRBRep_PolyAlgo` + `HLRBRep_PolyHLRToShape` → polylines → SVG `<polyline>` elements |
+| 14 | **DXF export** ✓ | `shape.export("part.dxf")`, `shape.export("part.dxf", view: :front\|:side)` | Same HLR pipeline → hand-rolled DXF R12 ASCII (LINE entities) |
 
-SVG via HLRBRep: `HLRBRep_Algo` computes visible / hidden edges from a given
-projection direction; `HLRBRep_HLRToShape` extracts them as `TopoDS_Edge` collections;
-each edge is tessellated into polyline segments and serialised as SVG `<path>` elements.
-This is the same pipeline FreeCAD's TechDraw uses internally.
+SVG/DXF projection uses `HLRBRep_PolyAlgo` (polygon-based hidden-line removal):
+tessellate → set orthographic `HLRAlgo_Projector` → `Update()` → extract
+`VCompound()` + `OutLineVCompound()` → discretise each edge at 32 samples →
+write SVG `<polyline>` (Y-flipped) or DXF `LINE` entities (Y-up).
+Three view directions: `:top` (XY plane, default), `:front` (XZ plane), `:side` (YZ plane).
 
 ### Tier 5 — Advanced composition
 

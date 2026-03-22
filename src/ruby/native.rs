@@ -286,6 +286,56 @@ pub unsafe extern "C" fn rrcad_shape_export_obj(
     }
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_export_svg(
+    ptr: *mut c_void,
+    path: *const c_char,
+    view: *const c_char,
+    error_out: *mut *const c_char,
+) {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let path_str = match unsafe { std::ffi::CStr::from_ptr(path) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "path is not valid UTF-8") };
+            return;
+        }
+    };
+    let view_str = match unsafe { std::ffi::CStr::from_ptr(view) }.to_str() {
+        Ok(s) => s,
+        Err(_) => "top",
+    };
+    if let Err(e) = shape.export_svg(path_str, view_str) {
+        unsafe { set_err(error_out, &e) };
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_export_dxf(
+    ptr: *mut c_void,
+    path: *const c_char,
+    view: *const c_char,
+    error_out: *mut *const c_char,
+) {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let path_str = match unsafe { std::ffi::CStr::from_ptr(path) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "path is not valid UTF-8") };
+            return;
+        }
+    };
+    let view_str = match unsafe { std::ffi::CStr::from_ptr(view) }.to_str() {
+        Ok(s) => s,
+        Err(_) => "top",
+    };
+    if let Err(e) = shape.export_dxf(path_str, view_str) {
+        unsafe { set_err(error_out, &e) };
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Boolean operations
 // ---------------------------------------------------------------------------

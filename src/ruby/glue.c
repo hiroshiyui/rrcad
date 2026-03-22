@@ -161,6 +161,12 @@ extern void rrcad_shape_export_gltf(void* ptr, const char* path, const char** er
 extern void rrcad_shape_export_glb(void* ptr, const char* path, const char** error_out);
 extern void rrcad_shape_export_obj(void* ptr, const char* path, const char** error_out);
 
+/* Phase 8 Tier 4 — SVG / DXF 2-D drawing output */
+extern void rrcad_shape_export_svg(void* ptr, const char* path, const char* view,
+                                   const char** error_out);
+extern void rrcad_shape_export_dxf(void* ptr, const char* path, const char* view,
+                                   const char** error_out);
+
 /* Phase 7 — Bézier patch and sewing */
 extern void* rrcad_make_bezier_patch(const double* pts, size_t n_pts, const char** error_out);
 extern void* rrcad_sew(const void** ptrs, size_t n, double tolerance, const char** error_out);
@@ -335,19 +341,37 @@ static mrb_value mrb_rrcad_shape_inspect(mrb_state* mrb, mrb_value self) {
     return mrb_str_new_cstr(mrb, "#<Shape>");
 }
 
-/* .export("path") — dispatches by file extension:
+/* .export("path" [, view: :top|:front|:side]) — dispatches by file extension:
  *   .step / .stp  → STEP AP203
  *   .stl          → ASCII STL
  *   .glb          → binary glTF (GLB)
  *   .gltf         → text glTF
  *   .obj          → Wavefront OBJ
- * Defaults to STEP for any unrecognised extension. */
+ *   .svg          → SVG 2-D drawing (HLR projection)
+ *   .dxf          → DXF R12 2-D drawing (HLR projection)
+ * Defaults to STEP for any unrecognised extension.
+ *
+ * The optional `view:` keyword (Symbol) is used only by SVG and DXF:
+ *   :top   (default) — looking down −Z axis
+ *   :front           — looking along −Y axis
+ *   :side            — looking along +X axis */
 static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     const char* path;
-    mrb_get_args(mrb, "z", &path);
+    mrb_value opts = mrb_nil_value();
+    mrb_get_args(mrb, "z|H", &path, &opts);
 
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
+
+    /* Extract optional view: keyword (default "top"). */
+    const char* view = "top";
+    if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
+        mrb_value vv = mrb_hash_fetch(mrb, opts,
+                                      mrb_symbol_value(mrb_intern_lit(mrb, "view")),
+                                      mrb_nil_value());
+        if (mrb_symbol_p(vv))
+            view = mrb_sym_name(mrb, mrb_symbol(vv));
+    }
 
     /* Find the last '.' to determine the extension. */
     const char* dot = strrchr(path, '.');
@@ -361,6 +385,10 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
         rrcad_shape_export_gltf(ptr, path, &err);
     } else if (dot && (strcasecmp(dot, ".obj") == 0)) {
         rrcad_shape_export_obj(ptr, path, &err);
+    } else if (dot && (strcasecmp(dot, ".svg") == 0)) {
+        rrcad_shape_export_svg(ptr, path, view, &err);
+    } else if (dot && (strcasecmp(dot, ".dxf") == 0)) {
+        rrcad_shape_export_dxf(ptr, path, view, &err);
     } else {
         /* Default: STEP (.step, .stp, or unknown extension) */
         rrcad_shape_export_step(ptr, path, &err);

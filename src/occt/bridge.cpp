@@ -127,6 +127,13 @@
 // --- OCCT: Phase 8 Tier 2 — manufacturing features ---
 #include <BRepOffsetAPI_DraftAngle.hxx>
 
+// --- OCCT: Phase 8 Tier 4 — 2-D drawing output ---
+#include <HLRAlgo_Projector.hxx>
+#include <HLRBRep_PolyAlgo.hxx>
+#include <HLRBRep_PolyHLRToShape.hxx>
+#include <fstream>
+#include <iomanip>
+
 // --- OCCT: Phase 7 Tier 3 — surface modeling ---
 #include <BRepAlgoAPI_Section.hxx>
 #include <BRepFill.hxx>
@@ -2448,6 +2455,200 @@ std::unique_ptr<OcctShape> make_helix(double radius, double pitch, double height
     TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(curve).Edge();
     TopoDS_Wire wire = BRepBuilderAPI_MakeWire(edge).Wire();
     return wrap(wire);
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8 Tier 4 — 2-D drawing output (SVG + DXF)
+//
+// Both functions share the same HLR pipeline:
+//   1. Tessellate the shape (required by HLRBRep_PolyAlgo).
+//   2. Set an orthographic projector for the requested view direction.
+//   3. Run HLRBRep_PolyAlgo::Update() to compute visible/silhouette edges.
+//   4. Discretise each projected edge into a polyline.
+//
+// The output edges from HLRBRep_PolyHLRToShape are in the HLR view plane
+// (Z = 0); their X and Y values are the 2-D drawing coordinates.
+//
+// View conventions (matching standard engineering drawing orientation):
+//   "top"   — gp_Ax2 with Z-dir = (0,0,1), X-dir = (1,0,0)
+//             → 2-D coords are (world.X, world.Y)
+//   "front" — gp_Ax2 with Z-dir = (0,-1,0), X-dir = (1,0,0)
+//             → 2-D coords are (world.X, world.Z)
+//   "side"  — gp_Ax2 with Z-dir = (1,0,0), X-dir = (0,1,0)
+//             → 2-D coords are (world.Y, world.Z)
+// ---------------------------------------------------------------------------
+
+// Number of parametric samples per projected edge when building polylines.
+// 32 gives smooth curves while keeping SVG/DXF files compact.
+static const int HLR_SAMPLES_PER_EDGE = 32;
+
+// Project the shape onto the chosen view plane, return all visible polylines
+// as a vector of (x, y) point lists.
+static std::vector<std::vector<std::pair<double, double>>> hlr_project(const OcctShape& shape,
+                                                                       const std::string& view) {
+    // Tessellate (required before loading into PolyAlgo).
+    BRepMesh_IncrementalMesh mesher(shape.get(), 0.05, false, 0.5, true);
+    mesher.Perform();
+
+    // Build orthographic projector for the requested view.
+    gp_Ax2 cs;
+    if (view == "front") {
+        // Looking along −Y; X→right in drawing, Z→up in drawing.
+        cs = gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(0, -1, 0), gp_Dir(1, 0, 0));
+    } else if (view == "side") {
+        // Looking along +X; Y→right in drawing, Z→up in drawing.
+        cs = gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(1, 0, 0), gp_Dir(0, 1, 0));
+    } else {
+        // "top" (default): looking along −Z; X→right, Y→up in drawing.
+        cs = gp_Ax2(gp_Pnt(0, 0, 0), gp_Dir(0, 0, 1), gp_Dir(1, 0, 0));
+    }
+
+    Handle(HLRBRep_PolyAlgo) algo = new HLRBRep_PolyAlgo();
+    algo->Projector(HLRAlgo_Projector(cs));
+    algo->Load(shape.get());
+    algo->Update();
+
+    HLRBRep_PolyHLRToShape gen;
+    gen.Update(algo);
+
+    // Collect projected edges: sharp visible + silhouette outline.
+    std::vector<std::vector<std::pair<double, double>>> polylines;
+
+    auto process_compound = [&](const TopoDS_Shape& compound) {
+        if (compound.IsNull())
+            return;
+        TopExp_Explorer eexp(compound, TopAbs_EDGE);
+        for (; eexp.More(); eexp.Next()) {
+            BRepAdaptor_Curve curve(TopoDS::Edge(eexp.Current()));
+            double t0 = curve.FirstParameter();
+            double t1 = curve.LastParameter();
+            if (t1 <= t0)
+                continue;
+
+            std::vector<std::pair<double, double>> pts;
+            pts.reserve(HLR_SAMPLES_PER_EDGE + 1);
+            for (int i = 0; i <= HLR_SAMPLES_PER_EDGE; ++i) {
+                double t = t0 + (t1 - t0) * i / HLR_SAMPLES_PER_EDGE;
+                gp_Pnt p = curve.Value(t);
+                pts.emplace_back(p.X(), p.Y());
+            }
+            polylines.push_back(std::move(pts));
+        }
+    };
+
+    process_compound(gen.VCompound());
+    process_compound(gen.OutLineVCompound());
+
+    if (polylines.empty())
+        throw std::runtime_error("export_svg/dxf: no visible edges found — "
+                                 "shape may be degenerate or face the wrong direction");
+    return polylines;
+}
+
+// ---------------------------------------------------------------------------
+// SVG export
+// ---------------------------------------------------------------------------
+void export_svg(const OcctShape& shape, rust::Str path, rust::Str view) {
+    std::string path_str(path.data(), path.size());
+    std::string view_str(view.data(), view.size());
+
+    auto polylines = hlr_project(shape, view_str);
+
+    // Compute axis-aligned bounding box in drawing coordinates.
+    double xmin = 1e30, xmax = -1e30, ymin = 1e30, ymax = -1e30;
+    for (auto& pl : polylines) {
+        for (auto& [x, y] : pl) {
+            xmin = std::min(xmin, x);
+            xmax = std::max(xmax, x);
+            ymin = std::min(ymin, y);
+            ymax = std::max(ymax, y);
+        }
+    }
+
+    const double margin = 5.0;
+    double w = (xmax - xmin) + 2.0 * margin;
+    double h = (ymax - ymin) + 2.0 * margin;
+    // SVG viewBox origin: left edge = xmin−margin, top edge = −(ymax+margin)
+    // (SVG Y increases downward; drawing Y increases upward — hence the negation).
+    double vb_x = xmin - margin;
+    double vb_y = -(ymax + margin);
+
+    std::ofstream f(path_str);
+    if (!f.is_open())
+        throw std::runtime_error("export_svg: cannot open file: " + path_str);
+
+    f << std::fixed << std::setprecision(4);
+    f << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+    f << "<svg xmlns=\"http://www.w3.org/2000/svg\"";
+    f << " width=\"" << w << "\" height=\"" << h << "\"";
+    f << " viewBox=\"" << vb_x << " " << vb_y << " " << w << " " << h << "\">\n";
+    f << "  <!-- Generated by rrcad — view: " << view_str << " -->\n";
+    f << "  <g stroke=\"black\" stroke-width=\"0.3\" fill=\"none\"";
+    f << " stroke-linecap=\"round\" stroke-linejoin=\"round\">\n";
+
+    for (auto& pts : polylines) {
+        if (pts.size() < 2)
+            continue;
+        f << "    <polyline points=\"";
+        for (auto& [x, y] : pts) {
+            // Negate Y: drawing Y-up → SVG Y-down.
+            f << x << "," << -y << " ";
+        }
+        f << "\"/>\n";
+    }
+
+    f << "  </g>\n</svg>\n";
+    if (!f.good())
+        throw std::runtime_error("export_svg: write error on file: " + path_str);
+}
+
+// ---------------------------------------------------------------------------
+// DXF export (ASCII DXF R12 — universally supported)
+//
+// Each polyline segment is written as a LINE entity.  DXF uses Y-up
+// coordinates (standard math / CAD convention) so no Y-flip is applied.
+// ---------------------------------------------------------------------------
+void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view) {
+    std::string path_str(path.data(), path.size());
+    std::string view_str(view.data(), view.size());
+
+    auto polylines = hlr_project(shape, view_str);
+
+    std::ofstream f(path_str);
+    if (!f.is_open())
+        throw std::runtime_error("export_dxf: cannot open file: " + path_str);
+
+    f << std::fixed << std::setprecision(6);
+
+    // Minimal DXF R12 header.
+    f << "  0\nSECTION\n  2\nHEADER\n";
+    f << "  9\n$ACADVER\n  1\nAC1009\n"; // AutoCAD R12
+    f << "  0\nENDSEC\n";
+
+    // ENTITIES section: one LINE entity per polyline segment.
+    f << "  0\nSECTION\n  2\nENTITIES\n";
+
+    for (auto& pts : polylines) {
+        for (std::size_t i = 0; i + 1 < pts.size(); ++i) {
+            auto [x1, y1] = pts[i];
+            auto [x2, y2] = pts[i + 1];
+            // Skip zero-length degenerate segments.
+            if (std::abs(x2 - x1) < 1e-9 && std::abs(y2 - y1) < 1e-9)
+                continue;
+            f << "  0\nLINE\n";
+            f << "  8\n0\n"; // layer "0"
+            f << " 10\n" << x1 << "\n";
+            f << " 20\n" << y1 << "\n";
+            f << " 30\n0.0\n"; // Z1 = 0
+            f << " 11\n" << x2 << "\n";
+            f << " 21\n" << y2 << "\n";
+            f << " 31\n0.0\n"; // Z2 = 0
+        }
+    }
+
+    f << "  0\nENDSEC\n  0\nEOF\n";
+    if (!f.good())
+        throw std::runtime_error("export_dxf: write error on file: " + path_str);
 }
 
 } // namespace rrcad

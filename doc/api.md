@@ -360,6 +360,8 @@ let section = Shape::make_box(10.0, 10.0, 10.0)?.slice("xy", 5.0)?;
 | `.export_gltf(path: &str, linear_deflection: f64) -> Result<()>` | glTF 2.0 (text JSON + companion `.bin`). `linear_deflection` controls tessellation quality (e.g. `0.1` for 0.1 mm). |
 | `.export_glb(path: &str, linear_deflection: f64) -> Result<()>` | Binary glTF (GLB). Single self-contained file; used by the live preview server. |
 | `.export_obj(path: &str, linear_deflection: f64) -> Result<()>` | Wavefront OBJ text format via `RWObj_CafWriter` (`TKDEOBJ`). Writes a companion `.mtl` material file alongside the `.obj`. |
+| `.export_svg(path: &str, view: &str) -> Result<()>` | SVG 2-D drawing. `view` is `"top"` (default), `"front"`, or `"side"`. Uses `HLRBRep_PolyAlgo` + `HLRBRep_PolyHLRToShape`. |
+| `.export_dxf(path: &str, view: &str) -> Result<()>` | DXF R12 ASCII drawing. Same `view` options as `export_svg`. |
 
 ```rust
 part.export_step("/tmp/part.step")?;
@@ -667,7 +669,9 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `.distance_to(other)` | Minimum clearance distance to `other` shape (Float). Returns `0.0` when shapes overlap or touch. Uses `BRepExtrema_DistShapeShape`. |
 | `.inertia` | Mass moments of inertia as a Hash `{ixx:, iyy:, izz:, ixy:, ixz:, iyz:}`. Computed by `BRepGProp::VolumeProperties` + `MatrixOfInertia`. |
 | `.min_thickness` | Minimum wall thickness of a Solid or Shell (Float). Uses `IntCurvesFace_ShapeIntersector` ray-casting: shoots a ray inward from each face centroid along the face normal; returns the shortest non-trivial hit distance. Raises `ArgumentError` for non-solid/non-shell shapes. |
-| `.export("out.step")` | Write file; format determined by extension: `.step`/`.stp` → STEP, `.stl` → STL, `.glb` → GLB, `.gltf` → glTF, `.obj` → OBJ |
+| `.export("out.step")` | Write file; format determined by extension: `.step`/`.stp` → STEP, `.stl` → STL, `.glb` → GLB, `.gltf` → glTF, `.obj` → OBJ, `.svg` → SVG 2-D drawing, `.dxf` → DXF R12 2-D drawing |
+| `.export("out.svg", view: :top\|:front\|:side)` | SVG 2-D drawing via `HLRBRep_PolyAlgo` hidden-line removal. `:top` (default) looks down −Z; `:front` looks along −Y; `:side` looks along +X. Outputs `<polyline>` elements with Y-down SVG coordinates. |
+| `.export("out.dxf", view: :top\|:front\|:side)` | DXF R12 ASCII drawing via the same HLR pipeline. Outputs `LINE` entities with Y-up CAD coordinates. |
 
 ---
 

@@ -75,6 +75,7 @@ fn main() {
         "TKDEGLTF",
         "TKDEOBJ", // RWObj_CafWriter — Wavefront OBJ export
         "TKRWMesh",
+        "TKHLR", // HLRBRep_PolyAlgo — hidden-line removal for SVG/DXF export
     ] {
         println!("cargo:rustc-link-lib={lib}");
     }

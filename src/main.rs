@@ -63,7 +63,10 @@ Sub-shape selectors          (return an Array of Shapes)
   s.vertices(:all)          all unique vertices
 
 Export
-  shape.export(\"out.step\")  write STEP / STL / GLB / OBJ (by extension)
+  shape.export(\"out.step\")             write STEP / STL / GLB / OBJ (by extension)
+  shape.export(\"out.svg\")              2-D SVG drawing, top view (HLR projection)
+  shape.export(\"out.svg\", view: :front) front or side view
+  shape.export(\"out.dxf\")              DXF R12 drawing (same view options)
 
 Patterns
   linear_pattern(s,n,[dx,dy,dz]) n copies translated along vector

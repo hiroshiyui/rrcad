@@ -417,4 +417,19 @@ void export_glb(const OcctShape& shape, rust::Str path, double linear_deflection
 // OBJ — Wavefront OBJ text format via RWObj_CafWriter (OCCT 7.6+).
 void export_obj(const OcctShape& shape, rust::Str path, double linear_deflection);
 
+// --- Phase 8 Tier 4: 2-D drawing output ---
+//
+// export_svg / export_dxf project the shape's visible edges onto a flat drawing
+// plane using HLRBRep_PolyAlgo (polygon-based hidden-line removal).
+//
+// `view` selects the projection direction:
+//   "top"   — looking down the −Z axis; drawing plane is XY.
+//   "front" — looking along the −Y axis; drawing plane is XZ.
+//   "side"  — looking along the +X axis; drawing plane is YZ.
+//
+// SVG uses Y-down coordinates (standard for SVG/HTML).
+// DXF uses Y-up coordinates (standard CAD convention).
+void export_svg(const OcctShape& shape, rust::Str path, rust::Str view);
+void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view);
+
 } // namespace rrcad

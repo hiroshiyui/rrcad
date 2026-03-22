@@ -264,6 +264,10 @@ mod ffi {
         fn export_gltf(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
         fn export_glb(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
         fn export_obj(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
+
+        // Phase 8 Tier 4: 2-D drawing output.
+        fn export_svg(shape: &OcctShape, path: &str, view: &str) -> Result<()>;
+        fn export_dxf(shape: &OcctShape, path: &str, view: &str) -> Result<()>;
     }
 }
 
@@ -926,6 +930,18 @@ impl Shape {
     /// the `.obj` file plus a companion `.mtl` material file in the same directory.
     pub fn export_obj(&self, path: &str, linear_deflection: f64) -> Result<(), String> {
         ffi::export_obj(&self.inner, path, linear_deflection).map_err(|e| e.to_string())
+    }
+
+    /// Export to SVG using hidden-line removal (HLRBRep_PolyAlgo).
+    /// `view` is `"top"` (default), `"front"`, or `"side"`.
+    pub fn export_svg(&self, path: &str, view: &str) -> Result<(), String> {
+        ffi::export_svg(&self.inner, path, view).map_err(|e| e.to_string())
+    }
+
+    /// Export to DXF R12 using hidden-line removal (HLRBRep_PolyAlgo).
+    /// `view` is `"top"` (default), `"front"`, or `"side"`.
+    pub fn export_dxf(&self, path: &str, view: &str) -> Result<(), String> {
+        ffi::export_dxf(&self.inner, path, view).map_err(|e| e.to_string())
     }
 }
 
