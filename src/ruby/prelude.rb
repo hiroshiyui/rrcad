@@ -212,6 +212,40 @@ class Shape
   def slice(**_kwargs)
     raise NotImplementedError, "Shape#slice is not yet implemented (Phase 7 Tier 3)"
   end
+
+  # --- Core Part Design — Phase 8 Tier 1 -----------------------------------
+
+  # Extrude the sketch returned by the block onto +face_sel+ and fuse with self.
+  # +face_sel+ may be a Symbol (:top, :bottom, ...) or a Shape (from .faces).
+  # +height:+ controls the extrusion distance.
+  #
+  #   body.pad(:top, height: 5) { rect(4, 4) }
+  #
+  # Overridden by the native implementation after the prelude runs.
+  def pad(_face_sel, height: 1.0, &_block)
+    raise NotImplementedError, "Shape#pad is not yet implemented (Phase 8 Tier 1)"
+  end
+
+  # Cut a pocket into +self+ using the sketch returned by the block.
+  # +face_sel+ selects the face to start from; the sketch is extruded
+  # along -normal by +depth:.
+  #
+  #   body.pocket(:top, depth: 3) { circle(2) }
+  #
+  # Overridden by the native implementation after the prelude runs.
+  def pocket(_face_sel, depth: 1.0, &_block)
+    raise NotImplementedError, "Shape#pocket is not yet implemented (Phase 8 Tier 1)"
+  end
+
+  # Fillet all corner vertices of a 2D Wire or Face profile.
+  # Uses BRepFilletAPI_MakeFillet2d; non-corner vertices are silently skipped.
+  #
+  #   rect(10, 10).fillet_wire(2.0)   # rounded rectangle
+  #
+  # Overridden by the native implementation after the prelude runs.
+  def fillet_wire(_radius)
+    raise NotImplementedError, "Shape#fillet_wire is not yet implemented (Phase 8 Tier 1)"
+  end
 end
 
 # ---------------------------------------------------------------------------
@@ -315,6 +349,16 @@ module Kernel
   # fill_surface(boundary_wire) — smooth surface filling a closed wire boundary.  Phase 7 Tier 3.
   def fill_surface(_boundary_wire)
     raise NotImplementedError, "fill_surface() is not yet implemented (Phase 7 Tier 3)"
+  end
+
+  # datum_plane — Phase 8 Tier 1 reference plane.
+  # Constructs a finite planar Face from origin, normal, and X direction.
+  #
+  #   datum_plane(origin: [0, 0, 5], normal: [0, 0, 1], x_dir: [1, 0, 0])
+  #
+  # Overridden by the native implementation after the prelude runs.
+  def datum_plane(origin:, normal:, x_dir:)
+    raise NotImplementedError, "datum_plane() is not yet implemented (Phase 8 Tier 1)"
   end
 
   # Spline profiles — overridden natively after prelude runs.

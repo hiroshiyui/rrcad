@@ -189,6 +189,15 @@ extern void* rrcad_fill_surface(void* ptr, const char** error_out);
 extern void* rrcad_shape_slice(void* ptr, const char* plane, double offset,
                                const char** error_out);
 
+/* Phase 8 Tier 1 — Core Part Design */
+extern void* rrcad_shape_pad(void* body, void* face, void* sketch, double height,
+                             const char** error_out);
+extern void* rrcad_shape_pocket(void* body, void* face, void* sketch, double depth,
+                                const char** error_out);
+extern void* rrcad_shape_fillet_wire(void* ptr, double radius, const char** error_out);
+extern void* rrcad_datum_plane(double ox, double oy, double oz, double nx, double ny, double nz,
+                               double xx, double xy, double xz, const char** error_out);
+
 /* mRuby data type descriptor — name appears in TypeError messages. */
 static void shape_dfree(mrb_state* mrb, void* ptr) {
     (void)mrb;
@@ -1660,6 +1669,187 @@ static mrb_value mrb_rrcad_shape_slice(mrb_state* mrb, mrb_value self) {
 }
 
 /* =========================================================================
+ * Phase 8 Tier 1: Core Part Design
+ * =========================================================================
+ */
+
+/* Helper: resolve a face selector (Symbol → first matching face, Shape → itself).
+ * Returns a raw Shape pointer (NOT a newly-allocated Shape — may be borrowed
+ * from `body_ptr`).  Raises a Ruby exception on failure. */
+static void* resolve_face(mrb_state* mrb, void* body_ptr, mrb_value sel_val) {
+    if (mrb_data_p(sel_val)) {
+        /* Already a native Shape — use it directly. */
+        return DATA_PTR(sel_val);
+    }
+
+    /* Accept a Symbol (:top, :bottom, :side, :all, ">Z", etc.) */
+    const char* sel = NULL;
+    if (mrb_symbol_p(sel_val)) {
+        sel = mrb_sym_name(mrb, mrb_symbol(sel_val));
+    } else if (mrb_string_p(sel_val)) {
+        sel = mrb_str_to_cstr(mrb, sel_val);
+    } else {
+        mrb_raise(mrb, E_TYPE_ERROR, "face selector must be a Symbol, String, or Shape");
+    }
+
+    const char* err = NULL;
+    int count = rrcad_shape_faces_count(body_ptr, sel, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    if (count < 1)
+        mrb_raisef(mrb, E_RUNTIME_ERROR, "no faces matching '%s'", sel);
+
+    void* face_ptr = rrcad_shape_faces_get(body_ptr, sel, 0, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return face_ptr;
+}
+
+/* .pad(face_sel, height:) { sketch } — extrude sketch on face, fuse with self. */
+static mrb_value mrb_rrcad_shape_pad(mrb_state* mrb, mrb_value self) {
+    void* body_ptr = DATA_PTR(self);
+    require_native_ptr(mrb, body_ptr);
+
+    mrb_value face_sel;
+    mrb_value kwargs = mrb_nil_value();
+    mrb_value block  = mrb_nil_value();
+    mrb_get_args(mrb, "o|H&", &face_sel, &kwargs, &block);
+
+    /* Extract height: keyword (required). */
+    if (mrb_nil_p(kwargs))
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "pad requires height: keyword");
+    mrb_value height_val =
+        mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(mrb_intern_lit(mrb, "height")),
+                       mrb_nil_value());
+    if (mrb_nil_p(height_val))
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "pad requires height: keyword");
+    double height = mrb_float_p(height_val)   ? (double)mrb_float(height_val)
+                    : mrb_integer_p(height_val) ? (double)mrb_integer(height_val)
+                                                : 1.0;
+
+    /* Evaluate the block to obtain the sketch shape. */
+    if (mrb_nil_p(block))
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "pad requires a block { sketch }");
+    mrb_value sketch_val = mrb_yield(mrb, block, mrb_nil_value());
+    if (mrb->exc)
+        return mrb_nil_value(); /* let the exception propagate */
+    void* sketch_ptr = shape_ptr(mrb, sketch_val);
+    require_native_ptr(mrb, sketch_ptr);
+
+    /* Resolve face selector. */
+    void* face_ptr = resolve_face(mrb, body_ptr, face_sel);
+    require_native_ptr(mrb, face_ptr);
+
+    const char* err = NULL;
+    void* result = rrcad_shape_pad(body_ptr, face_ptr, sketch_ptr, height, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* .pocket(face_sel, depth:) { sketch } — extrude sketch inward, cut from self. */
+static mrb_value mrb_rrcad_shape_pocket(mrb_state* mrb, mrb_value self) {
+    void* body_ptr = DATA_PTR(self);
+    require_native_ptr(mrb, body_ptr);
+
+    mrb_value face_sel;
+    mrb_value kwargs = mrb_nil_value();
+    mrb_value block  = mrb_nil_value();
+    mrb_get_args(mrb, "o|H&", &face_sel, &kwargs, &block);
+
+    /* Extract depth: keyword (required). */
+    if (mrb_nil_p(kwargs))
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "pocket requires depth: keyword");
+    mrb_value depth_val =
+        mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(mrb_intern_lit(mrb, "depth")),
+                       mrb_nil_value());
+    if (mrb_nil_p(depth_val))
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "pocket requires depth: keyword");
+    double depth = mrb_float_p(depth_val)   ? (double)mrb_float(depth_val)
+                   : mrb_integer_p(depth_val) ? (double)mrb_integer(depth_val)
+                                              : 1.0;
+
+    /* Evaluate the block to obtain the sketch shape. */
+    if (mrb_nil_p(block))
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "pocket requires a block { sketch }");
+    mrb_value sketch_val = mrb_yield(mrb, block, mrb_nil_value());
+    if (mrb->exc)
+        return mrb_nil_value(); /* let the exception propagate */
+    void* sketch_ptr = shape_ptr(mrb, sketch_val);
+    require_native_ptr(mrb, sketch_ptr);
+
+    /* Resolve face selector. */
+    void* face_ptr = resolve_face(mrb, body_ptr, face_sel);
+    require_native_ptr(mrb, face_ptr);
+
+    const char* err = NULL;
+    void* result = rrcad_shape_pocket(body_ptr, face_ptr, sketch_ptr, depth, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* .fillet_wire(radius) — fillet all corners of a 2D Wire or Face profile. */
+static mrb_value mrb_rrcad_shape_fillet_wire(mrb_state* mrb, mrb_value self) {
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+
+    mrb_float radius;
+    mrb_get_args(mrb, "f", &radius);
+
+    const char* err = NULL;
+    void* result = rrcad_shape_fillet_wire(ptr, (double)radius, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* datum_plane(origin: [ox, oy, oz], normal: [nx, ny, nz], x_dir: [xx, xy, xz])
+ * Construct a finite reference plane (Face) for use in pad/pocket or cross-sections. */
+static mrb_value mrb_rrcad_datum_plane(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value kwargs = mrb_nil_value();
+    mrb_get_args(mrb, "H", &kwargs);
+
+    /* Helper: extract a [x, y, z] array from a keyword. */
+    mrb_sym origin_key  = mrb_intern_lit(mrb, "origin");
+    mrb_sym normal_key  = mrb_intern_lit(mrb, "normal");
+    mrb_sym x_dir_key   = mrb_intern_lit(mrb, "x_dir");
+
+    mrb_value orig_val = mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(origin_key), mrb_nil_value());
+    mrb_value norm_val = mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(normal_key), mrb_nil_value());
+    mrb_value xdir_val = mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(x_dir_key), mrb_nil_value());
+
+    if (mrb_nil_p(orig_val) || mrb_nil_p(norm_val) || mrb_nil_p(xdir_val))
+        mrb_raise(mrb, E_ARGUMENT_ERROR,
+                  "datum_plane requires origin:, normal:, and x_dir: arrays");
+
+    /* Extract three floats from a Ruby array. */
+#define EXTRACT3(arr, a, b, c)                                                  \
+    do {                                                                        \
+        mrb_value _a = mrb_ary_ref(mrb, (arr), 0);                             \
+        mrb_value _b = mrb_ary_ref(mrb, (arr), 1);                             \
+        mrb_value _c = mrb_ary_ref(mrb, (arr), 2);                             \
+        (a) = mrb_float_p(_a) ? mrb_float(_a) : (mrb_float)mrb_integer(_a);    \
+        (b) = mrb_float_p(_b) ? mrb_float(_b) : (mrb_float)mrb_integer(_b);    \
+        (c) = mrb_float_p(_c) ? mrb_float(_c) : (mrb_float)mrb_integer(_c);    \
+    } while (0)
+
+    mrb_float ox, oy, oz, nx, ny, nz, xx, xy, xz;
+    EXTRACT3(orig_val, ox, oy, oz);
+    EXTRACT3(norm_val, nx, ny, nz);
+    EXTRACT3(xdir_val, xx, xy, xz);
+#undef EXTRACT3
+
+    const char* err = NULL;
+    void* result = rrcad_datum_plane((double)ox, (double)oy, (double)oz, (double)nx, (double)ny,
+                                     (double)nz, (double)xx, (double)xy, (double)xz, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* =========================================================================
  * rrcad_register_shape_class
  *
  * Called from Rust (MrubyVm::new) after the DSL prelude has been evaluated.
@@ -1789,4 +1979,14 @@ void rrcad_register_shape_class(mrb_state* mrb) {
                       MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "slice", mrb_rrcad_shape_slice,
                       MRB_ARGS_KEY(2, 0)); /* plane:, z:/y:/x: */
+
+    /* Phase 8 Tier 1: Core Part Design */
+    mrb_define_method(mrb, shape_class, "pad", mrb_rrcad_shape_pad,
+                      MRB_ARGS_REQ(1) | MRB_ARGS_KEY(1, 0) | MRB_ARGS_BLOCK()); /* (sel, height:) {} */
+    mrb_define_method(mrb, shape_class, "pocket", mrb_rrcad_shape_pocket,
+                      MRB_ARGS_REQ(1) | MRB_ARGS_KEY(1, 0) | MRB_ARGS_BLOCK()); /* (sel, depth:) {} */
+    mrb_define_method(mrb, shape_class, "fillet_wire", mrb_rrcad_shape_fillet_wire,
+                      MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, mrb->kernel_module, "datum_plane", mrb_rrcad_datum_plane,
+                      MRB_ARGS_KEY(3, 0)); /* origin:, normal:, x_dir: */
 }

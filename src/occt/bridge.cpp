@@ -114,6 +114,11 @@
 #include <Precision.hxx>
 #include <TColgp_Array2OfPnt.hxx>
 
+// --- OCCT: Phase 8 Tier 1 — part design ---
+#include <BRepFilletAPI_MakeFillet2d.hxx>
+#include <ChFi2d_ConstructionError.hxx>
+#include <gp_Ax3.hxx>
+
 // --- OCCT: Phase 7 Tier 3 — surface modeling ---
 #include <BRepAlgoAPI_Section.hxx>
 #include <BRepFill.hxx>
@@ -1905,6 +1910,215 @@ std::unique_ptr<OcctShape> shape_slice(const OcctShape& shape, rust::Str plane, 
         throw std::runtime_error("slice: BRepAlgoAPI_Section failed");
 
     return wrap(section.Shape());
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8 Tier 1: Core Part Design
+// ---------------------------------------------------------------------------
+
+// If shape is a TopoDS_Compound that wraps exactly one Solid (OCCT 7.6+
+// boolean operations often do this), return that Solid.  Otherwise return
+// the shape unchanged so callers always get the most specific type.
+static TopoDS_Shape unwrap_single_solid(const TopoDS_Shape& shape) {
+    if (shape.ShapeType() != TopAbs_COMPOUND)
+        return shape;
+    TopoDS_Iterator iter(shape);
+    if (!iter.More())
+        return shape; // empty compound
+    TopoDS_Shape first = iter.Value();
+    iter.Next();
+    if (!iter.More() && first.ShapeType() == TopAbs_SOLID)
+        return first; // single-solid compound → return the solid directly
+    return shape;     // multiple sub-shapes or non-solid: keep as compound
+}
+
+// Build the coordinate system of a face: origin at face centroid, Z = outward
+// normal, X = first in-plane direction (Gram-Schmidt from global X or Y).
+static gp_Ax3 get_face_ax3(const TopoDS_Face& face) {
+    // Centroid via surface properties.
+    GProp_GProps props;
+    BRepGProp::SurfaceProperties(face, props);
+    gp_Pnt centroid = props.CentreOfMass();
+
+    // Normal via parametric D1 at mid-parameter.
+    BRepAdaptor_Surface surf(face);
+    double u_mid = 0.5 * (surf.FirstUParameter() + surf.LastUParameter());
+    double v_mid = 0.5 * (surf.FirstVParameter() + surf.LastVParameter());
+    gp_Pnt pt;
+    gp_Vec du, dv;
+    surf.D1(u_mid, v_mid, pt, du, dv);
+    gp_Dir normal(du.Crossed(dv));
+
+    // Flip if the face orientation is reversed (OCCT convention).
+    if (face.Orientation() == TopAbs_REVERSED)
+        normal.Reverse();
+
+    // Choose the X direction: project global X onto the face plane.
+    // Fall back to global Y when the face normal is nearly parallel to global X.
+    gp_Dir x_cand(1.0, 0.0, 0.0);
+    if (std::abs(normal.Dot(x_cand)) > 0.9)
+        x_cand = gp_Dir(0.0, 1.0, 0.0);
+
+    // Gram-Schmidt: subtract the component along normal.
+    gp_Vec x_proj = gp_Vec(x_cand) - gp_Vec(normal) * normal.Dot(x_cand);
+    gp_Dir x_dir(x_proj);
+
+    return gp_Ax3(centroid, normal, x_dir);
+}
+
+// Build the gp_Trsf that moves the standard XY plane (origin=(0,0,0),
+// normal=(0,0,1)) onto the target face ax3.
+//
+// gp_Trsf::SetTransformation(ax3) creates the LOCAL-to-WORLD transform of ax3,
+// i.e. it maps FROM ax3's local frame TO the standard world frame.  Inverting
+// gives WORLD-to-ax3, which — when applied to a sketch already in world/standard
+// coords — repositions it so that world (0,0,0) lands at ax3.Location() (the
+// face centroid) and the sketch plane aligns with the face.
+static gp_Trsf sketch_to_face_trsf(const gp_Ax3& face_ax3) {
+    gp_Trsf trsf;
+    trsf.SetTransformation(face_ax3); // ax3-local → world
+    trsf.Invert();                    // world → ax3-local (places sketch on face)
+    return trsf;
+}
+
+// Small overlap offset used in pad/pocket to avoid the "touching faces" problem.
+// BRepAlgoAPI_Fuse/Cut may return a compound of disjoint shapes when inputs only
+// touch at a common face boundary.  Offsetting the prism by this amount into the
+// body creates proper topological overlap so the boolean always succeeds.
+static constexpr double PAD_OVERLAP = 1e-3;
+
+std::unique_ptr<OcctShape> shape_pad(const OcctShape& body, const OcctShape& face_ref,
+                                     const OcctShape& sketch, double height) {
+    if (face_ref.get().ShapeType() != TopAbs_FACE)
+        throw std::runtime_error("pad: face_ref must be a Face");
+
+    const TopoDS_Face& face = TopoDS::Face(face_ref.get());
+    gp_Ax3 ax3 = get_face_ax3(face);
+
+    // Transform the sketch from the XY plane onto the target face.
+    gp_Trsf trsf = sketch_to_face_trsf(ax3);
+    BRepBuilderAPI_Transform xform(sketch.get(), trsf);
+    xform.Build();
+    if (!xform.IsDone())
+        throw std::runtime_error("pad: sketch transform failed");
+
+    // Shift the sketch PAD_OVERLAP into the body so that BRepAlgoAPI_Fuse sees
+    // proper topological overlap rather than a boundary-touching situation.
+    gp_Dir n = ax3.Direction();
+    gp_Trsf overlap_trsf;
+    overlap_trsf.SetTranslation(
+        gp_Vec(-n.X() * PAD_OVERLAP, -n.Y() * PAD_OVERLAP, -n.Z() * PAD_OVERLAP));
+    BRepBuilderAPI_Transform shifted(xform.Shape(), overlap_trsf);
+    shifted.Build();
+
+    // Extrude by (height + PAD_OVERLAP) so the top of the pad is at the
+    // desired height above the original face.
+    gp_Vec extrude_dir(n.X() * (height + PAD_OVERLAP), n.Y() * (height + PAD_OVERLAP),
+                       n.Z() * (height + PAD_OVERLAP));
+    BRepPrimAPI_MakePrism extruder(shifted.Shape(), extrude_dir);
+    extruder.Build();
+    if (!extruder.IsDone())
+        throw std::runtime_error("pad: BRepPrimAPI_MakePrism failed");
+
+    // Fuse the extruded prism with the body.
+    BRepAlgoAPI_Fuse fuser(body.get(), extruder.Shape());
+    fuser.Build();
+    if (!fuser.IsDone())
+        throw std::runtime_error("pad: BRepAlgoAPI_Fuse failed");
+
+    // OCCT 7.6+ may wrap the result in a single-solid Compound; unwrap it.
+    return wrap(unwrap_single_solid(fuser.Shape()));
+}
+
+std::unique_ptr<OcctShape> shape_pocket(const OcctShape& body, const OcctShape& face_ref,
+                                        const OcctShape& sketch, double depth) {
+    if (face_ref.get().ShapeType() != TopAbs_FACE)
+        throw std::runtime_error("pocket: face_ref must be a Face");
+
+    const TopoDS_Face& face = TopoDS::Face(face_ref.get());
+    gp_Ax3 ax3 = get_face_ax3(face);
+
+    // Transform the sketch from the XY plane onto the target face.
+    gp_Trsf trsf = sketch_to_face_trsf(ax3);
+    BRepBuilderAPI_Transform xform(sketch.get(), trsf);
+    xform.Build();
+    if (!xform.IsDone())
+        throw std::runtime_error("pocket: sketch transform failed");
+
+    // Shift the sketch PAD_OVERLAP outside the body (in +normal direction) so
+    // that the pocket tool (prism) extends fully through the face into the body.
+    gp_Dir n = ax3.Direction();
+    gp_Trsf overlap_trsf;
+    overlap_trsf.SetTranslation(
+        gp_Vec(n.X() * PAD_OVERLAP, n.Y() * PAD_OVERLAP, n.Z() * PAD_OVERLAP));
+    BRepBuilderAPI_Transform shifted(xform.Shape(), overlap_trsf);
+    shifted.Build();
+
+    // Extrude along -normal by (depth + PAD_OVERLAP) to reach the desired depth.
+    gp_Vec extrude_dir(-n.X() * (depth + PAD_OVERLAP), -n.Y() * (depth + PAD_OVERLAP),
+                       -n.Z() * (depth + PAD_OVERLAP));
+    BRepPrimAPI_MakePrism extruder(shifted.Shape(), extrude_dir);
+    extruder.Build();
+    if (!extruder.IsDone())
+        throw std::runtime_error("pocket: BRepPrimAPI_MakePrism failed");
+
+    // Cut the extruded tool from the body.
+    BRepAlgoAPI_Cut cutter(body.get(), extruder.Shape());
+    cutter.Build();
+    if (!cutter.IsDone())
+        throw std::runtime_error("pocket: BRepAlgoAPI_Cut failed");
+
+    // OCCT 7.6+ may wrap the result in a single-solid Compound; unwrap it.
+    return wrap(unwrap_single_solid(cutter.Shape()));
+}
+
+std::unique_ptr<OcctShape> shape_fillet_wire(const OcctShape& profile, double radius) {
+    const TopoDS_Shape& s = profile.get();
+
+    // Accept either a Face or a Wire; build a planar face from a Wire.
+    TopoDS_Face face;
+    if (s.ShapeType() == TopAbs_FACE) {
+        face = TopoDS::Face(s);
+    } else if (s.ShapeType() == TopAbs_WIRE) {
+        BRepBuilderAPI_MakeFace mf(TopoDS::Wire(s));
+        if (!mf.IsDone())
+            throw std::runtime_error("fillet_wire: cannot build a planar face from wire");
+        face = mf.Face();
+    } else {
+        throw std::runtime_error("fillet_wire: profile must be a Wire or Face");
+    }
+
+    BRepFilletAPI_MakeFillet2d filler(face);
+
+    // Add a fillet at every vertex; non-corner vertices throw Standard_Failure
+    // (e.g. a smooth tangent point) — skip those silently.
+    TopTools_IndexedMapOfShape vmap;
+    TopExp::MapShapes(face, TopAbs_VERTEX, vmap);
+    for (int i = 1; i <= vmap.Extent(); ++i) {
+        const TopoDS_Vertex& v = TopoDS::Vertex(vmap(i));
+        try {
+            filler.AddFillet(v, radius);
+        } catch (const Standard_Failure&) {
+            // Non-corner vertex — skip.
+        }
+    }
+
+    filler.Build();
+    if (filler.Status() != ChFi2d_IsDone)
+        throw std::runtime_error("fillet_wire: BRepFilletAPI_MakeFillet2d failed");
+
+    return wrap(filler.Shape());
+}
+
+std::unique_ptr<OcctShape> make_datum_plane(double ox, double oy, double oz, double nx, double ny,
+                                            double nz, double xx, double xy, double xz) {
+    gp_Ax3 ax3(gp_Pnt(ox, oy, oz), gp_Dir(nx, ny, nz), gp_Dir(xx, xy, xz));
+    gp_Pln pln(ax3);
+    // Create a finite face: ±50 units in each in-plane direction.
+    BRepBuilderAPI_MakeFace mf(pln, -50.0, 50.0, -50.0, 50.0);
+    if (!mf.IsDone())
+        throw std::runtime_error("datum_plane: BRepBuilderAPI_MakeFace failed");
+    return wrap(mf.Shape());
 }
 
 // ---------------------------------------------------------------------------

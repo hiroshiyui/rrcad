@@ -89,6 +89,13 @@ Surface modeling
   fill_surface(wire)        smooth NURBS surface filling a closed wire
   s.slice(plane: :xy, z: d) cross-section by XY plane at z=d (also :xz/:yz)
 
+Part Design (Phase 8)
+  s.pad(face_sel, height: h) { sk }   extrude sketch on face, fuse with s
+  s.pocket(face_sel, depth: d) { sk } cut sketch pocket from s
+  s.fillet_wire(r)           round corners of a 2D Wire/Face profile
+  datum_plane(origin: [x,y,z], normal: [nx,ny,nz], x_dir: [xx,xy,xz])
+                             finite reference plane (Face) for design ops
+
 Parameters (Phase 5)
   param :name, default: val        declare a parameter (returns value)
   param :name, default: val,       same, with range validation
@@ -138,6 +145,7 @@ const TOP_LEVEL: &[&str] = &[
     "cut_all",
     "ruled_surface",
     "fill_surface",
+    "datum_plane",
     "param", // REPL control
     "help",
     "exit",
@@ -203,6 +211,10 @@ const SHAPE_METHODS: &[&str] = &[
     "validate",
     // Phase 7 Tier 3 — surface modeling
     "slice",
+    // Phase 8 Tier 1 — Core Part Design
+    "pad",
+    "pocket",
+    "fillet_wire",
     // Phase 5 — color and mating
     "color",
     "mate",

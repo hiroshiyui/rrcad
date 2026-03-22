@@ -604,7 +604,7 @@ pub unsafe extern "C" fn rrcad_shape_fuse_all(
     let shapes: Vec<&Shape> = (0..n)
         .map(|i| unsafe { &*(*ptrs.add(i) as *const Shape) })
         .collect();
-    let refs: Vec<&Shape> = shapes.iter().copied().collect();
+    let refs: Vec<&Shape> = shapes.to_vec();
     unsafe { shape_result_to_ptr(Shape::fuse_all(&refs), error_out) }
 }
 
@@ -621,7 +621,7 @@ pub unsafe extern "C" fn rrcad_shape_cut_all(
     let shapes: Vec<&Shape> = (0..n)
         .map(|i| unsafe { &*(*ptrs.add(i) as *const Shape) })
         .collect();
-    let refs: Vec<&Shape> = shapes.iter().copied().collect();
+    let refs: Vec<&Shape> = shapes.to_vec();
     unsafe { shape_result_to_ptr(base_shape.cut_all(&refs), error_out) }
 }
 
@@ -1300,6 +1300,73 @@ pub unsafe extern "C" fn rrcad_shape_is_manifold(
             -1
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8 Tier 1: Core Part Design
+// ---------------------------------------------------------------------------
+
+/// Pad: place sketch on face_ref and extrude by height, fuse with body.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_pad(
+    body_ptr: *mut c_void,
+    face_ptr: *mut c_void,
+    sketch_ptr: *mut c_void,
+    height: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let body = unsafe { &*(body_ptr as *const Shape) };
+    let face = unsafe { &*(face_ptr as *const Shape) };
+    let sketch = unsafe { &*(sketch_ptr as *const Shape) };
+    unsafe { shape_result_to_ptr(body.pad(face, sketch, height), error_out) }
+}
+
+/// Pocket: place sketch on face_ref, extrude along -normal by depth, cut from body.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_pocket(
+    body_ptr: *mut c_void,
+    face_ptr: *mut c_void,
+    sketch_ptr: *mut c_void,
+    depth: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let body = unsafe { &*(body_ptr as *const Shape) };
+    let face = unsafe { &*(face_ptr as *const Shape) };
+    let sketch = unsafe { &*(sketch_ptr as *const Shape) };
+    unsafe { shape_result_to_ptr(body.pocket(face, sketch, depth), error_out) }
+}
+
+/// Fillet all corners of a 2D Wire or Face profile with radius.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_fillet_wire(
+    ptr: *mut c_void,
+    radius: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    unsafe { shape_result_to_ptr(shape.fillet_wire(radius), error_out) }
+}
+
+/// Construct a reference plane (Face) from 9 scalars: origin, normal, x_dir.
+#[allow(clippy::too_many_arguments)]
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_datum_plane(
+    ox: f64,
+    oy: f64,
+    oz: f64,
+    nx: f64,
+    ny: f64,
+    nz: f64,
+    xx: f64,
+    xy: f64,
+    xz: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    unsafe { shape_result_to_ptr(Shape::make_datum_plane(ox, oy, oz, nx, ny, nz, xx, xy, xz), error_out) }
 }
 
 // ---------------------------------------------------------------------------

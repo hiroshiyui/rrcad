@@ -275,6 +275,28 @@ assert_eq!(Shape::make_box(10.0, 20.0, 30.0)?.validate()?, "ok");
 | `Shape::fill_surface(boundary_wire: &Shape) -> Result<Shape>` | Fills the enclosed region of a closed boundary Wire with a smooth NURBS Face via `BRepFill_Filling`. |
 | `.slice(plane: &str, offset: f64) -> Result<Shape>` | Cross-section by an axis-aligned plane (`"xy"`, `"xz"`, `"yz"`) at `offset`. Returns a compound of section edges/wires via `BRepAlgoAPI_Section`. |
 
+---
+
+### Part Design (Phase 8 Tier 1)
+
+| Method | Description |
+|--------|-------------|
+| `.pad(face_ref: &Shape, sketch: &Shape, height: f64) -> Result<Shape>` | Extrude `sketch` along the outward normal of `face_ref` by `height` and fuse with `self`. Uses `BRepPrimAPI_MakePrism` + `BRepAlgoAPI_Fuse`. The sketch is repositioned from the XY plane onto `face_ref` via `gp_Trsf`. |
+| `.pocket(face_ref: &Shape, sketch: &Shape, depth: f64) -> Result<Shape>` | Extrude `sketch` inward along the outward normal of `face_ref` by `depth` and subtract from `self`. Uses `BRepPrimAPI_MakePrism` + `BRepAlgoAPI_Cut`. |
+| `.fillet_wire(radius: f64) -> Result<Shape>` | Round all corners of a 2D Wire or Face. Applies `BRepFilletAPI_MakeFillet2d` at each vertex; non-corner vertices are silently skipped. Returns a Face. Raises an error if called on a Solid/Shell. |
+| `Shape::make_datum_plane(ox, oy, oz, nx, ny, nz, xx, xy, xz) -> Result<Shape>` | Reference plane Face from `gp_Ax3(origin, normal, x_dir)` + `BRepBuilderAPI_MakeFace(gp_Pln)`. The resulting Face can be passed directly to `.pad` / `.pocket` as `face_ref`. |
+
+```rust
+let body = Shape::make_box(100.0, 60.0, 10.0)?;
+let top  = body.faces("top")?;
+let slot = Shape::make_rect(40.0, 20.0)?.fillet_wire(4.0)?;
+let part = body.pocket(&top[0], &slot, 8.0)?;
+
+let plane = Shape::make_datum_plane(0.0, 0.0, 10.0,  0.0, 0.0, 1.0,  1.0, 0.0, 0.0)?;
+let boss  = Shape::make_circle_face(10.0)?;
+let part2 = body.pad(&plane, &boss, 6.0)?;
+```
+
 ```rust
 // Ruled surface between two wires
 let w1 = Shape::make_spline_3d(&[0.,0.,0., 1.,0.,0., 1.,1.,0.])?;
@@ -433,6 +455,17 @@ fn shape_fill_surface(boundary_wire: &OcctShape)       -> Result<UniquePtr<OcctS
 fn shape_slice(shape: &OcctShape, plane: &str,
                offset: f64)                            -> Result<UniquePtr<OcctShape>>;
 
+// Part Design (Phase 8 Tier 1)
+fn shape_pad(body: &OcctShape, face_ref: &OcctShape,
+             sketch: &OcctShape, height: f64)          -> Result<UniquePtr<OcctShape>>;
+fn shape_pocket(body: &OcctShape, face_ref: &OcctShape,
+                sketch: &OcctShape, depth: f64)        -> Result<UniquePtr<OcctShape>>;
+fn shape_fillet_wire(profile: &OcctShape,
+                     radius: f64)                      -> Result<UniquePtr<OcctShape>>;
+fn make_datum_plane(ox: f64, oy: f64, oz: f64,
+                    nx: f64, ny: f64, nz: f64,
+                    xx: f64, xy: f64, xz: f64)         -> Result<UniquePtr<OcctShape>>;
+
 // Sub-shape selectors
 fn shape_faces_count(shape: &OcctShape, selector: &str)              -> Result<i32>;
 fn shape_faces_get(shape: &OcctShape, selector: &str, idx: i32)      -> Result<UniquePtr<OcctShape>>;
@@ -521,6 +554,7 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `cut_all(base, [tool1, tool2, ...])` | Subtract each tool from `base` in sequence. Requires at least 1 tool. |
 | `ruled_surface(wire_a, wire_b)` | Ruled surface (Shell) spanning from `wire_a` to `wire_b`. Both must be Wire shapes. Uses `BRepFill::Shell`. |
 | `fill_surface(boundary_wire)` | Smooth NURBS surface filling the region enclosed by a closed Wire. Uses `BRepFill_Filling` with C0 boundary constraints. |
+| `datum_plane(origin: [ox,oy,oz], normal: [nx,ny,nz], x_dir: [xx,xy,xz])` | Reference plane Face at the given origin/normal/x_dir. Can be used as the `face_sel` argument to `.pad` / `.pocket`. |
 | `param(:name, default: val)` | Declare a named parameter. Returns `val` unless a `--param name=x` CLI override was supplied; coerces string overrides to the default's type (Integer/Float/String). |
 | `param(:name, default: val, range: lo..hi)` | Same with range validation; raises `ArgumentError` if the value is outside the range. |
 | `solid { ... }` | Block returning its last expression |
@@ -568,6 +602,9 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `.manifold?` | `true` if every edge is shared by exactly 2 faces (manifold mesh) |
 | `.validate` | Runs `BRepCheck_Analyzer`. Returns `:ok` if the shape is valid, or an `Array` of error description strings if not. |
 | `.slice(plane: :xy, z: d)` | Cross-section by an axis-aligned plane. `plane:` is `:xy` (offset along Z), `:xz` (offset along Y), or `:yz` (offset along X). The offset key matches the plane normal axis (`z:` for `:xy`, `y:` for `:xz`, `x:` for `:yz`). Returns a compound of the section edges/wires. Uses `BRepAlgoAPI_Section`. |
+| `.pad(face_sel, height:) { sketch }` | Extrude the block's sketch along the outward normal of `face_sel` and fuse with `self`. `face_sel` can be a Symbol (`:top`, `:bottom`, `">X"`, etc.) or an explicit face Shape. The sketch block is evaluated in the XY plane; it is automatically repositioned onto the target face. Returns a Solid. |
+| `.pocket(face_sel, depth:) { sketch }` | Same as `pad` but extrudes inward and subtracts from `self`. Returns a Solid. |
+| `.fillet_wire(r)` | Round all corners of a 2D Wire or Face by radius `r`. Returns a Face. Raises an error if `self` is a Solid or Shell. |
 | `.export("out.step")` | Write file; format determined by extension: `.step`/`.stp` → STEP, `.stl` → STL, `.glb` → GLB, `.gltf` → glTF, `.obj` → OBJ |
 
 ---

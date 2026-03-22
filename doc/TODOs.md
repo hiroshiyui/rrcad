@@ -209,14 +209,16 @@ tangent directions, Z along the outward normal.  All 2D shapes in the block are
 interpreted in this local frame.  The implementation transforms them to world
 coordinates before extrude/cut.
 
-### Tier 1 — Core Part Design primitives
+### ✓ Tier 1 — Core Part Design primitives
+
+All four Tier 1 features are implemented and tested in `tests/phase8_tier1.rs` (11 tests).
 
 | # | Feature | DSL | OCCT API |
 |---|---------|-----|----------|
-| 1 | **Pad** | `.pad(face_sel, height:) { sketch }` | `BRepPrimAPI_MakePrism` along face normal + `BRepAlgoAPI_Fuse` |
-| 2 | **Pocket** | `.pocket(face_sel, depth:) { sketch }` | `BRepPrimAPI_MakePrism` along −normal + `BRepAlgoAPI_Cut` |
-| 3 | **Wire fillet** | `.fillet_wire(r)` on a Face/Wire | `BRepFilletAPI_MakeFillet2d` |
-| 4 | **Datum plane** | `datum_plane(origin:, normal:, x_dir:)` | `gp_Ax3` + `BRepBuilderAPI_MakeFace(gp_Pln)` — returns a reusable plane shape for `.pad`/`.pocket` |
+| 1 | **Pad** ✓ | `.pad(face_sel, height:) { sketch }` | `BRepPrimAPI_MakePrism` along face normal + `BRepAlgoAPI_Fuse` |
+| 2 | **Pocket** ✓ | `.pocket(face_sel, depth:) { sketch }` | `BRepPrimAPI_MakePrism` along −normal + `BRepAlgoAPI_Cut` |
+| 3 | **Wire fillet** ✓ | `.fillet_wire(r)` on a Face/Wire | `BRepFilletAPI_MakeFillet2d` |
+| 4 | **Datum plane** ✓ | `datum_plane(origin:, normal:, x_dir:)` | `gp_Ax3` + `BRepBuilderAPI_MakeFace(gp_Pln)` — returns a reusable plane shape for `.pad`/`.pocket` |
 
 Implementation of face-local transform (shared by pad + pocket):
 1. `BRep_Tool::Surface(face)` → cast to `Geom_Plane` → get `gp_Ax3`

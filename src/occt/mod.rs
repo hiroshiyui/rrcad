@@ -1,5 +1,7 @@
 #[cxx::bridge(namespace = "rrcad")]
 mod ffi {
+    #![allow(clippy::too_many_arguments)]
+
     unsafe extern "C++" {
         include!("bridge.h");
 
@@ -207,6 +209,32 @@ mod ffi {
         fn shape_is_closed(shape: &OcctShape) -> Result<bool>;
         fn shape_is_manifold(shape: &OcctShape) -> Result<bool>;
         fn shape_validate_str(shape: &OcctShape) -> Result<String>;
+
+        // --- Phase 8 Tier 1: Core Part Design ---
+        fn shape_pad(
+            body: &OcctShape,
+            face_ref: &OcctShape,
+            sketch: &OcctShape,
+            height: f64,
+        ) -> Result<UniquePtr<OcctShape>>;
+        fn shape_pocket(
+            body: &OcctShape,
+            face_ref: &OcctShape,
+            sketch: &OcctShape,
+            depth: f64,
+        ) -> Result<UniquePtr<OcctShape>>;
+        fn shape_fillet_wire(profile: &OcctShape, radius: f64) -> Result<UniquePtr<OcctShape>>;
+        fn make_datum_plane(
+            ox: f64,
+            oy: f64,
+            oz: f64,
+            nx: f64,
+            ny: f64,
+            nz: f64,
+            xx: f64,
+            xy: f64,
+            xz: f64,
+        ) -> Result<UniquePtr<OcctShape>>;
 
         // --- Phase 7 Tier 3: Surface modeling ---
         fn shape_ruled_surface(
@@ -672,6 +700,50 @@ impl Shape {
     /// newline-separated list of error names if not.
     pub fn validate(&self) -> Result<String, String> {
         ffi::shape_validate_str(&self.inner).map_err(|e| e.to_string())
+    }
+
+    // --- Phase 8 Tier 1: Core Part Design ---
+
+    /// Extrude a `sketch` (Face/Wire in XY plane at Z=0) along `face_ref`'s outward normal
+    /// by `height`, then fuse the resulting prism with `self` (the body).
+    pub fn pad(&self, face_ref: &Shape, sketch: &Shape, height: f64) -> Result<Shape, String> {
+        ffi::shape_pad(&self.inner, &face_ref.inner, &sketch.inner, height)
+            .map(|s| Shape { inner: s })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Extrude a `sketch` along `-normal` by `depth` and subtract the prism from `self`.
+    pub fn pocket(&self, face_ref: &Shape, sketch: &Shape, depth: f64) -> Result<Shape, String> {
+        ffi::shape_pocket(&self.inner, &face_ref.inner, &sketch.inner, depth)
+            .map(|s| Shape { inner: s })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Fillet all corner vertices of a 2D Wire or Face profile with the given `radius`.
+    /// Uses `BRepFilletAPI_MakeFillet2d`; non-corner vertices are silently skipped.
+    pub fn fillet_wire(&self, radius: f64) -> Result<Shape, String> {
+        ffi::shape_fillet_wire(&self.inner, radius)
+            .map(|s| Shape { inner: s })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Construct a finite reference plane (Face) from origin, outward normal, and X direction.
+    /// Returns a Face ±50 units wide, suitable for cross-sections and sketch placement.
+    #[allow(clippy::too_many_arguments)]
+    pub fn make_datum_plane(
+        ox: f64,
+        oy: f64,
+        oz: f64,
+        nx: f64,
+        ny: f64,
+        nz: f64,
+        xx: f64,
+        xy: f64,
+        xz: f64,
+    ) -> Result<Shape, String> {
+        ffi::make_datum_plane(ox, oy, oz, nx, ny, nz, xx, xy, xz)
+            .map(|s| Shape { inner: s })
+            .map_err(|e| e.to_string())
     }
 
     // --- Phase 7 Tier 3: Surface modeling ---

@@ -337,6 +337,30 @@ bool shape_is_manifold(const OcctShape& shape);
 // newline-separated list of BRepCheck_Status names otherwise.
 rust::String shape_validate_str(const OcctShape& shape);
 
+// --- Phase 8 Tier 1: Core Part Design ---
+
+// Pad: extrude a sketch Face/Wire along face_ref's outward normal by height,
+// then fuse the prism with body.
+// face_ref must be a Face (typically obtained via body.faces(:top).first).
+// sketch must be a Face or Wire in the XY plane at Z=0.
+// The sketch is transformed onto face_ref before extrusion.
+std::unique_ptr<OcctShape> shape_pad(const OcctShape& body, const OcctShape& face_ref,
+                                     const OcctShape& sketch, double height);
+
+// Pocket: extrude a sketch along -normal by depth and cut from body.
+// Same constraints as shape_pad, but cuts instead of fuses.
+std::unique_ptr<OcctShape> shape_pocket(const OcctShape& body, const OcctShape& face_ref,
+                                        const OcctShape& sketch, double depth);
+
+// Fillet Wire: round all corners of a 2D Wire or Face profile with radius.
+// Uses BRepFilletAPI_MakeFillet2d.  Non-corner vertices are silently skipped.
+std::unique_ptr<OcctShape> shape_fillet_wire(const OcctShape& profile, double radius);
+
+// Datum Plane: construct a finite reference plane from origin, normal, and X direction.
+// Returns a Face from a gp_Pln (±50 units in each direction) for use as a reference.
+std::unique_ptr<OcctShape> make_datum_plane(double ox, double oy, double oz, double nx, double ny,
+                                            double nz, double xx, double xy, double xz);
+
 // --- Phase 7 Tier 3: Surface modeling ---
 
 // Create a ruled surface (shell) between two wires using BRepFill::Shell.
