@@ -82,11 +82,11 @@ Transforms                   (return a new Shape)
   s.scale(sx, sy, sz)       non-uniform scale
   s.mirror(:xy|:xz|:yz)     mirror about a plane
 
-Color (Phase 5)
+Color
   s.color(r, g, b)          tag shape with sRGB color (each 0.0–1.0)
                             written into GLB / glTF / OBJ on export
 
-Assembly mating (Phase 5)
+Assembly mating
   s.mate(from_face, to_face)          reposition s flush against to_face
   s.mate(from_face, to_face, offset)  same with a gap (offset > 0)
   a.mate s, from: f1, to: f2         mate + add to assembly (keyword form)
@@ -141,7 +141,7 @@ Surface modeling
   fill_surface(wire)        smooth NURBS surface filling a closed wire
   s.slice(plane: :xy, z: d) cross-section by XY plane at z=d (also :xz/:yz)
 
-Part Design (Phase 8)
+Part Design
   s.pad(face_sel, height: h) { sk }   extrude sketch on face, fuse with s
   s.pocket(face_sel, depth: d) { sk } cut sketch pocket from s
   s.fillet_wire(r)           round corners of a 2D Wire/Face profile
@@ -156,7 +156,7 @@ Part Design (Phase 8)
   s.inertia                  {ixx:,iyy:,izz:,ixy:,ixz:,iyz:} inertia tensor
   s.min_thickness            minimum wall thickness of a solid/shell
 
-Parameters (Phase 5)
+Parameters
   param :name, default: val        declare a parameter (returns value)
   param :name, default: val,       same, with range validation
        range: lo..hi
