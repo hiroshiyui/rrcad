@@ -223,11 +223,21 @@ module Kernel
   end
 
   # Spline profiles — overridden natively after prelude runs.
-  def spline_2d(_points)
+  #
+  # Optional +tangents:+ keyword suppresses natural-boundary oscillation at
+  # the endpoints of short splines.  Pass exactly two tangent vectors:
+  #
+  #   spline_2d([[0,0],[5,10],[10,5]], tangents: [[1,0],[1,0]])
+  #   spline_3d([[0,0,0],[5,5,5],[10,0,0]], tangents: [[1,0,0],[1,0,0]])
+  #
+  # 2D tangents live in the XZ plane: [x, z].
+  # 3D tangents are full vectors: [x, y, z].
+  # Vector magnitude is ignored; only direction matters.
+  def spline_2d(_points, tangents: nil)
     raise NotImplementedError, "spline_2d() is not yet implemented (Phase 3)"
   end
 
-  def spline_3d(_points)
+  def spline_3d(_points, tangents: nil)
     raise NotImplementedError, "spline_3d() is not yet implemented (Phase 3)"
   end
 

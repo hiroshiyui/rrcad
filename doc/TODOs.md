@@ -255,16 +255,21 @@ the `param` DSL + design table covers parametric relationships adequately.
 
 ### Tier 4 — Nice-to-have, low urgency
 
-#### [ ] Spline tangent constraints
+#### [x] Spline tangent constraints
 
-**File:** `src/occt/bridge.cpp` — `make_spline_2d`, `make_spline_3d`
+**File:** `src/occt/bridge.cpp` — `make_spline_2d_tan`, `make_spline_3d_tan`
 
-**Problem:** Natural boundary conditions can cause endpoint oscillation on short
-splines (visible on the teapot spout sweep path).
+`GeomAPI_Interpolate::Load(startTangent, endTangent)` is called before
+`Perform()` when the optional `tangents:` keyword is supplied.
 
-**Fix:** `GeomAPI_Interpolate::Load(startTangent, endTangent)` sets explicit end
-tangents before `Perform()`. Requires exposing a `tangents:` keyword argument
-in the DSL. Small OCCT change; no dependencies on other Phase 5 work.
+```ruby
+spline_2d([[0,0],[5,10],[10,5]], tangents: [[1,0],[1,0]])
+spline_3d([[0,0,0],[5,5,5],[10,0,0]], tangents: [[1,0,0],[1,0,0]])
+```
+
+2D tangents are XZ-plane vectors `[x, z]`; 3D tangents are `[x, y, z]`.
+Magnitude is ignored — only direction matters. Without `tangents:` the
+natural-boundary (cubic spline) interpolation is used unchanged.
 
 #### [ ] Feature removal — `.simplify`
 

@@ -794,6 +794,75 @@ std::unique_ptr<OcctShape> make_spline_3d(rust::Slice<const double> pts) {
     return wrap(wire);
 }
 
+std::unique_ptr<OcctShape> make_spline_2d_tan(rust::Slice<const double> pts, double t0x, double t0z,
+                                              double t1x, double t1z) {
+    int n = static_cast<int>(pts.size()) / 2;
+    if (n < 2)
+        throw std::runtime_error("spline_2d: need at least 2 points");
+
+    Handle(TColgp_HArray1OfPnt) hPts = new TColgp_HArray1OfPnt(1, n);
+    for (int i = 0; i < n; i++) {
+        hPts->SetValue(i + 1, gp_Pnt(pts[2 * i], 0.0, pts[2 * i + 1]));
+    }
+
+    GeomAPI_Interpolate interp(hPts, /*isPeriodic=*/Standard_False, /*Tolerance=*/1e-6);
+    // Apply explicit end tangents — suppresses natural-boundary oscillation.
+    // Tangents are in the XZ plane (Y=0); Load() normalises them internally.
+    gp_Vec start_tan(t0x, 0.0, t0z);
+    gp_Vec end_tan(t1x, 0.0, t1z);
+    interp.Load(start_tan, end_tan);
+    interp.Perform();
+    if (!interp.IsDone())
+        throw std::runtime_error("GeomAPI_Interpolate (spline_2d) failed");
+
+    Handle(Geom_BSplineCurve) curve = interp.Curve();
+    TopoDS_Edge spline_edge = BRepBuilderAPI_MakeEdge(curve).Edge();
+
+    gp_Pnt p_first(pts[0], 0.0, pts[1]);
+    gp_Pnt p_last(pts[2 * (n - 1)], 0.0, pts[2 * (n - 1) + 1]);
+
+    BRepBuilderAPI_MakeWire wire_builder;
+    wire_builder.Add(spline_edge);
+    if (p_first.Distance(p_last) > 1e-7) {
+        TopoDS_Edge close_edge = BRepBuilderAPI_MakeEdge(p_last, p_first).Edge();
+        wire_builder.Add(close_edge);
+    }
+    if (!wire_builder.IsDone())
+        throw std::runtime_error("BRepBuilderAPI_MakeWire (spline_2d) failed");
+
+    gp_Pln xz_plane(gp_Pnt(0, 0, 0), gp_Dir(0, 1, 0));
+    BRepBuilderAPI_MakeFace face(xz_plane, wire_builder.Wire());
+    if (!face.IsDone())
+        throw std::runtime_error("BRepBuilderAPI_MakeFace (spline_2d) failed");
+    return wrap(face.Face());
+}
+
+std::unique_ptr<OcctShape> make_spline_3d_tan(rust::Slice<const double> pts, double t0x, double t0y,
+                                              double t0z, double t1x, double t1y, double t1z) {
+    int n = static_cast<int>(pts.size()) / 3;
+    if (n < 2)
+        throw std::runtime_error("spline_3d: need at least 2 points");
+
+    Handle(TColgp_HArray1OfPnt) hPts = new TColgp_HArray1OfPnt(1, n);
+    for (int i = 0; i < n; i++) {
+        hPts->SetValue(i + 1, gp_Pnt(pts[3 * i], pts[3 * i + 1], pts[3 * i + 2]));
+    }
+
+    GeomAPI_Interpolate interp(hPts, /*isPeriodic=*/Standard_False, /*Tolerance=*/1e-6);
+    // Apply explicit end tangents — suppresses natural-boundary oscillation.
+    gp_Vec start_tan(t0x, t0y, t0z);
+    gp_Vec end_tan(t1x, t1y, t1z);
+    interp.Load(start_tan, end_tan);
+    interp.Perform();
+    if (!interp.IsDone())
+        throw std::runtime_error("GeomAPI_Interpolate (spline_3d) failed");
+
+    Handle(Geom_BSplineCurve) curve = interp.Curve();
+    TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(curve).Edge();
+    TopoDS_Wire wire = BRepBuilderAPI_MakeWire(edge).Wire();
+    return wrap(wire);
+}
+
 std::unique_ptr<OcctShape> shape_sweep(const OcctShape& profile, const OcctShape& path) {
     const TopoDS_Shape& path_shape = path.get();
     if (path_shape.ShapeType() != TopAbs_WIRE)

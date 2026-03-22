@@ -636,6 +636,41 @@ pub unsafe extern "C" fn rrcad_make_spline_3d(
     unsafe { shape_result_to_ptr(Shape::make_spline_3d(slice), error_out) }
 }
 
+/// Tangent-constrained 2D spline: explicit start/end tangents in the XZ plane.
+/// `tangents` points to a flat array [t0x, t0z, t1x, t1z] (4 doubles).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_make_spline_2d_tan(
+    pts: *const f64,
+    n_pts: usize,
+    tangents: *const f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let slice = unsafe { std::slice::from_raw_parts(pts, n_pts * 2) };
+    let t = unsafe { std::slice::from_raw_parts(tangents, 4) };
+    unsafe { shape_result_to_ptr(Shape::make_spline_2d_tan(slice, t[0], t[1], t[2], t[3]), error_out) }
+}
+
+/// Tangent-constrained 3D spline: explicit start/end tangent vectors.
+/// `tangents` points to a flat array [t0x, t0y, t0z, t1x, t1y, t1z] (6 doubles).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_make_spline_3d_tan(
+    pts: *const f64,
+    n_pts: usize,
+    tangents: *const f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let slice = unsafe { std::slice::from_raw_parts(pts, n_pts * 3) };
+    let t = unsafe { std::slice::from_raw_parts(tangents, 6) };
+    unsafe {
+        shape_result_to_ptr(
+            Shape::make_spline_3d_tan(slice, t[0], t[1], t[2], t[3], t[4], t[5]),
+            error_out,
+        )
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Phase 3: Sub-shape selectors — faces and edges
 // ---------------------------------------------------------------------------

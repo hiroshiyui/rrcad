@@ -105,6 +105,23 @@ mod ffi {
         // --- Phase 3: splines and sweep ---
         fn make_spline_2d(pts: &[f64]) -> Result<UniquePtr<OcctShape>>;
         fn make_spline_3d(pts: &[f64]) -> Result<UniquePtr<OcctShape>>;
+        // Tangent-constrained variants (Phase 4 / Tier 4 quality improvement).
+        fn make_spline_2d_tan(
+            pts: &[f64],
+            t0x: f64,
+            t0z: f64,
+            t1x: f64,
+            t1z: f64,
+        ) -> Result<UniquePtr<OcctShape>>;
+        fn make_spline_3d_tan(
+            pts: &[f64],
+            t0x: f64,
+            t0y: f64,
+            t0z: f64,
+            t1x: f64,
+            t1y: f64,
+            t1z: f64,
+        ) -> Result<UniquePtr<OcctShape>>;
         fn shape_sweep(profile: &OcctShape, path: &OcctShape) -> Result<UniquePtr<OcctShape>>;
 
         // --- Phase 3: sub-shape selectors ---
@@ -400,6 +417,36 @@ impl Shape {
 
     pub fn make_spline_3d(pts: &[f64]) -> Result<Self, String> {
         ffi::make_spline_3d(pts)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Like `make_spline_2d` but with explicit start/end tangent vectors in
+    /// the XZ plane — suppresses natural-boundary oscillation on short splines.
+    pub fn make_spline_2d_tan(
+        pts: &[f64],
+        t0x: f64,
+        t0z: f64,
+        t1x: f64,
+        t1z: f64,
+    ) -> Result<Self, String> {
+        ffi::make_spline_2d_tan(pts, t0x, t0z, t1x, t1z)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Like `make_spline_3d` but with explicit start/end tangent vectors —
+    /// suppresses natural-boundary oscillation on short splines.
+    pub fn make_spline_3d_tan(
+        pts: &[f64],
+        t0x: f64,
+        t0y: f64,
+        t0z: f64,
+        t1x: f64,
+        t1y: f64,
+        t1z: f64,
+    ) -> Result<Self, String> {
+        ffi::make_spline_3d_tan(pts, t0x, t0y, t0z, t1x, t1y, t1z)
             .map(|p| Shape { inner: p })
             .map_err(|e| e.to_string())
     }

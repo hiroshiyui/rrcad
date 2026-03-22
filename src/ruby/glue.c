@@ -106,6 +106,12 @@ extern void* rrcad_shape_revolve(void* ptr, double angle_deg, const char** error
 /* Phase 3 — splines and sweep */
 extern void* rrcad_make_spline_2d(const double* pts, size_t n_pts, const char** error_out);
 extern void* rrcad_make_spline_3d(const double* pts, size_t n_pts, const char** error_out);
+/* Tangent-constrained variants: tangents[4] = {t0x,t0z,t1x,t1z} for 2D,
+   tangents[6] = {t0x,t0y,t0z,t1x,t1y,t1z} for 3D. */
+extern void* rrcad_make_spline_2d_tan(const double* pts, size_t n_pts, const double* tangents,
+                                      const char** error_out);
+extern void* rrcad_make_spline_3d_tan(const double* pts, size_t n_pts, const double* tangents,
+                                      const char** error_out);
 extern void* rrcad_shape_sweep(void* profile, void* path, const char** error_out);
 
 /* Phase 3 — live preview */
@@ -716,13 +722,33 @@ static double* extract_point_array(mrb_state* mrb, mrb_value arr, int stride, in
 static mrb_value mrb_rrcad_spline_2d(mrb_state* mrb, mrb_value self) {
     (void)self;
     mrb_value arr;
-    mrb_get_args(mrb, "A", &arr);
+    /* mRuby assigns mrb_undef_value() for absent optional keyword args. */
+    mrb_value tangents_val = mrb_undef_value();
+    mrb_sym tangents_kw = mrb_intern_cstr(mrb, "tangents");
+    mrb_kwargs kwargs = {1, 0, &tangents_kw, &tangents_val, NULL};
+    mrb_get_args(mrb, "A:", &arr, &kwargs);
 
     int n = 0;
     double* pts = extract_point_array(mrb, arr, 2, &n);
 
     const char* err = NULL;
-    void* ptr = rrcad_make_spline_2d(pts, (size_t)n, &err);
+    void* ptr;
+
+    if (!mrb_undef_p(tangents_val)) {
+        /* tangents: [[t0x, t0z], [t1x, t1z]] */
+        if (!mrb_array_p(tangents_val) || RARRAY_LEN(tangents_val) != 2) {
+            free(pts);
+            mrb_raise(mrb, E_ARGUMENT_ERROR, "spline_2d tangents: must be [[t0x,t0z],[t1x,t1z]]");
+        }
+        int tn = 0;
+        double* tvecs = extract_point_array(mrb, tangents_val, 2, &tn);
+        /* tvecs layout: [t0x, t0z, t1x, t1z] */
+        ptr = rrcad_make_spline_2d_tan(pts, (size_t)n, tvecs, &err);
+        free(tvecs);
+    } else {
+        ptr = rrcad_make_spline_2d(pts, (size_t)n, &err);
+    }
+
     free(pts);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
@@ -732,13 +758,34 @@ static mrb_value mrb_rrcad_spline_2d(mrb_state* mrb, mrb_value self) {
 static mrb_value mrb_rrcad_spline_3d(mrb_state* mrb, mrb_value self) {
     (void)self;
     mrb_value arr;
-    mrb_get_args(mrb, "A", &arr);
+    /* mRuby assigns mrb_undef_value() for absent optional keyword args. */
+    mrb_value tangents_val = mrb_undef_value();
+    mrb_sym tangents_kw = mrb_intern_cstr(mrb, "tangents");
+    mrb_kwargs kwargs = {1, 0, &tangents_kw, &tangents_val, NULL};
+    mrb_get_args(mrb, "A:", &arr, &kwargs);
 
     int n = 0;
     double* pts = extract_point_array(mrb, arr, 3, &n);
 
     const char* err = NULL;
-    void* ptr = rrcad_make_spline_3d(pts, (size_t)n, &err);
+    void* ptr;
+
+    if (!mrb_undef_p(tangents_val)) {
+        /* tangents: [[t0x, t0y, t0z], [t1x, t1y, t1z]] */
+        if (!mrb_array_p(tangents_val) || RARRAY_LEN(tangents_val) != 2) {
+            free(pts);
+            mrb_raise(mrb, E_ARGUMENT_ERROR,
+                      "spline_3d tangents: must be [[t0x,t0y,t0z],[t1x,t1y,t1z]]");
+        }
+        int tn = 0;
+        double* tvecs = extract_point_array(mrb, tangents_val, 3, &tn);
+        /* tvecs layout: [t0x, t0y, t0z, t1x, t1y, t1z] */
+        ptr = rrcad_make_spline_3d_tan(pts, (size_t)n, tvecs, &err);
+        free(tvecs);
+    } else {
+        ptr = rrcad_make_spline_3d(pts, (size_t)n, &err);
+    }
+
     free(pts);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
@@ -1131,8 +1178,10 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     mrb_define_method(mrb, mrb->kernel_module, "arc", mrb_rrcad_arc, MRB_ARGS_REQ(3));
 
     /* Phase 3: Spline constructors and sweep */
-    mrb_define_method(mrb, mrb->kernel_module, "spline_2d", mrb_rrcad_spline_2d, MRB_ARGS_REQ(1));
-    mrb_define_method(mrb, mrb->kernel_module, "spline_3d", mrb_rrcad_spline_3d, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, mrb->kernel_module, "spline_2d", mrb_rrcad_spline_2d,
+                      MRB_ARGS_REQ(1) | MRB_ARGS_KEY(1, 0)); /* (pts[, tangents:]) */
+    mrb_define_method(mrb, mrb->kernel_module, "spline_3d", mrb_rrcad_spline_3d,
+                      MRB_ARGS_REQ(1) | MRB_ARGS_KEY(1, 0)); /* (pts[, tangents:]) */
     mrb_define_method(mrb, shape_class, "sweep", mrb_rrcad_shape_sweep, MRB_ARGS_REQ(1));
 
     /* Phase 3: Live preview */

@@ -178,6 +178,17 @@ std::unique_ptr<OcctShape> shape_extrude_ex(const OcctShape& shape, double heigh
 // --- Phase 3: spline profiles and pipe sweep ---
 std::unique_ptr<OcctShape> make_spline_2d(rust::Slice<const double> pts);
 std::unique_ptr<OcctShape> make_spline_3d(rust::Slice<const double> pts);
+
+// Tangent-constrained variants: explicit start/end tangent vectors suppress
+// natural-boundary oscillation on short splines.
+// Tangents for 2D live in the XZ plane: (t0x, t0z) and (t1x, t1z).
+// Tangents for 3D are full 3-D vectors: (t0x,t0y,t0z) and (t1x,t1y,t1z).
+// The vectors do not need to be unit-length; they are normalised internally.
+std::unique_ptr<OcctShape> make_spline_2d_tan(rust::Slice<const double> pts, double t0x, double t0z,
+                                              double t1x, double t1z);
+std::unique_ptr<OcctShape> make_spline_3d_tan(rust::Slice<const double> pts, double t0x, double t0y,
+                                              double t0z, double t1x, double t1y, double t1z);
+
 std::unique_ptr<OcctShape> shape_sweep(const OcctShape& profile, const OcctShape& path);
 
 // --- Phase 3: sub-shape selectors ---

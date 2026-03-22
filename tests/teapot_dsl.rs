@@ -45,6 +45,58 @@ fn spline_2d_revolve_exports_step() {
 }
 
 // ---------------------------------------------------------------------------
+// spline tangent constraints (Tier 4)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn spline_2d_with_tangents_returns_shape() {
+    // Explicit start/end tangents; both pointing roughly in +X direction.
+    let r = eval("spline_2d([[0,0],[2,1],[3,3],[0,4]], tangents: [[1,0],[1,0]]).class").unwrap();
+    assert!(r.contains("Shape"), "expected Shape, got: {r}");
+}
+
+#[test]
+fn spline_2d_tangents_can_revolve() {
+    // Constrained spline + revolve should produce a valid solid.
+    let r =
+        eval("spline_2d([[0,0],[2,1],[3,3],[0,4]], tangents: [[1,0],[0,1]]).revolve(360).class")
+            .unwrap();
+    assert!(r.contains("Shape"), "expected Shape, got: {r}");
+}
+
+#[test]
+fn spline_3d_with_tangents_returns_shape() {
+    // Explicit tangents for a 3D sweep path.
+    let r =
+        eval("spline_3d([[0,0,0],[5,0,5],[10,0,0]], tangents: [[1,0,1],[1,0,-1]]).class").unwrap();
+    assert!(r.contains("Shape"), "expected Shape, got: {r}");
+}
+
+#[test]
+fn spline_3d_tangents_can_sweep() {
+    // A circle swept along a tangent-constrained 3D path must produce a Shape.
+    let r = eval(
+        r#"
+        path = spline_3d([[0,0,0],[5,0,3],[10,0,0]], tangents: [[1,0,1],[1,0,-1]])
+        circle(0.5).sweep(path).class
+        "#,
+    )
+    .unwrap();
+    assert!(r.contains("Shape"), "expected Shape, got: {r}");
+}
+
+#[test]
+fn spline_2d_bad_tangents_raises() {
+    // Wrong number of tangent vectors should raise ArgumentError.
+    let mut vm = rrcad::ruby::vm::MrubyVm::new();
+    let result = vm.eval("spline_2d([[0,0],[2,1],[3,3]], tangents: [[1,0]])");
+    assert!(
+        result.is_err(),
+        "expected ArgumentError for one tangent vector"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // spline_3d
 // ---------------------------------------------------------------------------
 
