@@ -358,12 +358,13 @@ fn native_edges_selector_returns_array() {
 }
 
 #[test]
-fn stub_assembly_mate_mentions_phase5() {
+fn assembly_mate_requires_from_and_to_keywords() {
     let mut vm = MrubyVm::new();
+    // Calling Assembly#mate without required keyword args raises ArgumentError.
     let code = r#"
       $asm = assembly("test") {}
       $s = box(5.0, 5.0, 5.0)
       $asm.mate($s)
     "#;
-    assert_err_contains(&mut vm, code, "Phase 5");
+    assert_err_contains(&mut vm, code, "from");
 }

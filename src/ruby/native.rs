@@ -327,6 +327,25 @@ pub unsafe extern "C" fn rrcad_shape_common(
 }
 
 // ---------------------------------------------------------------------------
+// Assembly mating (Phase 5)
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_mate(
+    ptr: *mut c_void,
+    from_ptr: *mut c_void,
+    to_ptr: *mut c_void,
+    offset: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let from_face = unsafe { &*(from_ptr as *const Shape) };
+    let to_face = unsafe { &*(to_ptr as *const Shape) };
+    unsafe { shape_result_to_ptr(shape.mate(from_face, to_face, offset), error_out) }
+}
+
+// ---------------------------------------------------------------------------
 // Color (Phase 5)
 // ---------------------------------------------------------------------------
 

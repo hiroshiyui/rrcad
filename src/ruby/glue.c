@@ -75,6 +75,8 @@ extern void* rrcad_shape_cut(void* a, void* b, const char** error_out);
 extern void* rrcad_shape_common(void* a, void* b, const char** error_out);
 
 /* Phase 5 */
+extern void* rrcad_shape_mate(void* ptr, void* from_ptr, void* to_ptr, double offset,
+                              const char** error_out);
 extern void* rrcad_shape_set_color(void* ptr, double r, double g, double b,
                                    const char** error_out);
 
@@ -350,6 +352,35 @@ static mrb_value mrb_rrcad_shape_common(mrb_state* mrb, mrb_value self) {
 
     const char* err = NULL;
     void* result = rrcad_shape_common(a, b, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* -------------------------------------------------------------------------
+ * Phase 5: Assembly mating
+ * -------------------------------------------------------------------------
+ */
+
+/* shape.mate(from_face, to_face, offset=0.0) → Shape
+ * Returns a copy of `shape` repositioned so that `from_face` lies flush
+ * against `to_face`.  Optional `offset` (Float) leaves a gap or creates
+ * interference.  Both face arguments must be planar Shape objects. */
+static mrb_value mrb_rrcad_shape_mate(mrb_state* mrb, mrb_value self) {
+    mrb_value from_val, to_val;
+    mrb_float offset = 0.0;
+    mrb_get_args(mrb, "oo|f", &from_val, &to_val, &offset);
+
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+
+    void* from_ptr = mrb_data_p(from_val) ? DATA_PTR(from_val) : NULL;
+    void* to_ptr   = mrb_data_p(to_val)   ? DATA_PTR(to_val)   : NULL;
+    if (!from_ptr || !to_ptr)
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "mate: from and to must be Shape objects");
+
+    const char* err = NULL;
+    void* result = rrcad_shape_mate(ptr, from_ptr, to_ptr, (double)offset, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
@@ -1060,6 +1091,10 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     mrb_define_method(mrb, shape_class, "fuse", mrb_rrcad_shape_fuse, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "cut", mrb_rrcad_shape_cut, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "common", mrb_rrcad_shape_common, MRB_ARGS_REQ(1));
+
+    /* Phase 5: Assembly mating */
+    mrb_define_method(mrb, shape_class, "mate", mrb_rrcad_shape_mate,
+                      MRB_ARGS_REQ(2) | MRB_ARGS_OPT(1));
 
     /* Phase 5: Color */
     mrb_define_method(mrb, shape_class, "color", mrb_rrcad_shape_color, MRB_ARGS_REQ(3));

@@ -64,6 +64,24 @@ inline std::unique_ptr<OcctShape> wrap_colored(TopoDS_Shape s, float r, float g,
 // The color is written into the XDE document during GLB/glTF/OBJ export.
 std::unique_ptr<OcctShape> shape_set_color(const OcctShape& shape, double r, double g, double b);
 
+// --- Assembly mating ---
+// Return a copy of `shape` rigidly transformed so that `from_face` (a planar
+// face belonging to `shape`) lies flush against `to_face` (a planar face on
+// the fixed reference geometry).
+//
+// The transform is computed as:
+//   1. Rotation that maps from_face's outward normal → −(to_face's outward normal)
+//      (antiparallel normals = contact, not overlap), pivoting around from_face's centroid.
+//   2. Translation that moves from_face's centroid onto to_face's centroid.
+//
+// `offset` shifts the mated shape along to_face's outward normal:
+//   offset > 0 → gap between the faces.
+//   offset < 0 → intentional interference / overlap.
+//
+// Throws std::runtime_error if either face is non-planar.
+std::unique_ptr<OcctShape> shape_mate(const OcctShape& shape, const OcctShape& from_face,
+                                      const OcctShape& to_face, double offset);
+
 // --- Primitives ---
 std::unique_ptr<OcctShape> make_box(double dx, double dy, double dz);
 std::unique_ptr<OcctShape> make_cylinder(double radius, double height);

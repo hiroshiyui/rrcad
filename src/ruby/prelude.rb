@@ -119,6 +119,30 @@ class Shape
   def color(_r, _g, _b)
     raise NotImplementedError, "Shape#color is not yet implemented (Phase 5)"
   end
+
+  # --- Mate — Phase 5 -------------------------------------------------------
+
+  # Return a copy of this shape rigidly repositioned so that +from_face+
+  # (a planar face of this shape) lies flush against +to_face+ (a fixed
+  # reference face on another shape).
+  #
+  # The transform aligns the face centroids and makes the outward normals
+  # antiparallel (contact orientation, not overlap).
+  #
+  # +offset+ (default 0.0) shifts the mated shape along to_face's outward
+  # normal: positive = gap, negative = interference.
+  #
+  #   base = box(100, 80, 10)
+  #   post = box(20, 20, 50)
+  #   post_placed = post.mate(post.faces(:bottom).first,
+  #                           base.faces(:top).first)
+  #   post_placed = post.mate(post.faces(:bottom).first,
+  #                           base.faces(:top).first, 2.0)   # 2 mm gap
+  #
+  # Overridden by the native implementation after the prelude runs.
+  def mate(_from_face, _to_face, _offset = 0.0)
+    raise NotImplementedError, "Shape#mate is not yet implemented (Phase 5)"
+  end
 end
 
 # ---------------------------------------------------------------------------
@@ -135,8 +159,20 @@ class Assembly
     shape
   end
 
-  def mate(_shape, *_args)
-    raise NotImplementedError, "Assembly#mate is not yet implemented (Phase 5)"
+  # Reposition +shape+ so that +from:+ face aligns with +to:+ face, then add
+  # it to the assembly.  Returns the repositioned shape.
+  #
+  #   assembly("bracket") do |a|
+  #     a.place base
+  #     a.mate post, from: post.faces(:bottom).first,
+  #                  to:   base.faces(:top).first
+  #     a.mate post2, from: post2.faces(:bottom).first,
+  #                   to:   base.faces(:top).first, offset: 5.0
+  #   end
+  def mate(shape, from:, to:, offset: 0.0)
+    positioned = shape.mate(from, to, offset)
+    @shapes << positioned
+    positioned
   end
 
   def to_shape

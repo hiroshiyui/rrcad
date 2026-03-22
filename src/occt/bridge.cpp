@@ -43,9 +43,13 @@
 #include <BRepBuilderAPI_MakeWire.hxx>
 #include <BRepPrimAPI_MakePrism.hxx>
 #include <BRepPrimAPI_MakeRevol.hxx>
+#include <gp_Ax1.hxx>
 #include <gp_Ax2.hxx>
 #include <gp_Circ.hxx>
 #include <gp_Pln.hxx>
+
+// --- OCCT: Phase 5 — assembly mating ---
+#include <Geom_Plane.hxx>
 
 // --- OCCT: Phase 4 sketch profiles ---
 #include <GC_MakeArcOfCircle.hxx>
@@ -183,6 +187,89 @@ std::unique_ptr<OcctShape> shape_set_color(const OcctShape& shape, double r, dou
     // uses handle-based reference counting) with the sRGB color tag attached.
     return wrap_colored(shape.get(), static_cast<float>(r), static_cast<float>(g),
                         static_cast<float>(b));
+}
+
+// ---------------------------------------------------------------------------
+// Assembly mating
+// ---------------------------------------------------------------------------
+
+std::unique_ptr<OcctShape> shape_mate(const OcctShape& shape, const OcctShape& from_face_shape,
+                                      const OcctShape& to_face_shape, double offset) {
+    TopoDS_Face from_face = TopoDS::Face(from_face_shape.get());
+    TopoDS_Face to_face = TopoDS::Face(to_face_shape.get());
+
+    Handle(Geom_Surface) from_surf = BRep_Tool::Surface(from_face);
+    Handle(Geom_Surface) to_surf = BRep_Tool::Surface(to_face);
+
+    Handle(Geom_Plane) from_plane = Handle(Geom_Plane)::DownCast(from_surf);
+    Handle(Geom_Plane) to_plane = Handle(Geom_Plane)::DownCast(to_surf);
+
+    if (from_plane.IsNull())
+        throw std::runtime_error("mate: 'from' face must be planar (non-planar surface given)");
+    if (to_plane.IsNull())
+        throw std::runtime_error("mate: 'to' face must be planar (non-planar surface given)");
+
+    // Outward normals — honour TopoDS_Face orientation (Forward vs Reversed).
+    gp_Dir n_from = from_plane->Axis().Direction();
+    if (from_face.Orientation() == TopAbs_REVERSED)
+        n_from.Reverse();
+
+    gp_Dir n_to = to_plane->Axis().Direction();
+    if (to_face.Orientation() == TopAbs_REVERSED)
+        n_to.Reverse();
+
+    // Use face centroids as reference points so the mate aligns face centres.
+    GProp_GProps from_props, to_props;
+    BRepGProp::SurfaceProperties(from_face, from_props);
+    BRepGProp::SurfaceProperties(to_face, to_props);
+    gp_Pnt p_from = from_props.CentreOfMass();
+    gp_Pnt p_to = to_props.CentreOfMass();
+
+    // Positive offset shifts the target point along n_to (away from the surface).
+    if (offset != 0.0)
+        p_to.Translate(gp_Vec(n_to).Multiplied(offset));
+
+    // For contact, from-face normal must be antiparallel to to-face normal.
+    gp_Dir target_normal = n_to.Reversed();
+
+    // -----------------------------------------------------------------------
+    // Step 1: rotation that maps n_from → target_normal, pivoting at p_from
+    // so that p_from is stationary after the rotation.
+    // -----------------------------------------------------------------------
+    gp_Trsf rot;
+    gp_Vec v_from(n_from), v_target(target_normal);
+    double dot = v_from.Dot(v_target);
+
+    if (std::abs(dot - 1.0) < 1e-7) {
+        // n_from already equals target_normal — identity rotation (gp_Trsf default).
+    } else if (std::abs(dot + 1.0) < 1e-7) {
+        // n_from and target_normal are antiparallel: 180° around any perpendicular axis.
+        gp_Vec perp = v_from.Crossed(gp_Vec(1.0, 0.0, 0.0));
+        if (perp.Magnitude() < 1e-7)
+            perp = v_from.Crossed(gp_Vec(0.0, 1.0, 0.0));
+        rot.SetRotation(gp_Ax1(p_from, gp_Dir(perp)), M_PI);
+    } else {
+        gp_Vec axis = v_from.Crossed(v_target);
+        double angle = v_from.Angle(v_target);
+        rot.SetRotation(gp_Ax1(p_from, gp_Dir(axis)), angle);
+    }
+
+    // -----------------------------------------------------------------------
+    // Step 2: translation that moves p_from (which is on the rotation axis,
+    // so it didn't move in step 1) to p_to.
+    // -----------------------------------------------------------------------
+    gp_Trsf trans;
+    trans.SetTranslation(gp_Vec(p_from, p_to));
+
+    // Combined: rotate first (around p_from), then translate.
+    // Multiply semantics: combined = trans * rot  →  rot applied first.
+    gp_Trsf combined = trans;
+    combined.Multiply(rot);
+
+    BRepBuilderAPI_Transform transformer(shape.get(), combined, /*copy=*/Standard_True);
+    if (!transformer.IsDone())
+        throw std::runtime_error("mate: BRepBuilderAPI_Transform failed");
+    return wrap(transformer.Shape());
 }
 
 // ---------------------------------------------------------------------------

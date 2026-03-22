@@ -574,3 +574,59 @@ fn e2e_color_chained_with_transform() {
         .unwrap();
     assert_eq!(result, "Shape");
 }
+
+// ---------------------------------------------------------------------------
+// Phase 5 — assembly mating
+// ---------------------------------------------------------------------------
+
+#[test]
+fn e2e_mate_stacks_box_on_box() {
+    let mut vm = MrubyVm::new();
+    // After mating, the bounding box Z of the post should be 10..15.
+    let result = vm.eval(r#"
+base = box(10, 10, 10)
+post = box(5, 5, 5)
+placed = post.mate(post.faces(:bottom).first, base.faces(:top).first)
+placed.bounding_box
+"#).unwrap();
+    // bounding_box returns [xmin,ymin,zmin,xmax,ymax,zmax]
+    assert!(result.contains("10"), "expected Zmin≈10 in bounding box: {result}");
+}
+
+#[test]
+fn e2e_mate_with_offset() {
+    let mut vm = MrubyVm::new();
+    let result = vm.eval(r#"
+base = box(10, 10, 10)
+post = box(5, 5, 5)
+placed = post.mate(post.faces(:bottom).first, base.faces(:top).first, 3.0)
+placed.bounding_box
+"#).unwrap();
+    assert!(result.contains("13"), "expected Zmin≈13 in bounding box: {result}");
+}
+
+#[test]
+fn e2e_assembly_mate_keyword_form() {
+    let mut vm = MrubyVm::new();
+    // Assembly#mate should accept keyword args and place the mated shape.
+    vm.eval(r#"
+base = box(100, 80, 10)
+post = box(20, 20, 50)
+asm = assembly("bracket") do |a|
+  a.place base
+  a.mate post, from: post.faces(:bottom).first, to: base.faces(:top).first
+end
+asm.class
+"#).expect("assembly mate failed");
+}
+
+#[test]
+fn e2e_mate_non_planar_raises() {
+    let mut vm = MrubyVm::new();
+    let err = vm.eval(r#"
+cyl  = cylinder(5, 10)
+base = box(20, 20, 5)
+cyl.mate(cyl.faces(:side).first, base.faces(:top).first)
+"#).unwrap_err();
+    assert!(err.to_lowercase().contains("planar"), "expected planar error: {err}");
+}

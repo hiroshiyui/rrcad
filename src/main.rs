@@ -37,6 +37,11 @@ Color (Phase 5)
   s.color(r, g, b)          tag shape with sRGB color (each 0.0–1.0)
                             written into GLB / glTF / OBJ on export
 
+Assembly mating (Phase 5)
+  s.mate(from_face, to_face)          reposition s flush against to_face
+  s.mate(from_face, to_face, offset)  same with a gap (offset > 0)
+  a.mate s, from: f1, to: f2         mate + add to assembly (keyword form)
+
 Modifiers
   s.fillet(r[, :sel])       round all (or selected) edges
   s.chamfer(d[, :sel])      bevel all (or selected) edges
@@ -157,8 +162,9 @@ const SHAPE_METHODS: &[&str] = &[
     "faces",
     "edges",
     "vertices",
-    // Phase 5 — color
+    // Phase 5 — color and mating
     "color",
+    "mate",
     // Ruby built-ins
     "class",
     "inspect",

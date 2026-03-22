@@ -236,15 +236,20 @@ DSL addition is small. Payoff is immediate and visible in the live preview.
 
 ### Tier 3 — Research-heavy, high value if done well
 
-#### [ ] Constraint solver integration
+#### [x] Assembly mating (scoped constraint solver)
 
-Most architecturally significant and riskiest item. SolveSpace's solver (`slvs`)
-is the only production-quality embeddable 2D/3D constraint solver with a C API —
-worth evaluating seriously. The alternative (custom) is months of work.
+Scoped to face-based assembly mating rather than full sketch constraints.
+Implemented `Shape#mate(from_face, to_face, offset=0.0)` and
+`Assembly#mate(shape, from:, to:, offset: 0.0)` using OCCT geometry directly:
 
-**Key open question before committing:** does rrcad need full sketch-level
-constraints (dimensional + geometric) or just parameter-driven relationships?
-The answer shapes the whole design. Start with a spike/prototype.
+- Outward face normals computed from `Geom_Plane::Axis()` + `TopAbs_REVERSED` orientation.
+- Face centroids via `BRepGProp::SurfaceProperties`.
+- Rotation (pivoting around from-face centroid) aligns normals antiparallel.
+- Translation maps from-face centroid onto to-face centroid.
+- `offset` parameter shifts along the to-face outward normal (gap/interference).
+
+Full SolveSpace / `slvs` sketch-level constraint integration remains out of scope —
+the `param` DSL + design table covers parametric relationships adequately.
 
 ---
 

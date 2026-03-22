@@ -13,6 +13,14 @@ mod ffi {
             b: f64,
         ) -> Result<UniquePtr<OcctShape>>;
 
+        // --- Assembly mating ---
+        fn shape_mate(
+            shape: &OcctShape,
+            from_face: &OcctShape,
+            to_face: &OcctShape,
+            offset: f64,
+        ) -> Result<UniquePtr<OcctShape>>;
+
         // --- Primitives ---
         fn make_box(dx: f64, dy: f64, dz: f64) -> Result<UniquePtr<OcctShape>>;
         fn make_cylinder(radius: f64, height: f64) -> Result<UniquePtr<OcctShape>>;
@@ -246,6 +254,17 @@ impl Shape {
     }
 
     // --- Color ---
+
+    /// Return a copy of `self` rigidly transformed so that `from_face` (a planar
+    /// face of this shape) lies flush against `to_face` (a fixed reference face).
+    ///
+    /// The transform aligns face centroids and makes the outward normals antiparallel.
+    /// `offset > 0` leaves a gap; `offset < 0` creates interference.
+    pub fn mate(&self, from_face: &Shape, to_face: &Shape, offset: f64) -> Result<Shape, String> {
+        ffi::shape_mate(&self.inner, &from_face.inner, &to_face.inner, offset)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
 
     /// Return a copy of this shape with an sRGB surface color attached.
     /// `r`, `g`, `b` are each in [0.0, 1.0].  The color is written into
@@ -724,6 +743,63 @@ mod tests {
             std::fs::metadata(&out).unwrap().len() > 0,
             "GLB file is empty"
         );
+    }
+
+    // --- Assembly mating ---
+
+    #[test]
+    fn mate_stacks_box_on_box_z() {
+        // A 5×5×5 post mated (bottom → top) onto a 10×10×10 base.
+        // The base occupies Z = 0..10; the post should end up at Z = 10..15.
+        let base = Shape::make_box(10.0, 10.0, 10.0).unwrap();
+        let post = Shape::make_box(5.0, 5.0, 5.0).unwrap();
+
+        let from_faces = post.faces("bottom").unwrap();
+        let to_faces = base.faces("top").unwrap();
+
+        let mated = post.mate(&from_faces[0], &to_faces[0], 0.0).unwrap();
+        let bb = mated.bounding_box().unwrap();
+        // bb = [xmin, ymin, zmin, xmax, ymax, zmax]
+        assert!(
+            (bb[2] - 10.0).abs() < 0.01,
+            "Zmin should be ≈10, got {}",
+            bb[2]
+        );
+        assert!(
+            (bb[5] - 15.0).abs() < 0.01,
+            "Zmax should be ≈15, got {}",
+            bb[5]
+        );
+    }
+
+    #[test]
+    fn mate_with_offset_leaves_gap() {
+        let base = Shape::make_box(10.0, 10.0, 10.0).unwrap();
+        let post = Shape::make_box(5.0, 5.0, 5.0).unwrap();
+        let from_faces = post.faces("bottom").unwrap();
+        let to_faces = base.faces("top").unwrap();
+        let mated = post.mate(&from_faces[0], &to_faces[0], 3.0).unwrap();
+        let bb = mated.bounding_box().unwrap();
+        // With offset=3, post bottom should be at Z=13 (10 + 3 gap).
+        assert!(
+            (bb[2] - 13.0).abs() < 0.01,
+            "Zmin should be ≈13, got {}",
+            bb[2]
+        );
+    }
+
+    #[test]
+    fn mate_non_planar_face_returns_error() {
+        let cyl = Shape::make_cylinder(5.0, 10.0).unwrap();
+        let base = Shape::make_box(20.0, 20.0, 5.0).unwrap();
+        // Side face of a cylinder is non-planar — mate should error.
+        let side_faces = cyl.faces("side").unwrap();
+        let to_faces = base.faces("top").unwrap();
+        let result = cyl.mate(&side_faces[0], &to_faces[0], 0.0);
+        match result {
+            Ok(_) => panic!("expected error for non-planar from-face"),
+            Err(err) => assert!(err.contains("planar"), "unexpected error: {err}"),
+        }
     }
 
     #[test]
