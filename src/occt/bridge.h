@@ -169,6 +169,11 @@ std::unique_ptr<OcctShape> shape_shell(const OcctShape& shape, double thickness)
 //   Uses BRepOffsetAPI_MakeOffsetShape::PerformByJoin.
 std::unique_ptr<OcctShape> shape_offset(const OcctShape& shape, double distance);
 
+// .simplify(min_feature_size) — remove small holes and fillets.
+//   Faces with surface area < min_feature_size² are passed to
+//   BRepAlgoAPI_Defeaturing.  Returns the original shape if no faces qualify.
+std::unique_ptr<OcctShape> shape_simplify(const OcctShape& shape, double min_feature_size);
+
 // .extrude(h, twist_deg, scale) — extended extrude with end twist and scale.
 //   Falls back to BRepPrimAPI_MakePrism when twist_deg≈0 and scale≈1.
 //   Otherwise discretises the extrusion into sections via ThruSections.

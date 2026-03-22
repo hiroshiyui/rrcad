@@ -441,7 +441,11 @@ fn e2e_vertices_count_box() {
     let result = vm
         .eval("box(5.0, 5.0, 5.0).vertices(:all).length")
         .expect("vertices(:all) failed");
-    assert_eq!(result.trim(), "8", "expected 8 vertices on a box, got: {result}");
+    assert_eq!(
+        result.trim(),
+        "8",
+        "expected 8 vertices on a box, got: {result}"
+    );
 }
 
 #[test]
@@ -507,19 +511,19 @@ fn e2e_export_obj() {
     .expect("export .obj failed");
     assert!(out.exists(), "OBJ file was not created");
     let content = std::fs::read_to_string(&out).unwrap();
-    assert!(content.contains('v') || content.contains('f'),
-            "file does not look like an OBJ: {}", &content[..content.len().min(200)]);
+    assert!(
+        content.contains('v') || content.contains('f'),
+        "file does not look like an OBJ: {}",
+        &content[..content.len().min(200)]
+    );
 }
 
 #[test]
 fn e2e_export_stl() {
     let out = tmp("e2e_export.stl");
     let mut vm = MrubyVm::new();
-    vm.eval(&format!(
-        "box(5.0, 5.0, 5.0).export(\"{}\")",
-        out.display()
-    ))
-    .expect("export .stl failed");
+    vm.eval(&format!("box(5.0, 5.0, 5.0).export(\"{}\")", out.display()))
+        .expect("export .stl failed");
     assert!(out.exists());
     let content = std::fs::read_to_string(&out).unwrap();
     assert!(content.contains("solid") || content.len() > 0);
@@ -529,11 +533,8 @@ fn e2e_export_stl() {
 fn e2e_export_glb() {
     let out = tmp("e2e_export.glb");
     let mut vm = MrubyVm::new();
-    vm.eval(&format!(
-        "sphere(4.0).export(\"{}\")",
-        out.display()
-    ))
-    .expect("export .glb failed");
+    vm.eval(&format!("sphere(4.0).export(\"{}\")", out.display()))
+        .expect("export .glb failed");
     assert!(out.exists());
     assert!(std::fs::metadata(&out).unwrap().len() > 0);
 }
@@ -546,9 +547,7 @@ fn e2e_export_glb() {
 fn e2e_color_returns_shape() {
     let mut vm = MrubyVm::new();
     // .color() should return a Shape, not raise.
-    let result = vm
-        .eval("box(10,10,10).color(1.0, 0.0, 0.0).class")
-        .unwrap();
+    let result = vm.eval("box(10,10,10).color(1.0, 0.0, 0.0).class").unwrap();
     assert_eq!(result, "Shape");
 }
 
@@ -583,33 +582,48 @@ fn e2e_color_chained_with_transform() {
 fn e2e_mate_stacks_box_on_box() {
     let mut vm = MrubyVm::new();
     // After mating, the bounding box Z of the post should be 10..15.
-    let result = vm.eval(r#"
+    let result = vm
+        .eval(
+            r#"
 base = box(10, 10, 10)
 post = box(5, 5, 5)
 placed = post.mate(post.faces(:bottom).first, base.faces(:top).first)
 placed.bounding_box
-"#).unwrap();
+"#,
+        )
+        .unwrap();
     // bounding_box returns [xmin,ymin,zmin,xmax,ymax,zmax]
-    assert!(result.contains("10"), "expected Zmin≈10 in bounding box: {result}");
+    assert!(
+        result.contains("10"),
+        "expected Zmin≈10 in bounding box: {result}"
+    );
 }
 
 #[test]
 fn e2e_mate_with_offset() {
     let mut vm = MrubyVm::new();
-    let result = vm.eval(r#"
+    let result = vm
+        .eval(
+            r#"
 base = box(10, 10, 10)
 post = box(5, 5, 5)
 placed = post.mate(post.faces(:bottom).first, base.faces(:top).first, 3.0)
 placed.bounding_box
-"#).unwrap();
-    assert!(result.contains("13"), "expected Zmin≈13 in bounding box: {result}");
+"#,
+        )
+        .unwrap();
+    assert!(
+        result.contains("13"),
+        "expected Zmin≈13 in bounding box: {result}"
+    );
 }
 
 #[test]
 fn e2e_assembly_mate_keyword_form() {
     let mut vm = MrubyVm::new();
     // Assembly#mate should accept keyword args and place the mated shape.
-    vm.eval(r#"
+    vm.eval(
+        r#"
 base = box(100, 80, 10)
 post = box(20, 20, 50)
 asm = assembly("bracket") do |a|
@@ -617,16 +631,68 @@ asm = assembly("bracket") do |a|
   a.mate post, from: post.faces(:bottom).first, to: base.faces(:top).first
 end
 asm.class
-"#).expect("assembly mate failed");
+"#,
+    )
+    .expect("assembly mate failed");
 }
 
 #[test]
 fn e2e_mate_non_planar_raises() {
     let mut vm = MrubyVm::new();
-    let err = vm.eval(r#"
+    let err = vm
+        .eval(
+            r#"
 cyl  = cylinder(5, 10)
 base = box(20, 20, 5)
 cyl.mate(cyl.faces(:side).first, base.faces(:top).first)
-"#).unwrap_err();
-    assert!(err.to_lowercase().contains("planar"), "expected planar error: {err}");
+"#,
+        )
+        .unwrap_err();
+    assert!(
+        err.to_lowercase().contains("planar"),
+        "expected planar error: {err}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// .simplify (Tier 4 — feature removal)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn e2e_simplify_no_features_returns_shape() {
+    // A plain box has no faces below any reasonable area threshold;
+    // simplify should return the shape unchanged.
+    let mut vm = MrubyVm::new();
+    let r = vm.eval("box(20, 20, 20).simplify(0.1).class").unwrap();
+    assert!(r.contains("Shape"), "expected Shape, got: {r}");
+}
+
+#[test]
+fn e2e_simplify_with_fillet_removes_small_faces() {
+    // A filleted box has small cylindrical fillet faces.  With a generous
+    // threshold they should be removed; the result must still be a Shape.
+    let mut vm = MrubyVm::new();
+    let r = vm
+        .eval("box(20, 20, 20).fillet(1).simplify(5.0).class")
+        .unwrap();
+    assert!(
+        r.contains("Shape"),
+        "expected Shape after simplify, got: {r}"
+    );
+}
+
+#[test]
+fn e2e_simplify_exports_step() {
+    let mut vm = MrubyVm::new();
+    let out = std::env::temp_dir().join("rrcad_simplify.step");
+    let code = format!(
+        r#"box(30, 30, 30).fillet(2).simplify(10.0).export("{}")"#,
+        out.display()
+    );
+    vm.eval(&code).expect("eval failed");
+    assert!(out.exists(), "STEP file not created");
+    assert!(
+        std::fs::metadata(&out).unwrap().len() > 0,
+        "STEP file empty"
+    );
 }

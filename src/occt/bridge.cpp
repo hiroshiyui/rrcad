@@ -84,6 +84,7 @@
 #include <GProp_GProps.hxx>
 
 // --- OCCT: Phase 4 — 3-D operations ---
+#include <BRepAlgoAPI_Defeaturing.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepOffsetAPI_MakeOffsetShape.hxx>
 #include <BRepOffsetAPI_MakeThickSolid.hxx>
@@ -662,6 +663,44 @@ std::unique_ptr<OcctShape> shape_offset(const OcctShape& shape, double distance)
     if (!offsetter.IsDone())
         throw std::runtime_error("BRepOffsetAPI_MakeOffsetShape (offset) failed");
     return wrap(offsetter.Shape());
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 / Tier 4: .simplify(min_feature_size)
+//
+// Removes small holes and fillets from a solid using BRepAlgoAPI_Defeaturing.
+// Faces with surface area smaller than min_feature_size² are treated as
+// belonging to small features and are passed to AddFaceToRemove.
+//
+// If no faces are below the threshold the original shape is returned unchanged.
+// If the algorithm fails after selecting faces a std::runtime_error is thrown.
+// ---------------------------------------------------------------------------
+
+std::unique_ptr<OcctShape> shape_simplify(const OcctShape& shape, double min_feature_size) {
+    double area_threshold = min_feature_size * min_feature_size;
+
+    // Collect faces smaller than the area threshold.
+    TopTools_ListOfShape small_faces;
+    for (TopExp_Explorer ex(shape.get(), TopAbs_FACE); ex.More(); ex.Next()) {
+        GProp_GProps face_props;
+        BRepGProp::SurfaceProperties(ex.Current(), face_props);
+        if (face_props.Mass() < area_threshold)
+            small_faces.Append(ex.Current());
+    }
+
+    // If nothing qualifies, return a copy of the original unchanged.
+    if (small_faces.IsEmpty())
+        return wrap(shape.get());
+
+    BRepAlgoAPI_Defeaturing df;
+    df.SetShape(shape.get());
+    df.AddFacesToRemove(small_faces);
+    df.SetRunParallel(Standard_True);
+    df.SetToFillHistory(Standard_False);
+    df.Build();
+    if (!df.IsDone())
+        throw std::runtime_error("BRepAlgoAPI_Defeaturing (simplify) failed");
+    return wrap(df.Shape());
 }
 
 // ---------------------------------------------------------------------------

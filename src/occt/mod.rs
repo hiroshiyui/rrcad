@@ -95,6 +95,8 @@ mod ffi {
         // --- Phase 4: 3-D operations ---
         fn shape_shell(shape: &OcctShape, thickness: f64) -> Result<UniquePtr<OcctShape>>;
         fn shape_offset(shape: &OcctShape, distance: f64) -> Result<UniquePtr<OcctShape>>;
+        fn shape_simplify(shape: &OcctShape, min_feature_size: f64)
+            -> Result<UniquePtr<OcctShape>>;
         fn shape_extrude_ex(
             shape: &OcctShape,
             height: f64,
@@ -395,6 +397,15 @@ impl Shape {
     /// Wraps BRepOffsetAPI_MakeOffsetShape::PerformByJoin.
     pub fn offset(&self, distance: f64) -> Result<Shape, String> {
         ffi::shape_offset(&self.inner, distance)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Remove small holes and fillets.  Faces with area < min_feature_size²
+    /// are passed to BRepAlgoAPI_Defeaturing.  Returns the original shape
+    /// unchanged if no faces qualify.
+    pub fn simplify(&self, min_feature_size: f64) -> Result<Shape, String> {
+        ffi::shape_simplify(&self.inner, min_feature_size)
             .map(|p| Shape { inner: p })
             .map_err(|e| e.to_string())
     }

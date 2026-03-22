@@ -134,6 +134,7 @@ extern double rrcad_shape_surface_area(void* ptr, const char** error_out);
 extern void* rrcad_shape_loft(const void** ptrs, size_t n, int ruled, const char** error_out);
 extern void* rrcad_shape_shell(void* ptr, double thickness, const char** error_out);
 extern void* rrcad_shape_offset(void* ptr, double distance, const char** error_out);
+extern void* rrcad_shape_simplify(void* ptr, double min_feature_size, const char** error_out);
 extern void* rrcad_shape_extrude_ex(void* ptr, double height, double twist_deg, double scale,
                                     const char** error_out);
 
@@ -665,6 +666,20 @@ static mrb_value mrb_rrcad_shape_offset(mrb_state* mrb, mrb_value self) {
     require_native_ptr(mrb, ptr);
     const char* err = NULL;
     void* result = rrcad_shape_offset(ptr, (double)distance, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* .simplify(min_feature_size) — remove small holes/fillets via defeaturing.
+   Faces with area < min_feature_size² are passed to BRepAlgoAPI_Defeaturing. */
+static mrb_value mrb_rrcad_shape_simplify(mrb_state* mrb, mrb_value self) {
+    mrb_float min_size;
+    mrb_get_args(mrb, "f", &min_size);
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    void* result = rrcad_shape_simplify(ptr, (double)min_size, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
@@ -1203,6 +1218,7 @@ void rrcad_register_shape_class(mrb_state* mrb) {
                       MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
     mrb_define_method(mrb, shape_class, "shell", mrb_rrcad_shape_shell, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "offset", mrb_rrcad_shape_offset, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "simplify", mrb_rrcad_shape_simplify, MRB_ARGS_REQ(1));
 
     /* Phase 4: Patterns */
     mrb_define_method(mrb, mrb->kernel_module, "linear_pattern", mrb_rrcad_linear_pattern,

@@ -990,6 +990,19 @@ pub unsafe extern "C" fn rrcad_shape_offset(
     unsafe { shape_result_to_ptr(shape.offset(distance), error_out) }
 }
 
+/// Remove small features (holes/fillets) by defeaturing.
+/// Faces with area < min_feature_size² are passed to BRepAlgoAPI_Defeaturing.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_simplify(
+    ptr: *mut c_void,
+    min_feature_size: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    unsafe { shape_result_to_ptr(shape.simplify(min_feature_size), error_out) }
+}
+
 /// Extrude with optional end-twist (degrees around Z) and end-scale factor.
 /// Falls back to MakePrism when twist≈0 and scale≈1.
 #[unsafe(no_mangle)]

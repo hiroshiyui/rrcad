@@ -271,11 +271,14 @@ spline_3d([[0,0,0],[5,5,5],[10,0,0]], tangents: [[1,0,0],[1,0,0]])
 Magnitude is ignored — only direction matters. Without `tangents:` the
 natural-boundary (cubic spline) interpolation is used unchanged.
 
-#### [ ] Feature removal — `.simplify`
+#### [x] Feature removal — `.simplify`
 
-`BRepAlgoAPI_Defeaturing` (OCCT 7.4+) removes small holes/fillets for simplified
-simulation meshes. Niche use case (pre-FEA mesh simplification). Implement as
-`.simplify(min_feature_size)` — or skip if Phase 5 priorities shift.
+`BRepAlgoAPI_Defeaturing` removes faces with area < `min_feature_size²`.
+Returns the original shape unchanged if no faces qualify.
+
+```ruby
+part.simplify(1.0)   # remove features smaller than ~1 mm
+```
 
 ---
 

@@ -85,6 +85,18 @@ class Shape
     raise NotImplementedError, "Shape#offset is not yet implemented (Phase 4)"
   end
 
+  # Remove small holes and fillets for simplified simulation meshes.
+  # Faces with surface area smaller than min_feature_size² are treated as
+  # belonging to small features and are removed via BRepAlgoAPI_Defeaturing.
+  # Returns the shape unchanged if no faces qualify.
+  #
+  #   part.simplify(1.0)   # remove features smaller than ~1 mm²
+  #
+  # Overridden by the native implementation after the prelude runs.
+  def simplify(_min_feature_size)
+    raise NotImplementedError, "Shape#simplify is not yet implemented (Tier 4)"
+  end
+
   def revolve(_angle = 360.0)
     raise NotImplementedError, "Shape#revolve is not yet implemented (Phase 2)"
   end

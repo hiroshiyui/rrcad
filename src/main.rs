@@ -162,6 +162,10 @@ const SHAPE_METHODS: &[&str] = &[
     "faces",
     "edges",
     "vertices",
+    // Phase 4 — 3-D ops and Tier 4 quality
+    "shell",
+    "offset",
+    "simplify",
     // Phase 5 — color and mating
     "color",
     "mate",
