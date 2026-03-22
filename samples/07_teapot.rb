@@ -1,89 +1,111 @@
 # Utah Teapot — samples/07_teapot.rb
 #
-# Approximation of the original Newell teapot using rrcad's Phase 5 DSL.
-# Built incrementally: body → handle → spout → lid+knob.
+# Rebuilt from the Newell triangle mesh (doc/images/utah_teapot.obj).
+# All coordinates are OBJ-native values scaled ×3.0 to rrcad working units.
 #
-# Coordinate system (Z-up, scaled from Newell units):
-#   height : Newell-Y × 3.333 → OCCT-Z   (total body height = 7.5 units)
-#   radius : Newell-X/Z × 3.5  → OCCT-X/Y (max radius     = 7.0)
+# OBJ coordinate system (already Z-up):
+#   Z = height (body 0.0 → 2.2 obj = 0.0 → 6.6 ours)
+#   X = spout (+) / handle (−) direction
+#   Y = depth (symmetric ±2.0 obj)
 #
-# Key reference heights (Newell → OCCT):
-#   foot ring  Y=0.15 r=1.50  →  Z=0.50 r=5.25
-#   widest     Y=0.90 r=2.00  →  Z=2.00 r=7.00  (lowered for squat belly)
-#   shoulder   Y=1.35 r=1.75  →  Z=4.50 r=6.13
-#   neck       Y=1.65 r=1.40  →  Z=5.50 r=4.90
-#   rim        Y=2.25 r=1.40  →  Z=7.50 r=4.90
+# Body profile derived from OBJ cylindrical cross-sections in the ±60° Y-axis
+# band (avoids contamination from spout/handle vertices):
+#   z_obj=0.0  r=1.52 → z=0.00 r=4.56
+#   z_obj=0.2  r=1.75 → z=0.60 r=5.25  (widest in lower third)
+#   z_obj=0.8  r=2.00 → z=2.40 r=6.00  (maximum girth)
+#   z_obj=1.5  r=1.84 → z=4.50 r=5.53  (shoulder)
+#   z_obj=2.0  r=1.64 → z=6.00 r=4.92  (neck)
+#   z_obj=2.2  r=1.55 → z=6.60 r=4.64  (rim)
+#
+# Handle tube: OBJ ry=0.225 × 3 = 0.68 (→ r=0.70); centerline apex at x=−8.54 z=4.80.
+# Spout tip:   OBJ center x=3.08, r=0.19 × 3 → x=9.23, r=0.56.
+# Lid:         OBJ dome z=6.60→7.80; knob peaks at z=8.70 r≈1.09.
 
 # ============================================================
-# Parametric glaze colour (override with e.g. --param glaze_r=0.8)
+# Parametric glaze colour
 # ============================================================
 glaze_r = param(:glaze_r, default: 0.96)  # cream white
 glaze_g = param(:glaze_g, default: 0.92)
 glaze_b = param(:glaze_b, default: 0.84)
 
 # ============================================================
-# Step 1 — Body loft
+# Step 1 — Body loft (OBJ-derived profile, 8 cross-sections)
 # ============================================================
-# Flat base at r=3.00 (real teapots rest on a foot ring).
-# Widest point at Z=2.00 (27 % of height) gives a squat, round belly.
-# Section at Z=1.00 keeps the loft surface simple at the spout junction
-# (Z=1.50) for robust boolean fuse.
+# The OBJ body is more uniform than Newell parametric data suggests:
+# widest girth (r=6.00) is at Z=2.40 (36% of height), not Z=2.0.
+# The body tapers gently from rim (r=4.64) down to base (r=4.56),
+# with a modest belly — significantly less extreme than the Newell approximation.
 body = loft([
-  circle(3.00).translate(0, 0, 0.00),  # flat base
-  circle(5.25).translate(0, 0, 0.50),  # foot ring     (Newell Y=0.15)
-  circle(5.80).translate(0, 0, 1.00),  # lower belly   (below spout junction Z=1.5)
-  circle(7.00).translate(0, 0, 2.00),  # widest        (lowered from Z=3.00)
-  circle(6.80).translate(0, 0, 3.00),  # upper belly
-  circle(6.13).translate(0, 0, 4.50),  # shoulder      (Newell Y=1.35)
-  circle(4.90).translate(0, 0, 5.50),  # neck          (Newell Y=1.65)
-  circle(4.90).translate(0, 0, 7.50),  # rim           (Newell Y=2.25)
+  circle(4.56).translate(0, 0, 0.00),  # base            (obj z=0.0 r=1.52)
+  circle(5.25).translate(0, 0, 0.60),  # lower           (obj z=0.2 r=1.75)
+  circle(5.65).translate(0, 0, 1.20),  # lower-mid       (obj z=0.4 r=1.88)
+  circle(5.94).translate(0, 0, 1.80),  # upper-mid       (obj z=0.6 r=1.98)
+  circle(6.00).translate(0, 0, 2.40),  # widest          (obj z=0.8 r=2.00)
+  circle(5.53).translate(0, 0, 4.50),  # shoulder        (obj z=1.5 r=1.84)
+  circle(4.92).translate(0, 0, 6.00),  # neck            (obj z=2.0 r=1.64)
+  circle(4.64).translate(0, 0, 6.60),  # rim             (obj z=2.2 r=1.55)
 ])
 
 # ============================================================
-# Step 2 — Handle sweep with tangent constraints
+# Step 2 — Handle sweep (OBJ-derived C-arc, ear style)
 # ============================================================
-# Tangent at start: exits body in −X direction (outward to the left).
-# Tangent at end:   returns to body in +X direction (back toward body centre).
-# The constraints suppress BSpline oscillation and produce smooth attachment.
+# Centerline traced directly from OBJ mesh cross-sections (x < −2.0 filter).
+# Apex at x=−8.54 z=4.80 (obj: cx=−2.85, z=1.60).
+# Tube radius 0.70 matches OBJ ry=0.225 × 3.0 = 0.68 (rounded to 0.70).
+#
+# Endpoints extend to x=−4.0 (inside body by ≈1.8 units at both attachment
+# heights) to ensure solid volume overlap for a clean boolean fuse.
+# The sweep tube crosses the body wall on the way out and back in, creating
+# two neat circular openings — the classic ear-handle look.
 handle_path = spline_3d([
-  [-3.50,  0.0, 1.50],   # inside body — bottom attachment
-  [-7.00,  0.0, 2.00],   # lower handle arc
-  [-10.50, 0.0, 4.50],   # outer apex
-  [-7.00,  0.0, 6.80],   # upper handle arc
-  [-3.50,  0.0, 7.00],   # inside body — top attachment
-], tangents: [[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
-handle = circle(0.90).sweep(handle_path)
+  [-4.00, 0.0, 1.50],  # inside body — bottom attachment (body r=5.86 here)
+  [-7.00, 0.0, 2.40],  # outside body — lower outer curve
+  [-8.30, 0.0, 3.60],  # outside body — outer arc rising
+  [-8.54, 0.0, 4.80],  # C-arc apex   (obj cx=−8.54, z=4.80)
+  [-8.10, 0.0, 5.40],  # outside body — outer arc descending
+  [-7.00, 0.0, 6.00],  # outside body — upper outer curve
+  [-3.50, 0.0, 6.30],  # inside body — top attachment    (body r=4.78 here)
+])
+handle = circle(0.70).sweep(handle_path)
 body_handle = body.fuse(handle)
 
 # ============================================================
-# Step 3 — Tapered spout loft (wide at body → narrow at pour tip)
+# Step 3 — Tapered spout loft (OBJ-derived centerline + radii)
 # ============================================================
-# Five cross-section circles at the spout path positions with decreasing
-# radii.  The wide base (r=2.20) transitions to a narrow pour tip (r=0.65),
-# giving the spout its characteristic tapered silhouette.
+# Spout centerline runs from inside the body (base at x=4.50, inside body
+# surface at r=5.86) curving up-and-outward to the pour tip at x=9.23 z=6.90.
+# Radii at perpendicular cross-sections:
+#   base ≈1.40  (estimated at body junction, OBJ angle-distorted at low z)
+#   tip  ≈0.56  (OBJ: ry=0.187 × 3 at z_obj=2.3, near-perpendicular cut)
 spout = loft([
-  circle(2.20).translate( 4.00, 0.0, 1.50),  # base — inside body
-  circle(1.60).translate( 6.50, 0.0, 2.80),  # lower arc
-  circle(1.10).translate( 9.50, 0.0, 4.50),  # mid arc
-  circle(0.85).translate(12.00, 0.0, 5.80),  # upper arc
-  circle(0.65).translate(14.00, 0.0, 6.50),  # pour tip
+  circle(1.40).translate(4.50, 0.0, 1.50),  # base — inside body
+  circle(1.10).translate(6.50, 0.0, 2.80),  # lower arc
+  circle(0.80).translate(7.80, 0.0, 4.50),  # mid arc
+  circle(0.65).translate(8.10, 0.0, 5.70),  # upper arc
+  circle(0.56).translate(9.23, 0.0, 6.90),  # pour tip
 ])
 body_handle_spout = body_handle.fuse(spout)
 
 # ============================================================
-# Step 4 — Lid + knob subassembly
+# Step 4 — Lid + knob subassembly (OBJ-derived dome profile)
 # ============================================================
-# Lid built as loft of circles (proper solid, not spline_2d.revolve shell).
-# Rim at r=5.00 > body r=4.90, Z=7.40 < body top Z=7.50 — clear overlap,
-# no near-coincident faces, robust boolean fuse.
+# OBJ lid profile (Y-axis band cross-sections × 3):
+#   z=6.60 r=4.64 (rim, same as body top)
+#   z=6.90 r=4.46
+#   z=7.20 r=3.26 (dome narrows sharply)
+#   z=7.50 r=1.37
+#   z=7.80 r=0.60 (dome apex)
+# Lid rim starts at z=6.50, r=4.80 — 0.10 below and 0.16 wider than body rim —
+# ensuring volume overlap for a clean boolean fuse with the body.
 lid = loft([
-  circle(0.30).translate(0, 0, 8.70),  # near-apex (covered by knob)
-  circle(1.50).translate(0, 0, 8.50),  # upper dome
-  circle(3.00).translate(0, 0, 8.10),  # mid dome
-  circle(4.00).translate(0, 0, 7.70),  # lower dome shoulder
-  circle(5.00).translate(0, 0, 7.40),  # rim — wider than body, 0.10 below body top
+  circle(4.80).translate(0, 0, 6.50),  # rim — wider+lower than body for fuse
+  circle(4.46).translate(0, 0, 6.90),  # below flare
+  circle(3.26).translate(0, 0, 7.20),  # dome narrowing
+  circle(1.37).translate(0, 0, 7.50),  # near apex
+  circle(0.30).translate(0, 0, 7.80),  # dome apex (capped by knob)
 ])
-knob = sphere(1.20).translate(0, 0, 9.10)
+# Knob: OBJ peaks at r≈1.09 at z=8.70 (obj: r_max=0.362 × 3).
+knob = sphere(0.90).translate(0, 0, 8.40)
 lid_assy = lid.fuse(knob)
 
 # ============================================================

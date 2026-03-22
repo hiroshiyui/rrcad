@@ -70,9 +70,11 @@ See `tests/phase5_params.rs`, `tests/e2e_dsl.rs`.
 
 ## ✓ Utah Teapot Sample
 
-`samples/07_teapot.rb` — body via `loft`, spout/handle via `sweep`, lid via
-`spline_2d + revolve`, knob via `sphere`. Geometry approximates the Newell
-cross-section data scaled to OCCT coordinates (Z-up, body height = 7.5 units).
+`samples/07_teapot.rb` — rebuilt from the Newell triangle mesh
+(`doc/images/utah_teapot.obj`, ×3.0 scale).  Body via `loft` (8 OBJ-derived
+cross-sections, widest r=6.00 at Z=2.40); handle via `circle(0.70).sweep`
+along a 7-point C-arc traced from OBJ centerline; spout via tapered `loft`;
+lid via `loft` dome + `sphere` knob.  Body height = 6.60 units (rim at Z=6.60).
 Validated by `tests/teapot_sample.rs` (5 tests).
 
 ---

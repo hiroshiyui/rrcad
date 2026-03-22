@@ -31,14 +31,14 @@ fn teapot_body_loft_succeeds() {
     vm.eval(&format!(
         r#"
         body = loft([
-          circle(3.00).translate(0, 0, 0.00),
-          circle(5.25).translate(0, 0, 0.50),
-          circle(5.80).translate(0, 0, 1.00),
-          circle(7.00).translate(0, 0, 2.00),
-          circle(6.80).translate(0, 0, 3.00),
-          circle(6.13).translate(0, 0, 4.50),
-          circle(4.90).translate(0, 0, 5.50),
-          circle(4.90).translate(0, 0, 7.50),
+          circle(4.56).translate(0, 0, 0.00),
+          circle(5.25).translate(0, 0, 0.60),
+          circle(5.65).translate(0, 0, 1.20),
+          circle(5.94).translate(0, 0, 1.80),
+          circle(6.00).translate(0, 0, 2.40),
+          circle(5.53).translate(0, 0, 4.50),
+          circle(4.92).translate(0, 0, 6.00),
+          circle(4.64).translate(0, 0, 6.60),
         ])
         body.export('{}')
         "#,
@@ -55,17 +55,17 @@ fn teapot_spout_loft_succeeds() {
     vm.eval(&format!(
         r#"
         spout = loft([
-          circle(2.20).translate( 4.00, 0.0, 1.50),
-          circle(1.60).translate( 6.50, 0.0, 2.80),
-          circle(1.10).translate( 9.50, 0.0, 4.50),
-          circle(0.85).translate(12.00, 0.0, 5.80),
-          circle(0.65).translate(14.00, 0.0, 6.50),
+          circle(1.40).translate(4.50, 0.0, 1.50),
+          circle(1.10).translate(6.50, 0.0, 2.80),
+          circle(0.80).translate(7.80, 0.0, 4.50),
+          circle(0.65).translate(8.10, 0.0, 5.70),
+          circle(0.56).translate(9.23, 0.0, 6.90),
         ])
         spout.export('{}')
         "#,
         out.display()
     ))
-    .expect("teapot tapered spout loft failed");
+    .expect("teapot spout loft failed");
     assert_valid_step(&out);
 }
 
@@ -76,13 +76,15 @@ fn teapot_handle_sweep_succeeds() {
     vm.eval(&format!(
         r#"
         path = spline_3d([
-          [-3.50,  0.0, 1.50],
-          [-7.00,  0.0, 2.00],
-          [-10.50, 0.0, 4.50],
-          [-7.00,  0.0, 6.80],
-          [-3.50,  0.0, 7.00],
+          [-4.00, 0.0, 1.50],
+          [-7.00, 0.0, 2.40],
+          [-8.30, 0.0, 3.60],
+          [-8.54, 0.0, 4.80],
+          [-8.10, 0.0, 5.40],
+          [-7.00, 0.0, 6.00],
+          [-3.50, 0.0, 6.30],
         ])
-        handle = circle(1.00).sweep(path)
+        handle = circle(0.70).sweep(path)
         handle.export('{}')
         "#,
         out.display()
@@ -98,11 +100,11 @@ fn teapot_lid_loft_succeeds() {
     vm.eval(&format!(
         r#"
         lid = loft([
-          circle(0.30).translate(0, 0, 8.70),
-          circle(1.50).translate(0, 0, 8.50),
-          circle(3.00).translate(0, 0, 8.10),
-          circle(4.00).translate(0, 0, 7.70),
-          circle(5.00).translate(0, 0, 7.40),
+          circle(4.80).translate(0, 0, 6.50),
+          circle(4.46).translate(0, 0, 6.90),
+          circle(3.26).translate(0, 0, 7.20),
+          circle(1.37).translate(0, 0, 7.50),
+          circle(0.30).translate(0, 0, 7.80),
         ])
         lid.export('{}')
         "#,
@@ -123,41 +125,43 @@ fn teapot_full_assembly_succeeds() {
     vm.eval(&format!(
         r#"
         body = loft([
-          circle(3.00).translate(0, 0, 0.00),
-          circle(5.25).translate(0, 0, 0.50),
-          circle(5.80).translate(0, 0, 1.00),
-          circle(7.00).translate(0, 0, 2.00),
-          circle(6.80).translate(0, 0, 3.00),
-          circle(6.13).translate(0, 0, 4.50),
-          circle(4.90).translate(0, 0, 5.50),
-          circle(4.90).translate(0, 0, 7.50),
+          circle(4.56).translate(0, 0, 0.00),
+          circle(5.25).translate(0, 0, 0.60),
+          circle(5.65).translate(0, 0, 1.20),
+          circle(5.94).translate(0, 0, 1.80),
+          circle(6.00).translate(0, 0, 2.40),
+          circle(5.53).translate(0, 0, 4.50),
+          circle(4.92).translate(0, 0, 6.00),
+          circle(4.64).translate(0, 0, 6.60),
         ])
 
         handle_path = spline_3d([
-          [-3.50,  0.0, 1.50],
-          [-7.00,  0.0, 2.00],
-          [-10.50, 0.0, 4.50],
-          [-7.00,  0.0, 6.80],
-          [-3.50,  0.0, 7.00],
-        ], tangents: [[-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]])
-        handle = circle(0.90).sweep(handle_path)
+          [-4.00, 0.0, 1.50],
+          [-7.00, 0.0, 2.40],
+          [-8.30, 0.0, 3.60],
+          [-8.54, 0.0, 4.80],
+          [-8.10, 0.0, 5.40],
+          [-7.00, 0.0, 6.00],
+          [-3.50, 0.0, 6.30],
+        ])
+        handle = circle(0.70).sweep(handle_path)
 
         spout = loft([
-          circle(2.20).translate( 4.00, 0.0, 1.50),
-          circle(1.60).translate( 6.50, 0.0, 2.80),
-          circle(1.10).translate( 9.50, 0.0, 4.50),
-          circle(0.85).translate(12.00, 0.0, 5.80),
-          circle(0.65).translate(14.00, 0.0, 6.50),
+          circle(1.40).translate(4.50, 0.0, 1.50),
+          circle(1.10).translate(6.50, 0.0, 2.80),
+          circle(0.80).translate(7.80, 0.0, 4.50),
+          circle(0.65).translate(8.10, 0.0, 5.70),
+          circle(0.56).translate(9.23, 0.0, 6.90),
         ])
 
         lid = loft([
-          circle(0.30).translate(0, 0, 8.70),
-          circle(1.50).translate(0, 0, 8.50),
-          circle(3.00).translate(0, 0, 8.10),
-          circle(4.00).translate(0, 0, 7.70),
-          circle(5.00).translate(0, 0, 7.40),
+          circle(4.80).translate(0, 0, 6.50),
+          circle(4.46).translate(0, 0, 6.90),
+          circle(3.26).translate(0, 0, 7.20),
+          circle(1.37).translate(0, 0, 7.50),
+          circle(0.30).translate(0, 0, 7.80),
         ])
-        knob = sphere(1.20).translate(0, 0, 9.10)
+        knob = sphere(0.90).translate(0, 0, 8.40)
         lid_assy = lid.fuse(knob)
 
         body_handle = body.fuse(handle)

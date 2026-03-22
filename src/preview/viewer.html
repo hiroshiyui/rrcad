@@ -62,6 +62,10 @@ const fill = new THREE.DirectionalLight(0x8090ff, 0.5);
 fill.position.set(-4, 2, -3);
 scene.add(fill);
 
+const fill2 = new THREE.DirectionalLight(0xffffff, 0.4);
+fill2.position.set(-3, -4, 4);
+scene.add(fill2);
+
 // ── Camera ────────────────────────────────────────────────────────────────
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.01, 100000);
 camera.position.set(80, 60, 120);
