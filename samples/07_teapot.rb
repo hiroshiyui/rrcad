@@ -1,26 +1,25 @@
 # Utah Teapot — samples/07_teapot.rb
 #
-# Rebuilt from the Newell triangle mesh (doc/images/utah_teapot.obj,
-# sourced from https://graphics.cs.utah.edu/teapot/).
-# All coordinates are OBJ-native values scaled ×3.0 to rrcad working units.
+# Rebuilt from the original Newell Bézier patch data.
+# Source: https://users.cs.utah.edu/~dejohnso/models/teapot.html
+#   (Martin Newell / Jim Blinn; non-rational bicubic Bézier surfaces)
 #
-# OBJ coordinate system (already Z-up):
-#   Z = height (body 0.0 → 2.2 obj = 0.0 → 6.6 ours)
-#   X = spout (+) / handle (−) direction
-#   Y = depth (symmetric ±2.0 obj)
+# The source data uses Y-up coordinates.  rrcad uses Z-up, so the transform
+# applied to every control point is:
+#   source pt(x_s, y_s, z_s) → rrcad [x_s, z_s, y_s]
 #
-# Body profile derived from OBJ cylindrical cross-sections in the ±60° Y-axis
-# band (avoids contamination from spout/handle vertices):
-#   z_obj=0.0  r=1.52 → z=0.00 r=4.56
-#   z_obj=0.2  r=1.75 → z=0.60 r=5.25  (widest in lower third)
-#   z_obj=0.8  r=2.00 → z=2.40 r=6.00  (maximum girth)
-#   z_obj=1.5  r=1.84 → z=4.50 r=5.53  (shoulder)
-#   z_obj=2.0  r=1.64 → z=6.00 r=4.92  (neck)
-#   z_obj=2.2  r=1.55 → z=6.60 r=4.64  (rim)
+# 28 bicubic patches (4×4 control points each):
+#   Patches  1– 4 : Rim            (4 quadrants)
+#   Patches  5– 8 : Body upper     (4 quadrants, rim down to mid-body)
+#   Patches  9–12 : Body lower     (4 quadrants, mid-body to base)
+#   Patches 13–16 : Handle         (upper + lower halves × 2)
+#   Patches 17–20 : Spout          (upper + lower halves × 2)
+#   Patches 21–24 : Lid top / knob (4 quadrants)
+#   Patches 25–28 : Lid base       (4 quadrants)
 #
-# Handle tube: OBJ ry=0.225 × 3 = 0.68 (→ r=0.70); centerline apex at x=−8.54 z=4.80.
-# Spout tip:   OBJ center x=3.08, r=0.19 × 3 → x=9.23, r=0.56.
-# Lid:         OBJ dome z=6.60→7.80; knob peaks at z=8.70 r≈1.09.
+# The source Newell data does not include the flat bottom disc, so the sewn
+# solid is open at the base (this matches the traditional teapot as modelled
+# by Newell).  Scale ×3 brings the body height to ≈6.75 rrcad units.
 
 # ============================================================
 # Parametric glaze colour
@@ -30,99 +29,260 @@ glaze_g = param(:glaze_g, default: 0.92)
 glaze_b = param(:glaze_b, default: 0.84)
 
 # ============================================================
-# Step 1 — Body loft (OBJ-derived profile, 8 cross-sections)
+# 28 Newell Bézier patches
+# (Y-up → Z-up: each pt(x,y_s,z_s) stored as [x, z_s, y_s])
 # ============================================================
-# The OBJ body is more uniform than Newell parametric data suggests:
-# widest girth (r=6.00) is at Z=2.40 (36% of height), not Z=2.0.
-# The body tapers gently from rim (r=4.64) down to base (r=4.56),
-# with a modest belly — significantly less extreme than the Newell approximation.
-body = loft([
-  circle(4.56).translate(0, 0, 0.00),  # base            (obj z=0.0 r=1.52)
-  circle(5.25).translate(0, 0, 0.60),  # lower           (obj z=0.2 r=1.75)
-  circle(5.65).translate(0, 0, 1.20),  # lower-mid       (obj z=0.4 r=1.88)
-  circle(5.94).translate(0, 0, 1.80),  # upper-mid       (obj z=0.6 r=1.98)
-  circle(6.00).translate(0, 0, 2.40),  # widest          (obj z=0.8 r=2.00)
-  circle(5.53).translate(0, 0, 4.50),  # shoulder        (obj z=1.5 r=1.84)
-  circle(4.92).translate(0, 0, 6.00),  # neck            (obj z=2.0 r=1.64)
-  circle(4.64).translate(0, 0, 6.60),  # rim             (obj z=2.2 r=1.55)
-])
+patches = [
+
+  # ---- Rim (patches 1–4, 4 quadrants) -------------------------
+
+  # 1. Rim patch 1/4
+  bezier_patch([
+    [1.4, 0, 2.25], [1.3375, 0, 2.38125], [1.4375, 0, 2.38125], [1.5, 0, 2.25],
+    [1.4, 0.784, 2.25], [1.3375, 0.749, 2.38125], [1.4375, 0.805, 2.38125], [1.5, 0.84, 2.25],
+    [0.784, 1.4, 2.25], [0.749, 1.3375, 2.38125], [0.805, 1.4375, 2.38125], [0.84, 1.5, 2.25],
+    [0, 1.4, 2.25], [0, 1.3375, 2.38125], [0, 1.4375, 2.38125], [0, 1.5, 2.25]
+  ]),
+
+  # 2. Rim patch 2/4
+  bezier_patch([
+    [0, 1.4, 2.25], [0, 1.3375, 2.38125], [0, 1.4375, 2.38125], [0, 1.5, 2.25],
+    [-0.784, 1.4, 2.25], [-0.749, 1.3375, 2.38125], [-0.805, 1.4375, 2.38125], [-0.84, 1.5, 2.25],
+    [-1.4, 0.784, 2.25], [-1.3375, 0.749, 2.38125], [-1.4375, 0.805, 2.38125], [-1.5, 0.84, 2.25],
+    [-1.4, 0, 2.25], [-1.3375, 0, 2.38125], [-1.4375, 0, 2.38125], [-1.5, 0, 2.25]
+  ]),
+
+  # 3. Rim patch 3/4
+  bezier_patch([
+    [-1.4, 0, 2.25], [-1.3375, 0, 2.38125], [-1.4375, 0, 2.38125], [-1.5, 0, 2.25],
+    [-1.4, -0.784, 2.25], [-1.3375, -0.749, 2.38125], [-1.4375, -0.805, 2.38125], [-1.5, -0.84, 2.25],
+    [-0.784, -1.4, 2.25], [-0.749, -1.3375, 2.38125], [-0.805, -1.4375, 2.38125], [-0.84, -1.5, 2.25],
+    [0, -1.4, 2.25], [0, -1.3375, 2.38125], [0, -1.4375, 2.38125], [0, -1.5, 2.25]
+  ]),
+
+  # 4. Rim patch 4/4
+  bezier_patch([
+    [0, -1.4, 2.25], [0, -1.3375, 2.38125], [0, -1.4375, 2.38125], [0, -1.5, 2.25],
+    [0.784, -1.4, 2.25], [0.749, -1.3375, 2.38125], [0.805, -1.4375, 2.38125], [0.84, -1.5, 2.25],
+    [1.4, -0.784, 2.25], [1.3375, -0.749, 2.38125], [1.4375, -0.805, 2.38125], [1.5, -0.84, 2.25],
+    [1.4, 0, 2.25], [1.3375, 0, 2.38125], [1.4375, 0, 2.38125], [1.5, 0, 2.25]
+  ]),
+
+  # ---- Body upper (patches 5–8, 4 quadrants) -------------------
+
+  # 5. Body upper 1/4
+  bezier_patch([
+    [1.5, 0, 2.25], [1.75, 0, 1.725], [2, 0, 1.2], [2, 0, 0.75],
+    [1.5, 0.84, 2.25], [1.75, 0.98, 1.725], [2, 1.12, 1.2], [2, 1.12, 0.75],
+    [0.84, 1.5, 2.25], [0.98, 1.75, 1.725], [1.12, 2, 1.2], [1.12, 2, 0.75],
+    [0, 1.5, 2.25], [0, 1.75, 1.725], [0, 2, 1.2], [0, 2, 0.75]
+  ]),
+
+  # 6. Body upper 2/4
+  bezier_patch([
+    [0, 1.5, 2.25], [0, 1.75, 1.725], [0, 2, 1.2], [0, 2, 0.75],
+    [-0.84, 1.5, 2.25], [-0.98, 1.75, 1.725], [-1.12, 2, 1.2], [-1.12, 2, 0.75],
+    [-1.5, 0.84, 2.25], [-1.75, 0.98, 1.725], [-2, 1.12, 1.2], [-2, 1.12, 0.75],
+    [-1.5, 0, 2.25], [-1.75, 0, 1.725], [-2, 0, 1.2], [-2, 0, 0.75]
+  ]),
+
+  # 7. Body upper 3/4
+  bezier_patch([
+    [-1.5, 0, 2.25], [-1.75, 0, 1.725], [-2, 0, 1.2], [-2, 0, 0.75],
+    [-1.5, -0.84, 2.25], [-1.75, -0.98, 1.725], [-2, -1.12, 1.2], [-2, -1.12, 0.75],
+    [-0.84, -1.5, 2.25], [-0.98, -1.75, 1.725], [-1.12, -2, 1.2], [-1.12, -2, 0.75],
+    [0, -1.5, 2.25], [0, -1.75, 1.725], [0, -2, 1.2], [0, -2, 0.75]
+  ]),
+
+  # 8. Body upper 4/4
+  bezier_patch([
+    [0, -1.5, 2.25], [0, -1.75, 1.725], [0, -2, 1.2], [0, -2, 0.75],
+    [0.84, -1.5, 2.25], [0.98, -1.75, 1.725], [1.12, -2, 1.2], [1.12, -2, 0.75],
+    [1.5, -0.84, 2.25], [1.75, -0.98, 1.725], [2, -1.12, 1.2], [2, -1.12, 0.75],
+    [1.5, 0, 2.25], [1.75, 0, 1.725], [2, 0, 1.2], [2, 0, 0.75]
+  ]),
+
+  # ---- Body lower (patches 9–12, 4 quadrants) ------------------
+
+  # 9. Body lower 1/4
+  bezier_patch([
+    [2, 0, 0.75], [2, 0, 0.3], [1.5, 0, 0.075], [1.5, 0, 0],
+    [2, 1.12, 0.75], [2, 1.12, 0.3], [1.5, 0.84, 0.075], [1.5, 0.84, 0],
+    [1.12, 2, 0.75], [1.12, 2, 0.3], [0.84, 1.5, 0.075], [0.84, 1.5, 0],
+    [0, 2, 0.75], [0, 2, 0.3], [0, 1.5, 0.075], [0, 1.5, 0]
+  ]),
+
+  # 10. Body lower 2/4
+  bezier_patch([
+    [0, 2, 0.75], [0, 2, 0.3], [0, 1.5, 0.075], [0, 1.5, 0],
+    [-1.12, 2, 0.75], [-1.12, 2, 0.3], [-0.84, 1.5, 0.075], [-0.84, 1.5, 0],
+    [-2, 1.12, 0.75], [-2, 1.12, 0.3], [-1.5, 0.84, 0.075], [-1.5, 0.84, 0],
+    [-2, 0, 0.75], [-2, 0, 0.3], [-1.5, 0, 0.075], [-1.5, 0, 0]
+  ]),
+
+  # 11. Body lower 3/4
+  bezier_patch([
+    [-2, 0, 0.75], [-2, 0, 0.3], [-1.5, 0, 0.075], [-1.5, 0, 0],
+    [-2, -1.12, 0.75], [-2, -1.12, 0.3], [-1.5, -0.84, 0.075], [-1.5, -0.84, 0],
+    [-1.12, -2, 0.75], [-1.12, -2, 0.3], [-0.84, -1.5, 0.075], [-0.84, -1.5, 0],
+    [0, -2, 0.75], [0, -2, 0.3], [0, -1.5, 0.075], [0, -1.5, 0]
+  ]),
+
+  # 12. Body lower 4/4
+  bezier_patch([
+    [0, -2, 0.75], [0, -2, 0.3], [0, -1.5, 0.075], [0, -1.5, 0],
+    [1.12, -2, 0.75], [1.12, -2, 0.3], [0.84, -1.5, 0.075], [0.84, -1.5, 0],
+    [2, -1.12, 0.75], [2, -1.12, 0.3], [1.5, -0.84, 0.075], [1.5, -0.84, 0],
+    [2, 0, 0.75], [2, 0, 0.3], [1.5, 0, 0.075], [1.5, 0, 0]
+  ]),
+
+  # ---- Handle (patches 13–16) ----------------------------------
+
+  # 13. Handle upper right half
+  bezier_patch([
+    [-1.6, 0, 1.875], [-2.3, 0, 1.875], [-2.7, 0, 1.875], [-2.7, 0, 1.65],
+    [-1.6, 0.3, 1.875], [-2.3, 0.3, 1.875], [-2.7, 0.3, 1.875], [-2.7, 0.3, 1.65],
+    [-1.5, 0.3, 2.1], [-2.5, 0.3, 2.1], [-3, 0.3, 2.1], [-3, 0.3, 1.65],
+    [-1.5, 0, 2.1], [-2.5, 0, 2.1], [-3, 0, 2.1], [-3, 0, 1.65]
+  ]),
+
+  # 14. Handle upper left half
+  bezier_patch([
+    [-1.5, 0, 2.1], [-2.5, 0, 2.1], [-3, 0, 2.1], [-3, 0, 1.65],
+    [-1.5, -0.3, 2.1], [-2.5, -0.3, 2.1], [-3, -0.3, 2.1], [-3, -0.3, 1.65],
+    [-1.6, -0.3, 1.875], [-2.3, -0.3, 1.875], [-2.7, -0.3, 1.875], [-2.7, -0.3, 1.65],
+    [-1.6, 0, 1.875], [-2.3, 0, 1.875], [-2.7, 0, 1.875], [-2.7, 0, 1.65]
+  ]),
+
+  # 15. Handle lower right half
+  bezier_patch([
+    [-2.7, 0, 1.65], [-2.7, 0, 1.425], [-2.5, 0, 0.975], [-2, 0, 0.75],
+    [-2.7, 0.3, 1.65], [-2.7, 0.3, 1.425], [-2.5, 0.3, 0.975], [-2, 0.3, 0.75],
+    [-3, 0.3, 1.65], [-3, 0.3, 1.2], [-2.65, 0.3, 0.7875], [-1.9, 0.3, 0.45],
+    [-3, 0, 1.65], [-3, 0, 1.2], [-2.65, 0, 0.7875], [-1.9, 0, 0.45]
+  ]),
+
+  # 16. Handle lower left half
+  bezier_patch([
+    [-3, 0, 1.65], [-3, 0, 1.2], [-2.65, 0, 0.7875], [-1.9, 0, 0.45],
+    [-3, -0.3, 1.65], [-3, -0.3, 1.2], [-2.65, -0.3, 0.7875], [-1.9, -0.3, 0.45],
+    [-2.7, -0.3, 1.65], [-2.7, -0.3, 1.425], [-2.5, -0.3, 0.975], [-2, -0.3, 0.75],
+    [-2.7, 0, 1.65], [-2.7, 0, 1.425], [-2.5, 0, 0.975], [-2, 0, 0.75]
+  ]),
+
+  # ---- Spout (patches 17–20) ------------------------------------
+
+  # 17. Spout upper right half
+  bezier_patch([
+    [1.7, 0, 1.275], [2.6, 0, 1.275], [2.3, 0, 1.95], [2.7, 0, 2.25],
+    [1.7, 0.66, 1.275], [2.6, 0.66, 1.275], [2.3, 0.25, 1.95], [2.7, 0.25, 2.25],
+    [1.7, 0.66, 0.45], [3.1, 0.66, 0.675], [2.4, 0.25, 1.875], [3.3, 0.25, 2.25],
+    [1.7, 0, 0.45], [3.1, 0, 0.675], [2.4, 0, 1.875], [3.3, 0, 2.25]
+  ]),
+
+  # 18. Spout upper left half
+  bezier_patch([
+    [1.7, 0, 0.45], [3.1, 0, 0.675], [2.4, 0, 1.875], [3.3, 0, 2.25],
+    [1.7, -0.66, 0.45], [3.1, -0.66, 0.675], [2.4, -0.25, 1.875], [3.3, -0.25, 2.25],
+    [1.7, -0.66, 1.275], [2.6, -0.66, 1.275], [2.3, -0.25, 1.95], [2.7, -0.25, 2.25],
+    [1.7, 0, 1.275], [2.6, 0, 1.275], [2.3, 0, 1.95], [2.7, 0, 2.25]
+  ]),
+
+  # 19. Spout tip upper right half
+  bezier_patch([
+    [2.7, 0, 2.25], [2.8, 0, 2.325], [2.9, 0, 2.325], [2.8, 0, 2.25],
+    [2.7, 0.25, 2.25], [2.8, 0.25, 2.325], [2.9, 0.15, 2.325], [2.8, 0.15, 2.25],
+    [3.3, 0.25, 2.25], [3.525, 0.25, 2.34375], [3.45, 0.15, 2.3625], [3.2, 0.15, 2.25],
+    [3.3, 0, 2.25], [3.525, 0, 2.34375], [3.45, 0, 2.3625], [3.2, 0, 2.25]
+  ]),
+
+  # 20. Spout tip upper left half
+  bezier_patch([
+    [3.3, 0, 2.25], [3.525, 0, 2.34375], [3.45, 0, 2.3625], [3.2, 0, 2.25],
+    [3.3, -0.25, 2.25], [3.525, -0.25, 2.34375], [3.45, -0.15, 2.3625], [3.2, -0.15, 2.25],
+    [2.7, -0.25, 2.25], [2.8, -0.25, 2.325], [2.9, -0.15, 2.325], [2.8, -0.15, 2.25],
+    [2.7, 0, 2.25], [2.8, 0, 2.325], [2.9, 0, 2.325], [2.8, 0, 2.25]
+  ]),
+
+  # ---- Lid top / knob (patches 21–24, 4 quadrants) -------------
+
+  # 21. Lid top 1/4
+  bezier_patch([
+    [0.01, 0, 3], [0.8, 0, 3], [0, 0, 2.7], [0.2, 0, 2.55],
+    [0, 0.01, 3], [0.8, 0.45, 3], [0, 0, 2.7], [0.2, 0.112, 2.55],
+    [0.01, 0, 3], [0.45, 0.8, 3], [0, 0, 2.7], [0.112, 0.2, 2.55],
+    [0, 0.01, 3], [0, 0.8, 3], [0, 0, 2.7], [0, 0.2, 2.55]
+  ]),
+
+  # 22. Lid top 2/4
+  bezier_patch([
+    [0, 0.01, 3], [0, 0.8, 3], [0, 0, 2.7], [0, 0.2, 2.55],
+    [-0.01, 0, 3], [-0.45, 0.8, 3], [0, 0, 2.7], [-0.112, 0.2, 2.55],
+    [0, 0.01, 3], [-0.8, 0.45, 3], [0, 0, 2.7], [-0.2, 0.112, 2.55],
+    [-0.01, 0, 3], [-0.8, 0, 3], [0, 0, 2.7], [-0.2, 0, 2.55]
+  ]),
+
+  # 23. Lid top 3/4
+  bezier_patch([
+    [-0.01, 0, 3], [-0.8, 0, 3], [0, 0, 2.7], [-0.2, 0, 2.55],
+    [0, -0.01, 3], [-0.8, -0.45, 3], [0, 0, 2.7], [-0.2, -0.112, 2.55],
+    [-0.01, 0, 3], [-0.45, -0.8, 3], [0, 0, 2.7], [-0.112, -0.2, 2.55],
+    [0, -0.01, 3], [0, -0.8, 3], [0, 0, 2.7], [0, -0.2, 2.55]
+  ]),
+
+  # 24. Lid top 4/4
+  bezier_patch([
+    [0, -0.01, 3], [0, -0.8, 3], [0, 0, 2.7], [0, -0.2, 2.55],
+    [0.01, 0, 3], [0.45, -0.8, 3], [0, 0, 2.7], [0.112, -0.2, 2.55],
+    [0, -0.01, 3], [0.8, -0.45, 3], [0, 0, 2.7], [0.2, -0.112, 2.55],
+    [0.01, 0, 3], [0.8, 0, 3], [0, 0, 2.7], [0.2, 0, 2.55]
+  ]),
+
+  # ---- Lid base (patches 25–28, 4 quadrants) -------------------
+
+  # 25. Lid base 1/4
+  bezier_patch([
+    [0.2, 0, 2.55], [0.4, 0, 2.4], [1.3, 0, 2.4], [1.3, 0, 2.25],
+    [0.2, 0.112, 2.55], [0.4, 0.224, 2.4], [1.3, 0.728, 2.4], [1.3, 0.728, 2.25],
+    [0.112, 0.2, 2.55], [0.224, 0.4, 2.4], [0.728, 1.3, 2.4], [0.728, 1.3, 2.25],
+    [0, 0.2, 2.55], [0, 0.4, 2.4], [0, 1.3, 2.4], [0, 1.3, 2.25]
+  ]),
+
+  # 26. Lid base 2/4
+  bezier_patch([
+    [0, 0.2, 2.55], [0, 0.4, 2.4], [0, 1.3, 2.4], [0, 1.3, 2.25],
+    [-0.112, 0.2, 2.55], [-0.224, 0.4, 2.4], [-0.728, 1.3, 2.4], [-0.728, 1.3, 2.25],
+    [-0.2, 0.112, 2.55], [-0.4, 0.224, 2.4], [-1.3, 0.728, 2.4], [-1.3, 0.728, 2.25],
+    [-0.2, 0, 2.55], [-0.4, 0, 2.4], [-1.3, 0, 2.4], [-1.3, 0, 2.25]
+  ]),
+
+  # 27. Lid base 3/4
+  bezier_patch([
+    [-0.2, 0, 2.55], [-0.4, 0, 2.4], [-1.3, 0, 2.4], [-1.3, 0, 2.25],
+    [-0.2, -0.112, 2.55], [-0.4, -0.224, 2.4], [-1.3, -0.728, 2.4], [-1.3, -0.728, 2.25],
+    [-0.112, -0.2, 2.55], [-0.224, -0.4, 2.4], [-0.728, -1.3, 2.4], [-0.728, -1.3, 2.25],
+    [0, -0.2, 2.55], [0, -0.4, 2.4], [0, -1.3, 2.4], [0, -1.3, 2.25]
+  ]),
+
+  # 28. Lid base 4/4
+  bezier_patch([
+    [0, -0.2, 2.55], [0, -0.4, 2.4], [0, -1.3, 2.4], [0, -1.3, 2.25],
+    [0.112, -0.2, 2.55], [0.224, -0.4, 2.4], [0.728, -1.3, 2.4], [0.728, -1.3, 2.25],
+    [0.2, -0.112, 2.55], [0.4, -0.224, 2.4], [1.3, -0.728, 2.4], [1.3, -0.728, 2.25],
+    [0.2, 0, 2.55], [0.4, 0, 2.4], [1.3, 0, 2.4], [1.3, 0, 2.25]
+  ]),
+
+]
 
 # ============================================================
-# Step 2 — Handle (variable-section sweep via sweep_sections)
+# Sew all 28 patches into a surface model, scale to working units
 # ============================================================
-# Uses BRepOffsetAPI_MakePipeShell: each cross-section profile is placed at
-# an evenly-spaced parametric position along the spine and swept continuously.
-# Wider flanges (r=1.40) at the body-wall attachment points taper smoothly
-# into the uniform tube (r=0.70) through the outer arc — matching the OBJ
-# geometry more faithfully than a loft along translated circles.
-#
-# Spine: 7-point C-arc spline_3d traced from OBJ centerline (apex x=−8.54 z=4.80).
-# Attachment heights from OBJ: bottom z=1.50 (body r=5.86), top z=6.30 (r=4.78).
-# Flange radius 1.40 extends into the body surface by ≈0.60 on each side for
-# a robust boolean fuse overlap.
-handle_path = spline_3d([
-  [-4.50, 0.0, 1.50],  # bottom attachment
-  [-6.80, 0.0, 2.20],  # exiting body wall
-  [-8.30, 0.0, 3.50],  # outer arc lower
-  [-8.54, 0.0, 4.80],  # C-arc apex (OBJ-derived)
-  [-8.00, 0.0, 5.80],  # outer arc upper
-  [-6.20, 0.0, 6.20],  # approaching body wall
-  [-4.00, 0.0, 6.30],  # top attachment
-])
-handle = sweep_sections(handle_path, [
-  circle(1.40),  # bottom flange — inside body
-  circle(0.70),  # exiting body wall
-  circle(0.70),  # outer arc lower
-  circle(0.70),  # C-arc apex
-  circle(0.70),  # outer arc upper
-  circle(0.70),  # approaching body wall
-  circle(1.40),  # top flange — inside body
-])
-body_handle = body.fuse(handle)
-
-# ============================================================
-# Step 3 — Tapered spout loft (OBJ-derived centerline + radii)
-# ============================================================
-# Spout centerline runs from inside the body (base at x=4.50, inside body
-# surface at r=5.86) curving up-and-outward to the pour tip at x=9.23 z=6.90.
-# Radii at perpendicular cross-sections:
-#   base ≈1.40  (estimated at body junction, OBJ angle-distorted at low z)
-#   tip  ≈0.56  (OBJ: ry=0.187 × 3 at z_obj=2.3, near-perpendicular cut)
-spout = loft([
-  circle(1.40).translate(4.50, 0.0, 1.50),  # base — inside body
-  circle(1.10).translate(6.50, 0.0, 2.80),  # lower arc
-  circle(0.80).translate(7.80, 0.0, 4.50),  # mid arc
-  circle(0.65).translate(8.10, 0.0, 5.70),  # upper arc
-  circle(0.56).translate(9.23, 0.0, 6.90),  # pour tip
-])
-body_handle_spout = body_handle.fuse(spout)
-
-# ============================================================
-# Step 4 — Lid + knob subassembly (OBJ-derived dome profile)
-# ============================================================
-# OBJ lid profile (Y-axis band cross-sections × 3):
-#   z=6.60 r=4.64 (rim, same as body top)
-#   z=6.90 r=4.46
-#   z=7.20 r=3.26 (dome narrows sharply)
-#   z=7.50 r=1.37
-#   z=7.80 r=0.60 (dome apex)
-# Lid rim starts at z=6.50, r=4.80 — 0.10 below and 0.16 wider than body rim —
-# ensuring volume overlap for a clean boolean fuse with the body.
-lid = loft([
-  circle(4.80).translate(0, 0, 6.50),  # rim — wider+lower than body for fuse
-  circle(4.46).translate(0, 0, 6.90),  # below flare
-  circle(3.26).translate(0, 0, 7.20),  # dome narrowing
-  circle(1.37).translate(0, 0, 7.50),  # near apex
-  circle(0.30).translate(0, 0, 7.80),  # dome apex (capped by knob)
-])
-# Knob: OBJ peaks at r≈1.09 at z=8.70 (obj: r_max=0.362 × 3).
-knob = sphere(0.90).translate(0, 0, 8.40)
-lid_assy = lid.fuse(knob)
-
-# ============================================================
-# Step 5 — Final assembly and export
-# ============================================================
-teapot = body_handle_spout.fuse(lid_assy).color(glaze_r, glaze_g, glaze_b)
+# BRepBuilderAPI_Sewing identifies shared boundary edges (tolerance 1e-3
+# in source units; after scale ×3 this corresponds to ≈3e-3 in rrcad units)
+# and welds the 28 Bézier faces into a continuous shell.
+# The result is an open shell (no flat bottom disc — consistent with the
+# original Newell definition of the Utah Teapot).
+teapot = sew(patches, tolerance: 1e-3).scale(3.0).color(glaze_r, glaze_g, glaze_b)
 
 teapot.export("07_teapot.step")
 teapot.export("07_teapot.glb")

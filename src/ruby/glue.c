@@ -161,6 +161,10 @@ extern void rrcad_shape_export_gltf(void* ptr, const char* path, const char** er
 extern void rrcad_shape_export_glb(void* ptr, const char* path, const char** error_out);
 extern void rrcad_shape_export_obj(void* ptr, const char* path, const char** error_out);
 
+/* Phase 7 — Bézier patch and sewing */
+extern void* rrcad_make_bezier_patch(const double* pts, size_t n_pts, const char** error_out);
+extern void* rrcad_sew(const void** ptrs, size_t n, double tolerance, const char** error_out);
+
 /* mRuby data type descriptor — name appears in TypeError messages. */
 static void shape_dfree(mrb_state* mrb, void* ptr) {
     (void)mrb;
@@ -1215,6 +1219,100 @@ static mrb_value mrb_rrcad_polar_pattern(mrb_state* mrb, mrb_value self) {
     return shape_from_ptr(mrb, result);
 }
 
+/* -------------------------------------------------------------------------
+ * Phase 7: bezier_patch / sew
+ * -------------------------------------------------------------------------
+ */
+
+/* bezier_patch(pts)
+ *
+ * Kernel-level method.  `pts` is an Array of exactly 16 control points, each
+ * a [x, y, z] sub-array.  Returns a Shape wrapping a Bézier face.
+ *
+ * Example (one quadrant of the teapot rim):
+ *   face = bezier_patch([
+ *     [1.4, 0.0, 2.25], [1.3375, 0.0, 2.38125], [1.4375, 0.0, 2.38125], [1.5, 0.0, 2.25],
+ *     ...
+ *   ])
+ */
+static mrb_value mrb_rrcad_bezier_patch(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value arr;
+    mrb_get_args(mrb, "A", &arr);
+
+    if ((int)RARRAY_LEN(arr) != 16)
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "bezier_patch requires exactly 16 control points");
+
+    /* Extract 16 × [x,y,z] into a flat 48-double buffer. */
+    double pts[48];
+    for (int i = 0; i < 16; i++) {
+        mrb_value pt = mrb_ary_ref(mrb, arr, i);
+        if (!mrb_array_p(pt) || (int)RARRAY_LEN(pt) < 3)
+            mrb_raise(mrb, E_ARGUMENT_ERROR, "each bezier_patch control point must be [x, y, z]");
+        for (int j = 0; j < 3; j++) {
+            mrb_value v = mrb_ary_ref(mrb, pt, j);
+            pts[i * 3 + j] = mrb_float_p(v)   ? (double)mrb_float(v)
+                              : mrb_integer_p(v) ? (double)mrb_integer(v)
+                                                 : 0.0;
+        }
+    }
+
+    const char* err = NULL;
+    void* ptr = rrcad_make_bezier_patch(pts, 48, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, ptr);
+}
+
+/* sew(faces, tolerance: 1e-4)
+ *
+ * Kernel-level method.  `faces` is an Array of Shape objects (Faces or Shells)
+ * to be sewn into a closed Shell / Solid.  The optional `tolerance:` keyword
+ * controls how close shared edges must be to be sewn together.
+ *
+ * Example:
+ *   teapot = sew(patches, tolerance: 1e-3).scale(3.0)
+ */
+static mrb_value mrb_rrcad_sew(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value arr;
+    mrb_float tol = 1e-4;
+    mrb_value opts = mrb_nil_value();
+    mrb_get_args(mrb, "A|H", &arr, &opts);
+
+    if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
+        mrb_value tv = mrb_hash_fetch(mrb, opts,
+                                      mrb_symbol_value(mrb_intern_lit(mrb, "tolerance")),
+                                      mrb_float_value(mrb, 1e-4));
+        if (mrb_float_p(tv))
+            tol = mrb_float(tv);
+        else if (mrb_integer_p(tv))
+            tol = (mrb_float)mrb_integer(tv);
+    }
+
+    int n = (int)RARRAY_LEN(arr);
+    if (n < 1)
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "sew requires at least 1 shape");
+
+    const void** ptrs = (const void**)malloc((size_t)n * sizeof(void*));
+    if (!ptrs)
+        mrb_raise(mrb, E_RUNTIME_ERROR, "out of memory");
+
+    for (int i = 0; i < n; i++) {
+        mrb_value elem = mrb_ary_ref(mrb, arr, i);
+        void* p = shape_ptr(mrb, elem);
+        require_native_ptr(mrb, p);
+        ptrs[i] = p;
+    }
+
+    const char* err = NULL;
+    void* result = rrcad_sew(ptrs, (size_t)n, (double)tol, &err);
+    free(ptrs);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
 /* =========================================================================
  * rrcad_register_shape_class
  *
@@ -1315,4 +1413,10 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     mrb_define_method(mrb, shape_class, "volume", mrb_rrcad_shape_volume, MRB_ARGS_NONE());
     mrb_define_method(mrb, shape_class, "surface_area", mrb_rrcad_shape_surface_area,
                       MRB_ARGS_NONE());
+
+    /* Phase 7: Bézier patch and sewing */
+    mrb_define_method(mrb, mrb->kernel_module, "bezier_patch", mrb_rrcad_bezier_patch,
+                      MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, mrb->kernel_module, "sew", mrb_rrcad_sew,
+                      MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
 }

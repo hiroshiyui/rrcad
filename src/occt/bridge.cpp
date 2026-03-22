@@ -85,8 +85,11 @@
 
 // --- OCCT: Phase 4 — 3-D operations ---
 #include <BRepAlgoAPI_Defeaturing.hxx>
+#include <BRepBuilderAPI_MakeSolid.hxx>
 #include <BRepBuilderAPI_MakeVertex.hxx>
+#include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
+#include <BRepLib.hxx>
 #include <BRepOffsetAPI_MakeOffsetShape.hxx>
 #include <BRepOffsetAPI_MakePipeShell.hxx>
 #include <BRepOffsetAPI_MakeThickSolid.hxx>
@@ -98,6 +101,11 @@
 #include <TopoDS_Wire.hxx>
 #include <cmath>
 #include <limits>
+
+// --- OCCT: Bézier surface patch ---
+#include <Geom_BezierSurface.hxx>
+#include <Precision.hxx>
+#include <TColgp_Array2OfPnt.hxx>
 
 // --- OCCT: STEP import / export ---
 #include <IFSelect_ReturnStatus.hxx>
@@ -435,6 +443,92 @@ std::unique_ptr<OcctShape> shape_fillet_var_sel(const OcctShape& s, double r1, d
         throw std::runtime_error("BRepFilletAPI_MakeFillet (variable-radius, selective) failed — "
                                  "check for degenerate edges or radii too large");
     return wrap(builder.Shape());
+}
+
+// ---------------------------------------------------------------------------
+// Bézier surface patch
+// ---------------------------------------------------------------------------
+
+// Build a single bicubic Bézier face from 16 control points (4×4 grid).
+// `pts` is a flat array of 48 doubles: 16 points × (x, y, z) in row-major
+// order (row 0 = first parameter direction, col 0 = second).
+std::unique_ptr<OcctShape> make_bezier_patch(rust::Slice<const double> pts) {
+    if (pts.size() != 48)
+        throw std::runtime_error(
+            "make_bezier_patch: expected 48 doubles (16 control points × 3 coords)");
+
+    // OCCT array indices are 1-based.
+    TColgp_Array2OfPnt poles(1, 4, 1, 4);
+    for (int row = 0; row < 4; ++row) {
+        for (int col = 0; col < 4; ++col) {
+            int base = (row * 4 + col) * 3;
+            poles.SetValue(row + 1, col + 1, gp_Pnt(pts[base], pts[base + 1], pts[base + 2]));
+        }
+    }
+
+    Handle(Geom_BezierSurface) surf = new Geom_BezierSurface(poles);
+
+    // BRepBuilderAPI_MakeFace with a parametric surface; Precision::Confusion() as tolerance.
+    BRepBuilderAPI_MakeFace face_builder(surf, Precision::Confusion());
+    if (!face_builder.IsDone())
+        throw std::runtime_error("make_bezier_patch: BRepBuilderAPI_MakeFace failed");
+
+    return wrap(face_builder.Face());
+}
+
+// ---------------------------------------------------------------------------
+// Sewing builder
+// ---------------------------------------------------------------------------
+
+// Pimpl implementation: holds BRepBuilderAPI_Sewing inside bridge.cpp where
+// the full OCCT header is available.
+struct SewingBuilder::Impl {
+    BRepBuilderAPI_Sewing sewing;
+    explicit Impl(double tolerance) : sewing(tolerance) {}
+};
+
+SewingBuilder::SewingBuilder(double tolerance) : impl(std::make_unique<Impl>(tolerance)) {}
+
+// Destructor must be out-of-line so the compiler sees the full Impl definition.
+SewingBuilder::~SewingBuilder() = default;
+
+std::unique_ptr<SewingBuilder> sewing_new(double tolerance) {
+    return std::make_unique<SewingBuilder>(tolerance);
+}
+
+void sewing_add(SewingBuilder& builder, const OcctShape& shape) {
+    builder.impl->sewing.Add(shape.get());
+}
+
+// Perform sewing, then attempt to close the resulting shell into a solid.
+// Returns the solid on success; falls back to the open shell if MakeSolid fails.
+std::unique_ptr<OcctShape> sewing_build(SewingBuilder& builder) {
+    try {
+        builder.impl->sewing.Perform();
+        TopoDS_Shape sewn = builder.impl->sewing.SewedShape();
+        if (sewn.IsNull())
+            throw std::runtime_error("sewing_build: BRepBuilderAPI_Sewing produced a null shape");
+
+        // Try to produce a closed solid from the sewn shell.
+        if (sewn.ShapeType() == TopAbs_SHELL) {
+            BRepBuilderAPI_MakeSolid solid_builder;
+            solid_builder.Add(TopoDS::Shell(sewn));
+            solid_builder.Build();
+            if (solid_builder.IsDone()) {
+                TopoDS_Solid solid = solid_builder.Solid();
+                // Orient faces so all normals point outward.
+                BRepLib::OrientClosedSolid(solid);
+                BRepCheck_Analyzer check(solid);
+                if (check.IsValid())
+                    return wrap(solid);
+            }
+        }
+
+        // Fall back: return the sewn shape as-is (open shell or compound).
+        return wrap(sewn);
+    } catch (Standard_Failure& e) {
+        throw std::runtime_error(std::string("sewing_build failed: ") + e.GetMessageString());
+    }
 }
 
 // ---------------------------------------------------------------------------

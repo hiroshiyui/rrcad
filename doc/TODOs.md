@@ -68,7 +68,7 @@ See `tests/phase5_params.rs`, `tests/e2e_dsl.rs`.
 
 ---
 
-## ✓ Phase 6 — Variable-Section Sweep
+## ✓ Phase 6 — Variable-Section Sweep &amp; Teapot Rebuild
 
 `sweep_sections(path, [profile, ...])` DSL function backed by
 `BRepOffsetAPI_MakePipeShell`.  Each origin-centred profile is automatically
@@ -78,17 +78,25 @@ perpendicular to the spine tangent.  Falls back to `BRepOffsetAPI_ThruSections`
 when `MakeSolid()` fails on highly-curved spines (e.g., the teapot handle
 C-arc).  See `tests/teapot_dsl.rs` (`sweep_sections_*` tests).
 
+`bezier_patch([pt0..pt15])` — builds a single bicubic Bézier face from
+16 control points (4×4 row-major grid) using `Geom_BezierSurface` +
+`BRepBuilderAPI_MakeFace`.  `sew([faces], tolerance:)` — assembles multiple
+Bézier faces into a closed shell/solid via `BRepBuilderAPI_Sewing` +
+`BRepBuilderAPI_MakeSolid`.  Primary use case: Utah Teapot from Newell patches.
+
 ---
 
 ## ✓ Utah Teapot Sample
 
-`samples/07_teapot.rb` — rebuilt from the Newell triangle mesh
-(sourced from https://graphics.cs.utah.edu/teapot/, ×3.0 scale).  Body via `loft` (8 OBJ-derived
-cross-sections, widest r=6.00 at Z=2.40); handle via `sweep_sections` along
-a 7-point C-arc with flared flanges (r=1.40) at the body-wall attachment
-points; spout via tapered `loft`; lid via `loft` dome + `sphere` knob.
-Body height = 6.60 units (rim at Z=6.60).
-Validated by `tests/teapot_sample.rs` (5 tests).
+`samples/07_teapot.rb` — rebuilt from the original Newell Bézier patch data
+(sourced from https://users.cs.utah.edu/~dejohnso/models/teapot.html, ×3.0 scale).
+All 28 bicubic Bézier patches from the Newell / Blinn dataset.  Coordinate
+transform Y-up → Z-up: `pt(x,y_s,z_s)` → rrcad `[x, z_s, y_s]`.  Patches
+sewn with `BRepBuilderAPI_Sewing` (tolerance 1e-3) into a continuous surface;
+`scale(3.0)` → rim at Z≈6.75, lid knob at Z=9.0.  Open at the base (no bottom
+disc — consistent with the original Newell definition).
+Validated by `tests/teapot_sample.rs` (9 tests including `bezier_patch` and
+`sew` unit tests).
 
 ---
 

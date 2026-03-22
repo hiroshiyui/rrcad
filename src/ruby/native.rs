@@ -1067,3 +1067,39 @@ pub unsafe extern "C" fn rrcad_shape_extrude_ex(
     let shape = unsafe { &*(ptr as *const Shape) };
     unsafe { shape_result_to_ptr(shape.extrude_ex(height, twist_deg, scale), error_out) }
 }
+
+// ---------------------------------------------------------------------------
+// Bézier surface patch (Phase 7 / teapot rebuild)
+// ---------------------------------------------------------------------------
+
+/// Build a bicubic Bézier face from 16 control points (4×4 grid).
+/// `pts` points to a flat array of `n_pts` doubles (must equal 48).
+/// Returns a TopoDS_Face wrapped as a Shape pointer.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_make_bezier_patch(
+    pts: *const f64,
+    n_pts: usize,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let slice = unsafe { std::slice::from_raw_parts(pts, n_pts) };
+    unsafe { shape_result_to_ptr(Shape::make_bezier_patch(slice), error_out) }
+}
+
+/// Sew an array of Face/Shell shapes into a closed Shell or Solid.
+/// `ptrs` is a C array of `n` raw Shape pointers; `tolerance` controls
+/// how close shared edges must be to be sewn together.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_sew(
+    ptrs: *const *const c_void,
+    n: usize,
+    tolerance: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let faces: Vec<&Shape> = (0..n)
+        .map(|i| unsafe { &*(*ptrs.add(i) as *const Shape) })
+        .collect();
+    let face_refs: Vec<&Shape> = faces.iter().copied().collect();
+    unsafe { shape_result_to_ptr(Shape::sew(&face_refs, tolerance), error_out) }
+}

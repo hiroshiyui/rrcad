@@ -105,6 +105,16 @@ mod ffi {
         fn pipe_shell_add(builder: Pin<&mut PipeShellBuilder>, profile: &OcctShape) -> Result<()>;
         fn pipe_shell_build(builder: Pin<&mut PipeShellBuilder>) -> Result<UniquePtr<OcctShape>>;
 
+        // --- Bézier surface patch ---
+        // pts: 48 doubles — 16 control points (4×4 row-major) each as (x, y, z).
+        fn make_bezier_patch(pts: &[f64]) -> Result<UniquePtr<OcctShape>>;
+
+        // --- Sewing builder ---
+        type SewingBuilder;
+        fn sewing_new(tolerance: f64) -> Result<UniquePtr<SewingBuilder>>;
+        fn sewing_add(builder: Pin<&mut SewingBuilder>, shape: &OcctShape) -> Result<()>;
+        fn sewing_build(builder: Pin<&mut SewingBuilder>) -> Result<UniquePtr<OcctShape>>;
+
         // --- Phase 4: 3-D operations ---
         fn shape_shell(shape: &OcctShape, thickness: f64) -> Result<UniquePtr<OcctShape>>;
         fn shape_offset(shape: &OcctShape, distance: f64) -> Result<UniquePtr<OcctShape>>;
@@ -509,6 +519,29 @@ impl Shape {
             ffi::pipe_shell_add(builder.pin_mut(), &p.inner).map_err(|e| e.to_string())?;
         }
         ffi::pipe_shell_build(builder.pin_mut())
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    // --- Bézier surface patch ---
+
+    /// Build a single bicubic Bézier face from 16 control points.
+    /// `pts` must be a flat slice of 48 doubles: 16 points × (x, y, z) in row-major order.
+    pub fn make_bezier_patch(pts: &[f64]) -> Result<Self, String> {
+        ffi::make_bezier_patch(pts)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Sew a collection of Faces (or Shells) into a closed Shell / Solid.
+    /// `tolerance` controls how close shared edges need to be to be sewn together.
+    /// Uses `BRepBuilderAPI_Sewing` followed by `BRepBuilderAPI_MakeSolid`.
+    pub fn sew(faces: &[&Shape], tolerance: f64) -> Result<Self, String> {
+        let mut builder = ffi::sewing_new(tolerance).map_err(|e| e.to_string())?;
+        for face in faces {
+            ffi::sewing_add(builder.pin_mut(), &face.inner).map_err(|e| e.to_string())?;
+        }
+        ffi::sewing_build(builder.pin_mut())
             .map(|p| Shape { inner: p })
             .map_err(|e| e.to_string())
     }

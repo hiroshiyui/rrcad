@@ -4,11 +4,11 @@
 #include <memory>
 #include <rust/cxx.h>
 
-// Forward-declare the OCCT loft builder in the global namespace (OCCT itself
-// uses no namespace) so that ThruSectionsBuilder can store a unique_ptr to it
-// without pulling in the full OCCT header here.
+// Forward-declare OCCT builder types (global namespace — OCCT uses no namespace)
+// so that builder classes can hold unique_ptr<T> without pulling in full headers.
 class BRepOffsetAPI_ThruSections;
 class BRepOffsetAPI_MakePipeShell;
+class BRepBuilderAPI_Sewing;
 
 namespace rrcad {
 
@@ -263,6 +263,46 @@ std::unique_ptr<OcctShape> shape_polar_pattern(const OcctShape& shape, int32_t n
 // --- Import ---
 std::unique_ptr<OcctShape> import_step(rust::Str path);
 std::unique_ptr<OcctShape> import_stl(rust::Str path);
+
+// --- Bézier surface patch ---
+//
+// pts: flat array of 48 doubles — 16 control points (4×4 row-major grid) each
+// given as (x, y, z).  Row 0 = first parameter direction; column 0 = second.
+// Returns a Face from Geom_BezierSurface via BRepBuilderAPI_MakeFace.
+// Throws std::runtime_error if pts.size() != 48 or MakeFace fails.
+std::unique_ptr<OcctShape> make_bezier_patch(rust::Slice<const double> pts);
+
+// --- Sewing builder ---
+//
+// Sews a collection of Faces/Shells into a closed Shell, then attempts to
+// close it into a Solid.  If MakeSolid fails the Shell is returned as-is.
+//
+// Usage:
+//   auto b = sewing_new(tolerance);
+//   sewing_add(*b, face1);
+//   sewing_add(*b, face2);
+//   ...
+//   auto solid = sewing_build(*b);
+//
+// Rules: non-copyable, non-movable, heap-allocated, always transferred as
+// unique_ptr<SewingBuilder>.
+class SewingBuilder {
+public:
+    explicit SewingBuilder(double tolerance);
+    ~SewingBuilder(); // defined in bridge.cpp (Impl is incomplete here)
+
+    SewingBuilder(const SewingBuilder&) = delete;
+    SewingBuilder& operator=(const SewingBuilder&) = delete;
+    SewingBuilder(SewingBuilder&&) = delete;
+    SewingBuilder& operator=(SewingBuilder&&) = delete;
+
+    struct Impl; // fully defined in bridge.cpp; holds BRepBuilderAPI_Sewing
+    std::unique_ptr<Impl> impl;
+};
+
+std::unique_ptr<SewingBuilder> sewing_new(double tolerance);
+void sewing_add(SewingBuilder& builder, const OcctShape& shape);
+std::unique_ptr<OcctShape> sewing_build(SewingBuilder& builder);
 
 // --- Query / introspection ---
 // Fills out[0..6] with [xmin, ymin, zmin, xmax, ymax, zmax].

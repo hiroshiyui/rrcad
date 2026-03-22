@@ -21,6 +21,121 @@ fn assert_valid_step(path: &std::path::Path) {
 }
 
 // ---------------------------------------------------------------------------
+// Bézier patch and sewing tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn bezier_patch_single_face_returns_shape() {
+    // One bicubic Bézier face: flat 4×4 grid at z=0 (a planar patch).
+    let mut vm = MrubyVm::new();
+    let result = vm.eval(
+        r#"
+        face = bezier_patch([
+          [0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [3.0, 0.0, 0.0],
+          [0.0, 1.0, 0.0], [1.0, 1.0, 0.0], [2.0, 1.0, 0.0], [3.0, 1.0, 0.0],
+          [0.0, 2.0, 0.0], [1.0, 2.0, 0.0], [2.0, 2.0, 0.0], [3.0, 2.0, 0.0],
+          [0.0, 3.0, 0.0], [1.0, 3.0, 0.0], [2.0, 3.0, 0.0], [3.0, 3.0, 0.0],
+        ])
+        face.inspect
+        "#,
+    );
+    assert!(result.is_ok(), "bezier_patch failed: {:?}", result.err());
+    let s = result.unwrap();
+    assert!(
+        s.contains("Shape"),
+        "expected Shape inspect string, got: {s}"
+    );
+}
+
+#[test]
+fn bezier_patch_requires_exactly_16_points() {
+    let mut vm = MrubyVm::new();
+    // 15 points — should raise an error.
+    let result = vm.eval(
+        r#"
+        begin
+          bezier_patch([
+            [0,0,0],[1,0,0],[2,0,0],[3,0,0],
+            [0,1,0],[1,1,0],[2,1,0],[3,1,0],
+            [0,2,0],[1,2,0],[2,2,0],[3,2,0],
+            [0,3,0],[1,3,0],[2,3,0],
+          ])
+          "no_error"
+        rescue => e
+          e.message
+        end
+        "#,
+    );
+    assert!(result.is_ok());
+    assert!(
+        !result.unwrap().contains("no_error"),
+        "expected an error for 15 control points"
+    );
+}
+
+#[test]
+fn sew_four_rim_patches_produces_shape() {
+    // Sew the 4 rim quadrant patches from the Newell data into a ring.
+    let out = tmp("rrcad_teapot_rim.step");
+    let mut vm = MrubyVm::new();
+    vm.eval(&format!(
+        r#"
+        patches = [
+          bezier_patch([
+            [1.4,0,2.25],[1.3375,0,2.38125],[1.4375,0,2.38125],[1.5,0,2.25],
+            [1.4,0.784,2.25],[1.3375,0.749,2.38125],[1.4375,0.805,2.38125],[1.5,0.84,2.25],
+            [0.784,1.4,2.25],[0.749,1.3375,2.38125],[0.805,1.4375,2.38125],[0.84,1.5,2.25],
+            [0,1.4,2.25],[0,1.3375,2.38125],[0,1.4375,2.38125],[0,1.5,2.25],
+          ]),
+          bezier_patch([
+            [0,1.4,2.25],[0,1.3375,2.38125],[0,1.4375,2.38125],[0,1.5,2.25],
+            [-0.784,1.4,2.25],[-0.749,1.3375,2.38125],[-0.805,1.4375,2.38125],[-0.84,1.5,2.25],
+            [-1.4,0.784,2.25],[-1.3375,0.749,2.38125],[-1.4375,0.805,2.38125],[-1.5,0.84,2.25],
+            [-1.4,0,2.25],[-1.3375,0,2.38125],[-1.4375,0,2.38125],[-1.5,0,2.25],
+          ]),
+          bezier_patch([
+            [-1.4,0,2.25],[-1.3375,0,2.38125],[-1.4375,0,2.38125],[-1.5,0,2.25],
+            [-1.4,-0.784,2.25],[-1.3375,-0.749,2.38125],[-1.4375,-0.805,2.38125],[-1.5,-0.84,2.25],
+            [-0.784,-1.4,2.25],[-0.749,-1.3375,2.38125],[-0.805,-1.4375,2.38125],[-0.84,-1.5,2.25],
+            [0,-1.4,2.25],[0,-1.3375,2.38125],[0,-1.4375,2.38125],[0,-1.5,2.25],
+          ]),
+          bezier_patch([
+            [0,-1.4,2.25],[0,-1.3375,2.38125],[0,-1.4375,2.38125],[0,-1.5,2.25],
+            [0.784,-1.4,2.25],[0.749,-1.3375,2.38125],[0.805,-1.4375,2.38125],[0.84,-1.5,2.25],
+            [1.4,-0.784,2.25],[1.3375,-0.749,2.38125],[1.4375,-0.805,2.38125],[1.5,-0.84,2.25],
+            [1.4,0,2.25],[1.3375,0,2.38125],[1.4375,0,2.38125],[1.5,0,2.25],
+          ]),
+        ]
+        rim = sew(patches, tolerance: 1e-3)
+        rim.export('{}')
+        "#,
+        out.display()
+    ))
+    .expect("sew 4 rim patches failed");
+    assert_valid_step(&out);
+}
+
+#[test]
+fn teapot_bezier_patches_sew_succeeds() {
+    // Full teapot from 28 Newell Bézier patches (the actual sample script).
+    let out = tmp("rrcad_teapot_bezier.step");
+    let script = std::fs::read_to_string("/home/yhh/MyProjects/rrcad/samples/07_teapot.rb")
+        .expect("could not read samples/07_teapot.rb");
+    // Replace the export path to write to /tmp.
+    let script = script
+        .replace(
+            r#"teapot.export("07_teapot.step")"#,
+            &format!(r#"teapot.export("{}")"#, out.display()),
+        )
+        .replace(r#"teapot.export("07_teapot.glb")"#, "")
+        .replace("preview teapot", "");
+    let mut vm = MrubyVm::new();
+    vm.eval(&script)
+        .expect("teapot Bézier patch assembly failed");
+    assert_valid_step(&out);
+}
+
+// ---------------------------------------------------------------------------
 // Component tests — each part in isolation
 // ---------------------------------------------------------------------------
 
