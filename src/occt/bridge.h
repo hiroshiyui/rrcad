@@ -105,6 +105,12 @@ std::unique_ptr<OcctShape> shape_fillet_sel(const OcctShape& shape, double radiu
                                             rust::Str selector);
 std::unique_ptr<OcctShape> shape_chamfer_sel(const OcctShape& shape, double dist,
                                              rust::Str selector);
+// Variable-radius fillet: radius transitions smoothly from r1 at one vertex
+// of each edge to r2 at the other.  Uses BRepFilletAPI_MakeFillet::Add(r1,r2,edge).
+// DSL spelling: .fillet(r1..r2) or .fillet(r1..r2, :selector)
+std::unique_ptr<OcctShape> shape_fillet_var(const OcctShape& shape, double r1, double r2);
+std::unique_ptr<OcctShape> shape_fillet_var_sel(const OcctShape& shape, double r1, double r2,
+                                                rust::Str selector);
 
 // --- Transforms (return new shapes; inputs are unchanged) ---
 std::unique_ptr<OcctShape> shape_translate(const OcctShape& shape, double dx, double dy, double dz);

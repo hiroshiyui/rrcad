@@ -47,6 +47,13 @@ mod ffi {
             dist: f64,
             selector: &str,
         ) -> Result<UniquePtr<OcctShape>>;
+        fn shape_fillet_var(shape: &OcctShape, r1: f64, r2: f64) -> Result<UniquePtr<OcctShape>>;
+        fn shape_fillet_var_sel(
+            shape: &OcctShape,
+            r1: f64,
+            r2: f64,
+            selector: &str,
+        ) -> Result<UniquePtr<OcctShape>>;
 
         // --- Transforms (immutable; return new shapes) ---
         fn shape_translate(
@@ -274,6 +281,21 @@ impl Shape {
     /// Chamfer only edges matching `selector` (`:all` / `:vertical` / `:horizontal`).
     pub fn chamfer_sel(&self, dist: f64, selector: &str) -> Result<Shape, String> {
         ffi::shape_chamfer_sel(&self.inner, dist, selector)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Variable-radius fillet on all edges: radius transitions from `r1` at one
+    /// end-vertex of each edge to `r2` at the other.
+    pub fn fillet_var(&self, r1: f64, r2: f64) -> Result<Shape, String> {
+        ffi::shape_fillet_var(&self.inner, r1, r2)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Variable-radius fillet on edges matching `selector`.
+    pub fn fillet_var_sel(&self, r1: f64, r2: f64, selector: &str) -> Result<Shape, String> {
+        ffi::shape_fillet_var_sel(&self.inner, r1, r2, selector)
             .map(|p| Shape { inner: p })
             .map_err(|e| e.to_string())
     }
@@ -668,6 +690,35 @@ mod tests {
         assert!(
             new_edge_count > original_edge_count,
             "expected more edges after selective chamfer, got {new_edge_count} vs {original_edge_count}"
+        );
+    }
+
+    #[test]
+    fn fillet_var_all_edges_produces_valid_shape() {
+        // Variable-radius fillet: r=0.5 at one vertex, r=2.0 at the other.
+        // A box(10,10,10) has 12 edges; after filleting all, the edge count rises.
+        let b = Shape::make_box(10.0, 10.0, 10.0).unwrap();
+        let original_edge_count = b.edges("all").unwrap().len();
+        let filleted = b.fillet_var(0.5, 2.0).expect("fillet_var failed");
+        let new_edge_count = filleted.edges("all").unwrap().len();
+        assert!(
+            new_edge_count > original_edge_count,
+            "expected more edges after variable-radius fillet, got {new_edge_count} vs {original_edge_count}"
+        );
+    }
+
+    #[test]
+    fn fillet_var_sel_vertical_only() {
+        // Variable-radius fillet on just the 4 vertical edges.
+        let b = Shape::make_box(10.0, 10.0, 10.0).unwrap();
+        let original_edge_count = b.edges("all").unwrap().len();
+        let filleted = b
+            .fillet_var_sel(0.5, 2.0, "vertical")
+            .expect("fillet_var_sel vertical failed");
+        let new_edge_count = filleted.edges("all").unwrap().len();
+        assert!(
+            new_edge_count > original_edge_count,
+            "expected more edges after variable-radius selective fillet, got {new_edge_count} vs {original_edge_count}"
         );
     }
 

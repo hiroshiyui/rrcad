@@ -401,6 +401,42 @@ std::unique_ptr<OcctShape> shape_chamfer_sel(const OcctShape& s, double dist, ru
     return wrap(builder.Shape());
 }
 
+// Variable-radius fillet: each edge gets a radius that transitions linearly
+// from r1 at one end-vertex to r2 at the other.
+// BRepFilletAPI_MakeFillet::Add(r1, r2, edge) accepts two radii directly;
+// OCCT interpolates smoothly along the edge.
+std::unique_ptr<OcctShape> shape_fillet_var(const OcctShape& s, double r1, double r2) {
+    BRepFilletAPI_MakeFillet builder(s.get());
+
+    TopExp_Explorer exp(s.get(), TopAbs_EDGE);
+    for (; exp.More(); exp.Next())
+        builder.Add(r1, r2, TopoDS::Edge(exp.Current()));
+
+    builder.Build();
+    if (!builder.IsDone())
+        throw std::runtime_error("BRepFilletAPI_MakeFillet (variable-radius) failed — "
+                                 "check for degenerate edges or radii too large");
+    return wrap(builder.Shape());
+}
+
+std::unique_ptr<OcctShape> shape_fillet_var_sel(const OcctShape& s, double r1, double r2,
+                                                rust::Str selector) {
+    std::string sel(selector.data(), selector.size());
+    auto edges = collect_edges(s, sel);
+    if (edges.empty())
+        throw std::runtime_error("fillet: no edges match selector ':" + sel + "'");
+
+    BRepFilletAPI_MakeFillet builder(s.get());
+    for (const auto& edge : edges)
+        builder.Add(r1, r2, edge);
+
+    builder.Build();
+    if (!builder.IsDone())
+        throw std::runtime_error("BRepFilletAPI_MakeFillet (variable-radius, selective) failed — "
+                                 "check for degenerate edges or radii too large");
+    return wrap(builder.Shape());
+}
+
 // ---------------------------------------------------------------------------
 // Transforms
 // ---------------------------------------------------------------------------

@@ -82,6 +82,32 @@ fn e2e_chamfer_export() {
 }
 
 #[test]
+fn e2e_fillet_var_all_edges() {
+    // fillet(r1..r2) — variable-radius fillet on all edges.
+    let out = tmp("rrcad_p2_fillet_var.step");
+    let mut vm = MrubyVm::new();
+    vm.eval(&format!(
+        "box(20.0, 20.0, 20.0).fillet(0.5..2.0).export('{}')",
+        out.display()
+    ))
+    .expect("variable-radius fillet export failed");
+    assert_valid_step(&out);
+}
+
+#[test]
+fn e2e_fillet_var_selective() {
+    // fillet(r1..r2, :vertical) — variable-radius fillet on vertical edges only.
+    let out = tmp("rrcad_p2_fillet_var_sel.step");
+    let mut vm = MrubyVm::new();
+    vm.eval(&format!(
+        "box(20.0, 20.0, 20.0).fillet(0.5..2.0, :vertical).export('{}')",
+        out.display()
+    ))
+    .expect("variable-radius selective fillet export failed");
+    assert_valid_step(&out);
+}
+
+#[test]
 fn e2e_mirror_xy_export() {
     let out = tmp("rrcad_p2_mirror_xy.step");
     let mut vm = MrubyVm::new();

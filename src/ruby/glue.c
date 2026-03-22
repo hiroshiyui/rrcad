@@ -13,6 +13,7 @@
 #include <mruby/data.h>
 #include <mruby/error.h>
 #include <mruby/hash.h>
+#include <mruby/range.h>
 #include <mruby/string.h>
 #include <stdlib.h>
 #include <string.h>
@@ -94,6 +95,9 @@ extern void* rrcad_shape_fillet_sel(void* ptr, double radius, const char* select
                                     const char** error_out);
 extern void* rrcad_shape_chamfer_sel(void* ptr, double dist, const char* selector,
                                      const char** error_out);
+extern void* rrcad_shape_fillet_var(void* ptr, double r1, double r2, const char** error_out);
+extern void* rrcad_shape_fillet_var_sel(void* ptr, double r1, double r2, const char* selector,
+                                        const char** error_out);
 extern void* rrcad_shape_mirror(void* ptr, const char* plane, const char** error_out);
 extern void* rrcad_make_rect(double w, double h, const char** error_out);
 extern void* rrcad_make_circle_face(double r, const char** error_out);
@@ -468,25 +472,53 @@ static mrb_value mrb_rrcad_shape_scale(mrb_state* mrb, mrb_value self) {
     return shape_from_ptr(mrb, result);
 }
 
-/* fillet(r)            — round all edges
- * fillet(r, :selector) — round only edges matching selector
- *                        (:all, :vertical, :horizontal) */
+/* fillet(r)             — constant radius, all edges
+ * fillet(r, :selector)  — constant radius, matching edges
+ * fillet(r1..r2)        — variable radius (r1→r2 along each edge), all edges
+ * fillet(r1..r2, :sel)  — variable radius, matching edges
+ *
+ * A Ruby Range (r1..r2) selects BRepFilletAPI_MakeFillet::Add(r1, r2, edge),
+ * which transitions the fillet radius smoothly along each edge. */
 static mrb_value mrb_rrcad_shape_fillet(mrb_state* mrb, mrb_value self) {
-    mrb_float r;
+    mrb_value radius_val;
     mrb_value sel_val = mrb_nil_value();
-    mrb_get_args(mrb, "f|o", &r, &sel_val);
+    mrb_get_args(mrb, "o|o", &radius_val, &sel_val);
+
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
     const char* err = NULL;
     void* result;
-    if (mrb_nil_p(sel_val)) {
-        result = rrcad_shape_fillet(ptr, (double)r, &err);
+
+    if (mrb_range_p(radius_val)) {
+        /* Variable-radius form: fillet(r1..r2) or fillet(r1..r2, :selector) */
+        mrb_value beg = mrb_range_beg(mrb, radius_val);
+        mrb_value end = mrb_range_end(mrb, radius_val);
+        double r1 = mrb_as_float(mrb, beg);
+        double r2 = mrb_as_float(mrb, end);
+
+        if (mrb_nil_p(sel_val)) {
+            result = rrcad_shape_fillet_var(ptr, r1, r2, &err);
+        } else {
+            if (!mrb_symbol_p(sel_val))
+                mrb_raise(mrb, E_TYPE_ERROR,
+                          "fillet selector must be a Symbol (:all, :vertical, :horizontal)");
+            const char* sel = mrb_sym_name(mrb, mrb_symbol(sel_val));
+            result = rrcad_shape_fillet_var_sel(ptr, r1, r2, sel, &err);
+        }
     } else {
-        if (!mrb_symbol_p(sel_val))
-            mrb_raise(mrb, E_TYPE_ERROR, "fillet selector must be a Symbol (:all, :vertical, :horizontal)");
-        const char* sel = mrb_sym_name(mrb, mrb_symbol(sel_val));
-        result = rrcad_shape_fillet_sel(ptr, (double)r, sel, &err);
+        /* Constant-radius form: fillet(r) or fillet(r, :selector) */
+        double r = mrb_as_float(mrb, radius_val);
+        if (mrb_nil_p(sel_val)) {
+            result = rrcad_shape_fillet(ptr, r, &err);
+        } else {
+            if (!mrb_symbol_p(sel_val))
+                mrb_raise(mrb, E_TYPE_ERROR,
+                          "fillet selector must be a Symbol (:all, :vertical, :horizontal)");
+            const char* sel = mrb_sym_name(mrb, mrb_symbol(sel_val));
+            result = rrcad_shape_fillet_sel(ptr, r, sel, &err);
+        }
     }
+
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
