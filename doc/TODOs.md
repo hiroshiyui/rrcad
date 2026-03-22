@@ -136,42 +136,14 @@ All three Tier 3 features are implemented and tested in `tests/phase7_tier3.rs` 
 
 ### Tier 4 — Interop (legacy CAD exchange)
 
-| # | Feature | DSL | OCCT API |
-|---|---------|-----|----------|
-| 12 | **IGES import** | `import_iges("file.igs")` | `IGESControl_Reader` |
-| 13 | **IGES export** | `shape.export("file.igs")` | `IGESControl_Writer` |
-| 14 | **SVG export** (2D projection) | `shape.export("file.svg")` | Orthographic projection → polylines |
+IGES import/export was deprioritised; 2-D drawing output (SVG/DXF) was delivered
+in Phase 8 Tier 4 instead (see below).
 
-### Tier 5 — Phase 8 candidates (include only if time allows)
-
-- **Draft angle extrude** — `.extrude(h, draft: 5.0)` — tapered walls for moulded parts
-- **Path pattern** — `path_pattern(shape, spline_path, n)` — copies at equal arc-length steps along a curve
-- **Closest point / collision** — `.distance_to(other)` → float — `BRepExtrema_DistShapeShape`
-- **Moment of inertia** — `.inertia` → tensor — `BRepGProp::VolumeProperties`
-- **2D Boolean on sketches** — `sketch_a.fuse_2d(sketch_b)` — `BRepAlgoAPI_*` restricted to Face shapes
-- **Wire fillet** (pre-profile) — `.fillet_wire(r)` — round 2D sketch corners before extrude
-- **Pipe with guide curve** — advanced sweep; `BRepFill_PipeShell` with guide surface
-- **Convex hull** — `.convex_hull` — bounding convex solid (OpenSCAD `hull()` parity)
-
-### Implementation order
-
-```
-Week 1:  Tier 1 (#1–4)  — asymmetric chamfer, offset_2d, grid_pattern, fuse_all/cut_all
-Week 2:  Tier 2 (#5–8)  — shape_type, closed?/manifold?, centroid, validate
-Week 3:  Tier 3 (#9–11) — ruled_surface, fill_surface, slice
-Week 4:  Tier 4 (#12–14) — IGES import/export, SVG export
-Week 5+: Tier 5 / Phase 8
-```
-
-### Notes
-
-- Tier 1 + 2 require almost no new C++ — completing existing patterns in Rust/glue.c.
-- Surface modeling (Tier 3) introduces face-only shapes (not solids); `BRepCheck_Analyzer`
-  is the safety net. `BRepFill_Filling` boundary wires must be closed.
-- IGES follows the same reader/writer pattern as STEP — no architectural change.
-- SVG export requires orthographic projection; a visible-edges-only wireframe is a good v1.
-- Draft angle extrude is common for manufacturing but needs its own OCCT path; punted to
-  Phase 8 to keep Phase 7 focused.
+| # | Feature | Status |
+|---|---------|--------|
+| 12 | **IGES import** (`import_iges`) | Not implemented — low demand; STEP import covers most workflows |
+| 13 | **IGES export** | Not implemented |
+| 14 | **SVG/DXF 2-D drawing** | ✓ Implemented in Phase 8 Tier 4 |
 
 ---
 
@@ -279,41 +251,6 @@ Three view directions: `:top` (XY plane, default), `:front` (XZ plane), `:side` 
 - `convex_hull` uses an incremental QuickHull (seeded from 4 extreme points, then horizon-edge expansion). Hull triangles are sewn into a BRep solid.
 - `path_pattern` distributes `n` copies using arc-length-evenly-spaced parameter values; each copy is rotated so its local Z-axis aligns with the path tangent.
 - Guided sweep extends the existing `.sweep(path)` method by accepting an optional `guide:` keyword; the guide wire controls the profile's X-axis orientation using `BRepFill_Contact`.
-
-### Implementation order
-
-```
-Sprint 1: Tier 1 (#1–4) — pad, pocket, fillet_wire, datum_plane
-          These four together unlock the core FreeCAD Part Design loop in rrcad.
-
-Sprint 2: Tier 2 (#5–8) — draft angle, helix, thread, cbore macro
-          Manufacturing features; helix is the prerequisite for thread.
-
-Sprint 3: Tier 3 (#9–11) — distance_to, inertia, min_thickness
-          Inspection / clearance checks; pure OCCT queries, no new topology.
-
-Sprint 4: Tier 4 (#12–14) — slice, SVG export, DXF export
-          2D drawing output; SVG via HLRBRep is the most complex item here.
-
-Sprint 5: Tier 5 (#15–18) — fragment, convex hull, path pattern, guided sweep
-          Advanced composition; lower priority, implement as demand arises.
-```
-
-### Notes
-
-- **pad / pocket are the highest-priority items** — they alone cover the majority of
-  FreeCAD Part Design workflows that users would want to do in code.
-- `fillet_wire` is a prerequisite for rounded pockets (slot with rounded ends, etc.)
-  and must land in the same sprint as pad/pocket.
-- The face-local transform logic (`gp_Ax3` → `gp_Trsf`) is shared by pad, pocket, and
-  datum_plane; implement it once as a C++ helper and reuse.
-- SVG export via `HLRBRep_Algo` is the single largest new subsystem; it should be a
-  separate sub-task with its own bridge class (similar to `ThruSectionsBuilder`).
-- Thread is a compound feature (helix + profile sweep + cut) that can be implemented
-  entirely in the Ruby DSL once helix is available — no new C++ needed for the thread
-  feature itself.
-- DXF v1 can be a hand-rolled ASCII writer (just LINE and ARC entities from sliced edges);
-  no need for a full DXF library.
 
 ---
 
