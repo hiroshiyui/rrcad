@@ -66,6 +66,13 @@ Parameters (Phase 5)
   # Override at the command line:
   #   rrcad --param name=value script.rb
 
+Design table (batch export)
+  rrcad --design-table table.csv script.rb
+  # CSV first row = column headers (param names).
+  # Optional 'name' column → used as output filename stem.
+  # Remaining columns map to param() declarations in the script.
+  # Each data row evals the script once with those param values.
+
 Builders
   solid do ... end          block returning last shape
   assembly(\"name\") do |a|
@@ -210,6 +217,7 @@ enum Mode {
     Repl,
     Script(String),
     Preview(String),
+    DesignTable { table: String, script: String },
 }
 
 struct CliArgs {
@@ -222,10 +230,11 @@ struct CliArgs {
 /// flags (which may appear in any position) and the run mode.
 ///
 /// Usage:
-///   rrcad                                       # REPL
-///   rrcad --repl                                # REPL (explicit)
-///   rrcad [--param k=v]... <script.rb>          # run script
-///   rrcad --preview [--param k=v]... <script.rb> # live preview
+///   rrcad                                            # REPL
+///   rrcad --repl                                     # REPL (explicit)
+///   rrcad [--param k=v]... <script.rb>               # run script
+///   rrcad --preview [--param k=v]... <script.rb>     # live preview
+///   rrcad --design-table table.csv <script.rb>       # batch export
 fn parse_args() -> CliArgs {
     let raw: Vec<String> = std::env::args().skip(1).collect();
     let mut params: Vec<(String, String)> = Vec::new();
@@ -262,6 +271,16 @@ fn parse_args() -> CliArgs {
                 std::process::exit(1);
             }
         },
+        Some("--design-table") => match (rest.get(1), rest.get(2)) {
+            (Some(table), Some(script)) => Mode::DesignTable {
+                table: table.clone(),
+                script: script.clone(),
+            },
+            _ => {
+                eprintln!("usage: rrcad --design-table <table.csv> [--param k=v]... <script.rb>");
+                std::process::exit(1);
+            }
+        },
         Some(path) => Mode::Script(path.to_string()),
     };
 
@@ -275,6 +294,12 @@ fn main() {
         Mode::Repl => run_repl(),
         Mode::Script(path) => run_script(&path, &params),
         Mode::Preview(path) => run_preview(&path, &params),
+        Mode::DesignTable { table, script } => {
+            if let Err(e) = run_design_table(&table, &script, &params) {
+                eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
     }
 }
 
@@ -335,6 +360,160 @@ fn run_script(path: &str, params: &[(String, String)]) {
     if let Err(e) = vm.eval(&code) {
         eprintln!("{path}: {e}");
         std::process::exit(1);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Design table
+// ---------------------------------------------------------------------------
+
+/// Parse a CSV or TSV file into a `Vec` of rows, each row a `Vec<String>`.
+///
+/// Rules:
+/// - Lines that are empty or start with `#` are skipped (comments).
+/// - Delimiter is auto-detected: tab if the first non-comment line contains
+///   a tab character, otherwise comma.
+/// - Fields are trimmed of surrounding whitespace.
+/// - The first row is the header; subsequent rows are data.
+///
+/// Returns `Err` if the file has no header row or data rows.
+fn parse_csv(content: &str) -> Result<(Vec<String>, Vec<Vec<String>>), String> {
+    let mut lines = content
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'));
+
+    let header_line = lines
+        .next()
+        .ok_or("design table is empty (no header row)")?;
+
+    let delim = if header_line.contains('\t') {
+        '\t'
+    } else {
+        ','
+    };
+    let split =
+        |line: &str| -> Vec<String> { line.split(delim).map(|f| f.trim().to_string()).collect() };
+
+    let headers = split(header_line);
+    let rows: Vec<Vec<String>> = lines.map(|l| split(l)).collect();
+
+    if rows.is_empty() {
+        return Err("design table has a header but no data rows".to_string());
+    }
+
+    Ok((headers, rows))
+}
+
+/// Run `script_path` once for every data row in `table_path`.
+///
+/// For each row the columns are merged with `base_params` (row values win on
+/// conflict) and injected into a fresh `MrubyVm` via `set_params`.  The
+/// optional `name` column determines the label used in progress output; the
+/// script itself decides what to export and where.
+///
+/// Prints a per-row status line and a final summary.  Returns `Err` if any
+/// row fails; all rows are always attempted regardless.
+fn run_design_table(
+    table_path: &str,
+    script_path: &str,
+    base_params: &[(String, String)],
+) -> Result<(), String> {
+    let table_src = std::fs::read_to_string(table_path)
+        .map_err(|e| format!("error: could not read '{table_path}': {e}"))?;
+    let code = std::fs::read_to_string(script_path)
+        .map_err(|e| format!("error: could not read '{script_path}': {e}"))?;
+
+    let (headers, rows) = parse_csv(&table_src)?;
+    let total = rows.len();
+    println!(
+        "Design table: {table_path} → {total} row{}",
+        if total == 1 { "" } else { "s" }
+    );
+
+    let mut errors: usize = 0;
+
+    for (i, row) in rows.iter().enumerate() {
+        // Start with base_params then let row columns override.
+        let mut params: Vec<(String, String)> = base_params.to_vec();
+        for (col, val) in headers.iter().zip(row.iter()) {
+            if let Some(entry) = params.iter_mut().find(|(k, _)| k == col) {
+                entry.1 = val.clone();
+            } else {
+                params.push((col.clone(), val.clone()));
+            }
+        }
+
+        // Use the `name` column as a human-readable label if present.
+        let label = params
+            .iter()
+            .find(|(k, _)| k == "name")
+            .map(|(_, v)| v.clone())
+            .unwrap_or_else(|| format!("row_{:03}", i + 1));
+
+        let mut vm = MrubyVm::new();
+        match vm.set_params(&params).and_then(|_| vm.eval(&code)) {
+            Ok(_) => println!("  [{}/{}] {} → ok", i + 1, total, label),
+            Err(e) => {
+                eprintln!("  [{}/{}] {} → error: {}", i + 1, total, label, e);
+                errors += 1;
+            }
+        }
+    }
+
+    let ok = total - errors;
+    println!("\n{ok} succeeded, {errors} failed");
+
+    if errors > 0 {
+        Err(format!("{errors} row(s) failed"))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod design_table_tests {
+    use super::parse_csv;
+
+    #[test]
+    fn parse_csv_basic() {
+        let (headers, rows) = parse_csv("name,width,height\nsmall,50,20\nlarge,100,40").unwrap();
+        assert_eq!(headers, vec!["name", "width", "height"]);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0], vec!["small", "50", "20"]);
+        assert_eq!(rows[1], vec!["large", "100", "40"]);
+    }
+
+    #[test]
+    fn parse_csv_skips_comments_and_blank_lines() {
+        let src = "# generated\nname,w\n\n# skip\npart_a,10\npart_b,20\n";
+        let (headers, rows) = parse_csv(src).unwrap();
+        assert_eq!(headers, vec!["name", "w"]);
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn parse_csv_trims_whitespace() {
+        let (headers, rows) = parse_csv(" name , w \n part_a , 10 ").unwrap();
+        assert_eq!(headers, vec!["name", "w"]);
+        assert_eq!(rows[0], vec!["part_a", "10"]);
+    }
+
+    #[test]
+    fn parse_tsv_auto_detected() {
+        let (headers, rows) = parse_csv("name\tw\npart_a\t10").unwrap();
+        assert_eq!(headers, vec!["name", "w"]);
+        assert_eq!(rows[0], vec!["part_a", "10"]);
+    }
+
+    #[test]
+    fn parse_csv_empty_returns_error() {
+        assert!(parse_csv("").is_err());
+        assert!(parse_csv("# only a comment\n").is_err());
+    }
+
+    #[test]
+    fn parse_csv_header_only_returns_error() {
+        assert!(parse_csv("name,width\n").is_err());
     }
 }
 

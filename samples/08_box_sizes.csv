@@ -1,0 +1,10 @@
+# Box design table — used with:
+#   rrcad --design-table samples/08_box_sizes.csv samples/08_parametric_box.rb
+#
+# Columns map directly to param() declarations in 08_parametric_box.rb.
+# The 'name' column sets the output filename stem (e.g. box_small.step).
+name,width,depth,height,fillet_r
+box_small,30,20,15,1.5
+box_medium,50,30,20,2.0
+box_large,80,50,30,3.0
+box_flat,100,80,10,1.0

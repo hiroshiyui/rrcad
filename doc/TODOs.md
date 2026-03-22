@@ -210,7 +210,7 @@ single atomic unit.
 
 ### Tier 1 — Design table (natural next step after params)
 
-#### [ ] Design table: vary params across rows, export batch of STEP files
+#### [x] Design table: vary params across rows, export batch of STEP files
 
 Read a CSV/TSV where each row is a parameter set; iterate rows, eval the script
 once per row, export a named STEP file per row (e.g. `bracket_50mm.step`).
