@@ -102,14 +102,16 @@ Validated by `tests/teapot_sample.rs` (9 tests including `bezier_patch` and
 
 ## Phase 7 — Improve OCCT Coverage & Compatibility
 
-### Tier 1 — Quick wins, high ROI (complete existing patterns)
+### ✓ Tier 1 — Quick wins, high ROI (complete existing patterns)
+
+All four Tier 1 features are implemented and tested in `tests/phase7_tier1.rs` (12 tests).
 
 | # | Feature | DSL | OCCT API |
 |---|---------|-----|----------|
-| 1 | **Asymmetric chamfer** | `.chamfer(d1, d2)` or `.chamfer(d1..d2)` | `BRepFilletAPI_MakeChamfer::Add(edge, d1, d2)` |
-| 2 | **2D profile offset** | `.offset_2d(d)` | `BRepOffsetAPI_MakeOffset` on a Face/Wire |
-| 3 | **Grid pattern** | `grid_pattern(s, nx, ny, dx, dy)` | Pure Rust composition over `linear_pattern` |
-| 4 | **Multi-shape fuse/cut** | `fuse_all([a,b,c])`, `cut_all([a,b,c])` | Fold-left in Rust, no new C++ |
+| 1 | **Asymmetric chamfer** ✓ | `.chamfer_asym(d1, d2[, :sel])` | `BRepFilletAPI_MakeChamfer::Add(d1, d2, edge, face)` with edge→face map |
+| 2 | **2D profile offset** ✓ | `.offset_2d(d)` | `BRepOffsetAPI_MakeOffset` on a Face or Wire |
+| 3 | **Grid pattern** ✓ | `grid_pattern(s, nx, ny, dx, dy)` | Pure Rust: two nested `linear_pattern` calls |
+| 4 | **Multi-shape fuse/cut** ✓ | `fuse_all([a,b,c])`, `cut_all(base,[t1,t2])` | Fold-left over existing `.fuse` / `.cut` in Rust |
 
 ### Tier 2 — Validation & introspection (robustness for real workflows)
 

@@ -85,6 +85,20 @@ class Shape
     raise NotImplementedError, "Shape#offset is not yet implemented (Phase 4)"
   end
 
+  # Offset a 2D Wire or Face inward (negative) or outward (positive) in its
+  # own plane.  Uses BRepOffsetAPI_MakeOffset.  Phase 7 Tier 1.
+  def offset_2d(_distance)
+    raise NotImplementedError, "Shape#offset_2d is not yet implemented (Phase 7 Tier 1)"
+  end
+
+  # Asymmetric chamfer: d1 and d2 are the two bevel distances on each side
+  # of the edge.  An optional selector restricts which edges are chamfered.
+  #   part.chamfer_asym(3, 1)           # all edges
+  #   part.chamfer_asym(3, 1, :vertical) # only vertical edges
+  def chamfer_asym(_d1, _d2, _sel = nil)
+    raise NotImplementedError, "Shape#chamfer_asym is not yet implemented (Phase 7 Tier 1)"
+  end
+
   # Remove small holes and fillets for simplified simulation meshes.
   # Faces with surface area smaller than min_feature_size² are treated as
   # belonging to small features and are removed via BRepAlgoAPI_Defeaturing.
@@ -232,6 +246,22 @@ module Kernel
   # Loft — overridden natively after prelude runs.
   def loft(_profiles, _opts = {})
     raise NotImplementedError, "loft() is not yet implemented (Phase 4)"
+  end
+
+  # grid_pattern(shape, nx, ny, dx, dy) — nx × ny copies in a 2-D grid.
+  # Copy (i, j) is at (i*dx, j*dy, 0).  Phase 7 Tier 1.
+  def grid_pattern(_shape, _nx, _ny, _dx, _dy)
+    raise NotImplementedError, "grid_pattern() is not yet implemented (Phase 7 Tier 1)"
+  end
+
+  # fuse_all([a, b, c]) — fold-left union of 2+ shapes.  Phase 7 Tier 1.
+  def fuse_all(_shapes)
+    raise NotImplementedError, "fuse_all() is not yet implemented (Phase 7 Tier 1)"
+  end
+
+  # cut_all(base, [t1, t2]) — subtract each tool from base in sequence.  Phase 7 Tier 1.
+  def cut_all(_base, _tools)
+    raise NotImplementedError, "cut_all() is not yet implemented (Phase 7 Tier 1)"
   end
 
   # Spline profiles — overridden natively after prelude runs.

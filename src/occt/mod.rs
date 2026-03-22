@@ -54,6 +54,14 @@ mod ffi {
             r2: f64,
             selector: &str,
         ) -> Result<UniquePtr<OcctShape>>;
+        // Phase 7 Tier 1: asymmetric chamfer (.chamfer(d1, d2)).
+        fn shape_chamfer_asym(shape: &OcctShape, d1: f64, d2: f64) -> Result<UniquePtr<OcctShape>>;
+        fn shape_chamfer_asym_sel(
+            shape: &OcctShape,
+            d1: f64,
+            d2: f64,
+            selector: &str,
+        ) -> Result<UniquePtr<OcctShape>>;
 
         // --- Transforms (immutable; return new shapes) ---
         fn shape_translate(
@@ -118,6 +126,8 @@ mod ffi {
         // --- Phase 4: 3-D operations ---
         fn shape_shell(shape: &OcctShape, thickness: f64) -> Result<UniquePtr<OcctShape>>;
         fn shape_offset(shape: &OcctShape, distance: f64) -> Result<UniquePtr<OcctShape>>;
+        // Phase 7 Tier 1: 2D profile offset (Wire or Face in its own plane).
+        fn shape_offset_2d(shape: &OcctShape, distance: f64) -> Result<UniquePtr<OcctShape>>;
         fn shape_simplify(shape: &OcctShape, min_feature_size: f64)
             -> Result<UniquePtr<OcctShape>>;
         fn shape_extrude_ex(
@@ -310,6 +320,20 @@ impl Shape {
             .map_err(|e| e.to_string())
     }
 
+    /// Asymmetric chamfer on all edges: `d1` and `d2` are the two bevel distances.
+    pub fn chamfer_asym(&self, d1: f64, d2: f64) -> Result<Shape, String> {
+        ffi::shape_chamfer_asym(&self.inner, d1, d2)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Asymmetric chamfer on edges matching `selector`.
+    pub fn chamfer_asym_sel(&self, d1: f64, d2: f64, selector: &str) -> Result<Shape, String> {
+        ffi::shape_chamfer_asym_sel(&self.inner, d1, d2, selector)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
     // --- Color ---
 
     /// Return a copy of `self` rigidly transformed so that `from_face` (a planar
@@ -435,6 +459,13 @@ impl Shape {
     /// Wraps BRepOffsetAPI_MakeOffsetShape::PerformByJoin.
     pub fn offset(&self, distance: f64) -> Result<Shape, String> {
         ffi::shape_offset(&self.inner, distance)
+            .map(|p| Shape { inner: p })
+            .map_err(|e| e.to_string())
+    }
+
+    /// Offset a 2D Wire or Face inward (negative) or outward (positive) in its own plane.
+    pub fn offset_2d(&self, distance: f64) -> Result<Shape, String> {
+        ffi::shape_offset_2d(&self.inner, distance)
             .map(|p| Shape { inner: p })
             .map_err(|e| e.to_string())
     }
@@ -615,6 +646,45 @@ impl Shape {
         ffi::shape_polar_pattern(&self.inner, n, angle_deg)
             .map(|p| Shape { inner: p })
             .map_err(|e| e.to_string())
+    }
+
+    /// `nx * ny` translated copies arranged in a grid: copy `(i, j)` is at
+    /// position `(i * dx, j * dy, 0)`.  Implemented as two nested
+    /// `linear_pattern` calls — no new C++ needed.
+    pub fn grid_pattern(&self, nx: i32, ny: i32, dx: f64, dy: f64) -> Result<Shape, String> {
+        if nx < 1 || ny < 1 {
+            return Err("grid_pattern: nx and ny must be >= 1".to_string());
+        }
+        // Build a row of nx copies along X, then replicate it ny times along Y.
+        let row = self.linear_pattern(nx, dx, 0.0, 0.0)?;
+        row.linear_pattern(ny, 0.0, dy, 0.0)
+    }
+
+    /// Fold-left fuse over a slice of shapes.  Requires at least two shapes.
+    pub fn fuse_all(shapes: &[&Shape]) -> Result<Shape, String> {
+        if shapes.len() < 2 {
+            return Err("fuse_all: requires at least 2 shapes".to_string());
+        }
+        let mut iter = shapes.iter();
+        let first = *iter.next().unwrap();
+        let second = *iter.next().unwrap();
+        let mut acc = first.fuse(second)?;
+        for s in iter {
+            acc = acc.fuse(s)?;
+        }
+        Ok(acc)
+    }
+
+    /// Subtract each tool from `self` in sequence (fold-left cut).  Requires at least one tool.
+    pub fn cut_all(&self, tools: &[&Shape]) -> Result<Shape, String> {
+        if tools.is_empty() {
+            return Err("cut_all: requires at least 1 tool".to_string());
+        }
+        let mut acc = self.translate(0.0, 0.0, 0.0)?;
+        for tool in tools {
+            acc = acc.cut(tool)?;
+        }
+        Ok(acc)
     }
 
     // --- Import ---

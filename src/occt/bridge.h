@@ -111,6 +111,11 @@ std::unique_ptr<OcctShape> shape_chamfer_sel(const OcctShape& shape, double dist
 std::unique_ptr<OcctShape> shape_fillet_var(const OcctShape& shape, double r1, double r2);
 std::unique_ptr<OcctShape> shape_fillet_var_sel(const OcctShape& shape, double r1, double r2,
                                                 rust::Str selector);
+// Asymmetric chamfer: d1 and d2 are the two bevel distances on each side of the edge.
+// DSL spelling: .chamfer(d1, d2) or .chamfer(d1, d2, :selector)
+std::unique_ptr<OcctShape> shape_chamfer_asym(const OcctShape& shape, double d1, double d2);
+std::unique_ptr<OcctShape> shape_chamfer_asym_sel(const OcctShape& shape, double d1, double d2,
+                                                  rust::Str selector);
 
 // --- Transforms (return new shapes; inputs are unchanged) ---
 std::unique_ptr<OcctShape> shape_translate(const OcctShape& shape, double dx, double dy, double dz);
@@ -207,6 +212,10 @@ std::unique_ptr<OcctShape> shape_shell(const OcctShape& shape, double thickness)
 // .offset(distance) — inflate (distance>0) or deflate (distance<0) a solid.
 //   Uses BRepOffsetAPI_MakeOffsetShape::PerformByJoin.
 std::unique_ptr<OcctShape> shape_offset(const OcctShape& shape, double distance);
+
+// .offset_2d(distance) — offset a 2D Face or Wire inward (negative) or outward (positive).
+//   Uses BRepOffsetAPI_MakeOffset, which operates on Wire/Face shapes in their own plane.
+std::unique_ptr<OcctShape> shape_offset_2d(const OcctShape& shape, double distance);
 
 // .simplify(min_feature_size) — remove small holes and fillets.
 //   Faces with surface area < min_feature_size² are passed to

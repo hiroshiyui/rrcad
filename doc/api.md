@@ -462,6 +462,9 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `import_stl("file.stl")` | Import an STL file as a triangulated Shape |
 | `linear_pattern(shape, n, [dx, dy, dz])` | `n` copies of `shape` translated along vector; copy `i` at `i*[dx,dy,dz]`. Returns a Compound. |
 | `polar_pattern(shape, n, angle_deg)` | `n` copies of `shape` rotated around Z; copy `i` at `i*(angle_deg/n)` degrees. Returns a Compound. |
+| `grid_pattern(shape, nx, ny, dx, dy)` | `nx × ny` copies of `shape` in a 2-D grid; copy `(i,j)` at `(i*dx, j*dy, 0)`. Implemented as two nested `linear_pattern` calls. Returns a Compound. |
+| `fuse_all([shape1, shape2, ...])` | Fold-left union of two or more shapes. Requires at least 2 shapes. |
+| `cut_all(base, [tool1, tool2, ...])` | Subtract each tool from `base` in sequence. Requires at least 1 tool. |
 | `param(:name, default: val)` | Declare a named parameter. Returns `val` unless a `--param name=x` CLI override was supplied; coerces string overrides to the default's type (Integer/Float/String). |
 | `param(:name, default: val, range: lo..hi)` | Same with range validation; raises `ArgumentError` if the value is outside the range. |
 | `solid { ... }` | Block returning its last expression |
@@ -482,14 +485,17 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `.mirror(:xy\|:xz\|:yz)` | Mirror about a coordinate plane |
 | `.fillet(r)` | Round all edges |
 | `.fillet(r, :selector)` | Round only edges matching selector (`:all` / `:vertical` / `:horizontal`) |
-| `.chamfer(d)` | Bevel all edges |
-| `.chamfer(d, :selector)` | Bevel only edges matching selector |
+| `.chamfer(d)` | Bevel all edges (symmetric) |
+| `.chamfer(d, :selector)` | Bevel only edges matching selector (symmetric) |
+| `.chamfer_asym(d1, d2)` | Asymmetric bevel all edges: `d1` on the reference face side, `d2` on the other |
+| `.chamfer_asym(d1, d2, :selector)` | Asymmetric bevel only edges matching selector |
 | `.extrude(h)` | Extrude face/wire along Z |
 | `.extrude(h, twist_deg: 0, scale: 1.0)` | Extrude with optional twist (degrees) and end-scale; uses `ThruSections` when twist/scale are non-default |
 | `.revolve(deg=360)` | Revolve around Z axis |
 | `.sweep(path)` | Sweep profile along a `spline_3d` wire |
 | `.shell(thickness)` | Hollow out a solid by removing the topmost face and offsetting walls inward |
 | `.offset(distance)` | Inflate (positive) or deflate (negative) a solid uniformly |
+| `.offset_2d(distance)` | Offset a 2D Wire or Face inward (negative) or outward (positive) in its own plane. Uses `BRepOffsetAPI_MakeOffset`. |
 | `.simplify(min_feature_size)` | Remove small holes/fillets; faces with area < `min_feature_size²` are defeatured. Returns the original shape if none qualify. |
 | `.color(r, g, b)` | Attach an sRGB color (`r`, `g`, `b` each in `[0.0, 1.0]`); written into GLB/glTF/OBJ export. Returns a new Shape; original unchanged. |
 | `.mate(from_face, to_face, offset=0.0)` | Reposition `self` so `from_face` aligns flush against `to_face` (antiparallel normals, coincident centroids). `offset > 0` = gap; `offset < 0` = overlap. Both faces must be planar. |

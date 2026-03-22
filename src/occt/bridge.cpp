@@ -90,6 +90,7 @@
 #include <BRepBuilderAPI_Sewing.hxx>
 #include <BRepBuilderAPI_Transform.hxx>
 #include <BRepLib.hxx>
+#include <BRepOffsetAPI_MakeOffset.hxx>
 #include <BRepOffsetAPI_MakeOffsetShape.hxx>
 #include <BRepOffsetAPI_MakePipeShell.hxx>
 #include <BRepOffsetAPI_MakeThickSolid.hxx>
@@ -97,6 +98,7 @@
 #include <BRepTools.hxx>
 #include <BRepTools_WireExplorer.hxx>
 #include <Standard_Failure.hxx>
+#include <TopTools_IndexedDataMapOfShapeListOfShape.hxx>
 #include <TopTools_ListOfShape.hxx>
 #include <TopoDS_Wire.hxx>
 #include <cmath>
@@ -442,6 +444,62 @@ std::unique_ptr<OcctShape> shape_fillet_var_sel(const OcctShape& s, double r1, d
     if (!builder.IsDone())
         throw std::runtime_error("BRepFilletAPI_MakeFillet (variable-radius, selective) failed — "
                                  "check for degenerate edges or radii too large");
+    return wrap(builder.Shape());
+}
+
+// Asymmetric chamfer: d1 and d2 are the two bevel distances on each side of the edge.
+// OCCT's BRepFilletAPI_MakeChamfer::Add(d1, d2, edge, face) requires a reference face
+// to indicate on which side d1 applies.  We build an edge→adjacent-face map and use
+// the first adjacent face for every edge.
+std::unique_ptr<OcctShape> shape_chamfer_asym(const OcctShape& s, double d1, double d2) {
+    TopTools_IndexedDataMapOfShapeListOfShape edge_face_map;
+    TopExp::MapShapesAndAncestors(s.get(), TopAbs_EDGE, TopAbs_FACE, edge_face_map);
+
+    BRepFilletAPI_MakeChamfer builder(s.get());
+
+    TopExp_Explorer exp(s.get(), TopAbs_EDGE);
+    for (; exp.More(); exp.Next()) {
+        TopoDS_Edge edge = TopoDS::Edge(exp.Current());
+        if (!edge_face_map.Contains(edge))
+            continue;
+        const TopTools_ListOfShape& faces = edge_face_map.FindFromKey(edge);
+        if (faces.IsEmpty())
+            continue;
+        TopoDS_Face face = TopoDS::Face(faces.First());
+        builder.Add(d1, d2, edge, face);
+    }
+
+    builder.Build();
+    if (!builder.IsDone())
+        throw std::runtime_error("BRepFilletAPI_MakeChamfer (asymmetric) failed");
+    return wrap(builder.Shape());
+}
+
+// Selective asymmetric chamfer: only edges matching the selector are bevelled.
+std::unique_ptr<OcctShape> shape_chamfer_asym_sel(const OcctShape& s, double d1, double d2,
+                                                  rust::Str selector) {
+    std::string sel(selector.data(), selector.size());
+    auto edges = collect_edges(s, sel);
+    if (edges.empty())
+        throw std::runtime_error("chamfer: no edges match selector ':" + sel + "'");
+
+    TopTools_IndexedDataMapOfShapeListOfShape edge_face_map;
+    TopExp::MapShapesAndAncestors(s.get(), TopAbs_EDGE, TopAbs_FACE, edge_face_map);
+
+    BRepFilletAPI_MakeChamfer builder(s.get());
+    for (const auto& edge : edges) {
+        if (!edge_face_map.Contains(edge))
+            continue;
+        const TopTools_ListOfShape& faces = edge_face_map.FindFromKey(edge);
+        if (faces.IsEmpty())
+            continue;
+        TopoDS_Face face = TopoDS::Face(faces.First());
+        builder.Add(d1, d2, edge, face);
+    }
+
+    builder.Build();
+    if (!builder.IsDone())
+        throw std::runtime_error("BRepFilletAPI_MakeChamfer (asymmetric, selective) failed");
     return wrap(builder.Shape());
 }
 
@@ -943,6 +1001,34 @@ std::unique_ptr<OcctShape> shape_offset(const OcctShape& shape, double distance)
     if (!offsetter.IsDone())
         throw std::runtime_error("BRepOffsetAPI_MakeOffsetShape (offset) failed");
     return wrap(offsetter.Shape());
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7 Tier 1: .offset_2d(distance) — inward/outward offset of a Wire or Face
+//
+// BRepOffsetAPI_MakeOffset operates in the plane of the input shape.
+// Positive distance expands the profile; negative shrinks it.
+// ---------------------------------------------------------------------------
+
+std::unique_ptr<OcctShape> shape_offset_2d(const OcctShape& shape, double distance) {
+    TopAbs_ShapeEnum type = shape.get().ShapeType();
+    if (type != TopAbs_FACE && type != TopAbs_WIRE)
+        throw std::runtime_error("offset_2d: input must be a Face or Wire");
+
+    // BRepOffsetAPI_MakeOffset has separate constructors for Face and Wire.
+    if (type == TopAbs_FACE) {
+        BRepOffsetAPI_MakeOffset offsetter(TopoDS::Face(shape.get()), GeomAbs_Arc);
+        offsetter.Perform(distance);
+        if (!offsetter.IsDone())
+            throw std::runtime_error("BRepOffsetAPI_MakeOffset (offset_2d, face) failed");
+        return wrap(offsetter.Shape());
+    } else {
+        BRepOffsetAPI_MakeOffset offsetter(TopoDS::Wire(shape.get()), GeomAbs_Arc);
+        offsetter.Perform(distance);
+        if (!offsetter.IsDone())
+            throw std::runtime_error("BRepOffsetAPI_MakeOffset (offset_2d, wire) failed");
+        return wrap(offsetter.Shape());
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -510,6 +510,42 @@ pub unsafe extern "C" fn rrcad_shape_fillet_var_sel(
 }
 
 // ---------------------------------------------------------------------------
+// Phase 7 Tier 1: asymmetric chamfer
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_chamfer_asym(
+    ptr: *mut c_void,
+    d1: f64,
+    d2: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    unsafe { shape_result_to_ptr(shape.chamfer_asym(d1, d2), error_out) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_chamfer_asym_sel(
+    ptr: *mut c_void,
+    d1: f64,
+    d2: f64,
+    selector: *const c_char,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let sel = match unsafe { std::ffi::CStr::from_ptr(selector) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "selector is not valid UTF-8") };
+            return std::ptr::null_mut();
+        }
+    };
+    unsafe { shape_result_to_ptr(shape.chamfer_asym_sel(d1, d2, sel), error_out) }
+}
+
+// ---------------------------------------------------------------------------
 // Patterns (Phase 4)
 // ---------------------------------------------------------------------------
 
@@ -537,6 +573,56 @@ pub unsafe extern "C" fn rrcad_shape_polar_pattern(
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
     unsafe { shape_result_to_ptr(shape.polar_pattern(n, angle_deg), error_out) }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7 Tier 1: grid_pattern, fuse_all, cut_all
+// ---------------------------------------------------------------------------
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_grid_pattern(
+    ptr: *mut c_void,
+    nx: std::ffi::c_int,
+    ny: std::ffi::c_int,
+    dx: f64,
+    dy: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    unsafe { shape_result_to_ptr(shape.grid_pattern(nx, ny, dx, dy), error_out) }
+}
+
+/// `fuse_all(ptrs, n)` — fold-left fuse over n shapes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_fuse_all(
+    ptrs: *const *const c_void,
+    n: usize,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shapes: Vec<&Shape> = (0..n)
+        .map(|i| unsafe { &*(*ptrs.add(i) as *const Shape) })
+        .collect();
+    let refs: Vec<&Shape> = shapes.iter().copied().collect();
+    unsafe { shape_result_to_ptr(Shape::fuse_all(&refs), error_out) }
+}
+
+/// `cut_all(base, ptrs, n)` — fold-left cut: subtract n tools from base.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_cut_all(
+    base: *mut c_void,
+    ptrs: *const *const c_void,
+    n: usize,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let base_shape = unsafe { &*(base as *const Shape) };
+    let shapes: Vec<&Shape> = (0..n)
+        .map(|i| unsafe { &*(*ptrs.add(i) as *const Shape) })
+        .collect();
+    let refs: Vec<&Shape> = shapes.iter().copied().collect();
+    unsafe { shape_result_to_ptr(base_shape.cut_all(&refs), error_out) }
 }
 
 // ---------------------------------------------------------------------------
@@ -1038,6 +1124,18 @@ pub unsafe extern "C" fn rrcad_shape_offset(
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
     unsafe { shape_result_to_ptr(shape.offset(distance), error_out) }
+}
+
+/// Offset a 2D Wire or Face in its own plane.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_offset_2d(
+    ptr: *mut c_void,
+    distance: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    unsafe { shape_result_to_ptr(shape.offset_2d(distance), error_out) }
 }
 
 /// Remove small features (holes/fillets) by defeaturing.

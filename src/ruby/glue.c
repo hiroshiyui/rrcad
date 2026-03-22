@@ -165,6 +165,17 @@ extern void rrcad_shape_export_obj(void* ptr, const char* path, const char** err
 extern void* rrcad_make_bezier_patch(const double* pts, size_t n_pts, const char** error_out);
 extern void* rrcad_sew(const void** ptrs, size_t n, double tolerance, const char** error_out);
 
+/* Phase 7 Tier 1 — asymmetric chamfer, offset_2d, grid_pattern, fuse_all, cut_all */
+extern void* rrcad_shape_chamfer_asym(void* ptr, double d1, double d2, const char** error_out);
+extern void* rrcad_shape_chamfer_asym_sel(void* ptr, double d1, double d2, const char* selector,
+                                          const char** error_out);
+extern void* rrcad_shape_offset_2d(void* ptr, double distance, const char** error_out);
+extern void* rrcad_shape_grid_pattern(void* ptr, int nx, int ny, double dx, double dy,
+                                      const char** error_out);
+extern void* rrcad_shape_fuse_all(const void** ptrs, size_t n, const char** error_out);
+extern void* rrcad_shape_cut_all(void* base, const void** ptrs, size_t n,
+                                 const char** error_out);
+
 /* mRuby data type descriptor — name appears in TypeError messages. */
 static void shape_dfree(mrb_state* mrb, void* ptr) {
     (void)mrb;
@@ -551,6 +562,31 @@ static mrb_value mrb_rrcad_shape_chamfer(mrb_state* mrb, mrb_value self) {
     return shape_from_ptr(mrb, result);
 }
 
+/* chamfer(d1, d2 [, :selector]) — asymmetric chamfer.
+ * Two distance arguments distinguish this from the symmetric form.
+ * An optional Symbol selector (:all / :vertical / :horizontal) restricts edges. */
+static mrb_value mrb_rrcad_shape_chamfer_asym(mrb_state* mrb, mrb_value self) {
+    mrb_float d1, d2;
+    mrb_value sel_val = mrb_nil_value();
+    mrb_get_args(mrb, "ff|o", &d1, &d2, &sel_val);
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    void* result;
+    if (mrb_nil_p(sel_val)) {
+        result = rrcad_shape_chamfer_asym(ptr, (double)d1, (double)d2, &err);
+    } else {
+        if (!mrb_symbol_p(sel_val))
+            mrb_raise(mrb, E_TYPE_ERROR,
+                      "chamfer selector must be a Symbol (:all, :vertical, :horizontal)");
+        const char* sel = mrb_sym_name(mrb, mrb_symbol(sel_val));
+        result = rrcad_shape_chamfer_asym_sel(ptr, (double)d1, (double)d2, sel, &err);
+    }
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
 static mrb_value mrb_rrcad_shape_mirror(mrb_state* mrb, mrb_value self) {
     mrb_sym plane_sym;
     mrb_get_args(mrb, "n", &plane_sym);
@@ -704,6 +740,19 @@ static mrb_value mrb_rrcad_shape_offset(mrb_state* mrb, mrb_value self) {
     require_native_ptr(mrb, ptr);
     const char* err = NULL;
     void* result = rrcad_shape_offset(ptr, (double)distance, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* .offset_2d(distance) — offset a Wire or Face inward (<0) or outward (>0) in its own plane. */
+static mrb_value mrb_rrcad_shape_offset_2d(mrb_state* mrb, mrb_value self) {
+    mrb_float distance;
+    mrb_get_args(mrb, "f", &distance);
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    void* result = rrcad_shape_offset_2d(ptr, (double)distance, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
@@ -1220,6 +1269,107 @@ static mrb_value mrb_rrcad_polar_pattern(mrb_state* mrb, mrb_value self) {
 }
 
 /* -------------------------------------------------------------------------
+ * Phase 7 Tier 1: grid_pattern / fuse_all / cut_all
+ * -------------------------------------------------------------------------
+ */
+
+/* grid_pattern(shape, nx, ny, dx, dy)
+ *
+ * Creates nx * ny translated copies of `shape` arranged in a 2-D grid.
+ * Copy (i, j) is at position (i*dx, j*dy, 0).
+ * Implemented as two nested linear_pattern calls in Rust — no new C++.
+ *
+ *   bolts = grid_pattern(bolt, 4, 3, 20, 20)
+ */
+static mrb_value mrb_rrcad_grid_pattern(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value shape_val;
+    mrb_int nx, ny;
+    mrb_float dx, dy;
+    mrb_get_args(mrb, "oiiff", &shape_val, &nx, &ny, &dx, &dy);
+
+    void* ptr = shape_ptr(mrb, shape_val);
+    require_native_ptr(mrb, ptr);
+
+    const char* err = NULL;
+    void* result = rrcad_shape_grid_pattern(ptr, (int)nx, (int)ny, (double)dx, (double)dy, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* fuse_all([shape1, shape2, ...])
+ *
+ * Fold-left union of all shapes in the array.  Requires at least 2 shapes.
+ *
+ *   merged = fuse_all([a, b, c, d])
+ */
+static mrb_value mrb_rrcad_fuse_all(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value arr;
+    mrb_get_args(mrb, "A", &arr);
+
+    int n = (int)RARRAY_LEN(arr);
+    if (n < 2)
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "fuse_all requires at least 2 shapes");
+
+    const void** ptrs = (const void**)malloc((size_t)n * sizeof(void*));
+    if (!ptrs)
+        mrb_raise(mrb, E_RUNTIME_ERROR, "out of memory");
+
+    for (int i = 0; i < n; i++) {
+        mrb_value elem = mrb_ary_ref(mrb, arr, (mrb_int)i);
+        void* p = shape_ptr(mrb, elem);
+        require_native_ptr(mrb, p);
+        ptrs[i] = p;
+    }
+
+    const char* err = NULL;
+    void* result = rrcad_shape_fuse_all(ptrs, (size_t)n, &err);
+    free(ptrs);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* cut_all(base, [tool1, tool2, ...])
+ *
+ * Subtract each tool shape from `base` in sequence.  Requires at least 1 tool.
+ *
+ *   result = cut_all(block, [hole_a, hole_b, slot])
+ */
+static mrb_value mrb_rrcad_cut_all(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value base_val, arr;
+    mrb_get_args(mrb, "oA", &base_val, &arr);
+
+    void* base = shape_ptr(mrb, base_val);
+    require_native_ptr(mrb, base);
+
+    int n = (int)RARRAY_LEN(arr);
+    if (n < 1)
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "cut_all requires at least 1 tool");
+
+    const void** ptrs = (const void**)malloc((size_t)n * sizeof(void*));
+    if (!ptrs)
+        mrb_raise(mrb, E_RUNTIME_ERROR, "out of memory");
+
+    for (int i = 0; i < n; i++) {
+        mrb_value elem = mrb_ary_ref(mrb, arr, (mrb_int)i);
+        void* p = shape_ptr(mrb, elem);
+        require_native_ptr(mrb, p);
+        ptrs[i] = p;
+    }
+
+    const char* err = NULL;
+    void* result = rrcad_shape_cut_all(base, ptrs, (size_t)n, &err);
+    free(ptrs);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* -------------------------------------------------------------------------
  * Phase 7: bezier_patch / sew
  * -------------------------------------------------------------------------
  */
@@ -1349,6 +1499,8 @@ void rrcad_register_shape_class(mrb_state* mrb) {
                       MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1)); /* (r[, :selector]) */
     mrb_define_method(mrb, shape_class, "chamfer", mrb_rrcad_shape_chamfer,
                       MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1)); /* (d[, :selector]) */
+    mrb_define_method(mrb, shape_class, "chamfer_asym", mrb_rrcad_shape_chamfer_asym,
+                      MRB_ARGS_REQ(2) | MRB_ARGS_OPT(1)); /* (d1, d2[, :selector]) */
     mrb_define_method(mrb, shape_class, "mirror", mrb_rrcad_shape_mirror, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "extrude", mrb_rrcad_shape_extrude,
                       MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
@@ -1399,6 +1551,7 @@ void rrcad_register_shape_class(mrb_state* mrb) {
                       MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
     mrb_define_method(mrb, shape_class, "shell", mrb_rrcad_shape_shell, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "offset", mrb_rrcad_shape_offset, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "offset_2d", mrb_rrcad_shape_offset_2d, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "simplify", mrb_rrcad_shape_simplify, MRB_ARGS_REQ(1));
 
     /* Phase 4: Patterns */
@@ -1406,6 +1559,12 @@ void rrcad_register_shape_class(mrb_state* mrb) {
                       MRB_ARGS_REQ(3));
     mrb_define_method(mrb, mrb->kernel_module, "polar_pattern", mrb_rrcad_polar_pattern,
                       MRB_ARGS_REQ(3));
+
+    /* Phase 7 Tier 1: grid_pattern / fuse_all / cut_all */
+    mrb_define_method(mrb, mrb->kernel_module, "grid_pattern", mrb_rrcad_grid_pattern,
+                      MRB_ARGS_REQ(5));
+    mrb_define_method(mrb, mrb->kernel_module, "fuse_all", mrb_rrcad_fuse_all, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, mrb->kernel_module, "cut_all", mrb_rrcad_cut_all, MRB_ARGS_REQ(2));
 
     /* Phase 4: Query / introspection */
     mrb_define_method(mrb, shape_class, "bounding_box", mrb_rrcad_shape_bounding_box,

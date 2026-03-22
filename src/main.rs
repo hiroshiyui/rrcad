@@ -44,7 +44,8 @@ Assembly mating (Phase 5)
 
 Modifiers
   s.fillet(r[, :sel])       round all (or selected) edges
-  s.chamfer(d[, :sel])      bevel all (or selected) edges
+  s.chamfer(d[, :sel])      bevel all (or selected) edges (symmetric)
+  s.chamfer_asym(d1,d2[,:sel]) asymmetric chamfer (two bevel distances)
                             sel: :all, :vertical, :horizontal
   s.extrude(h)              extrude face/profile by height
   s.revolve(deg=360)        revolve around Z axis
@@ -67,6 +68,14 @@ Export
 Patterns
   linear_pattern(s,n,[dx,dy,dz]) n copies translated along vector
   polar_pattern(s, n, angle_deg) n copies rotated around Z axis
+  grid_pattern(s,nx,ny,dx,dy)    nx×ny copies in a 2-D grid
+
+Boolean multi-shape
+  fuse_all([a, b, c])       fold-left union of 2+ shapes
+  cut_all(base, [t1, t2])   subtract each tool from base in sequence
+
+2D profile
+  s.offset_2d(d)            offset a Wire/Face inward (<0) or outward (>0)
 
 Parameters (Phase 5)
   param :name, default: val        declare a parameter (returns value)
@@ -112,6 +121,9 @@ const TOP_LEVEL: &[&str] = &[
     "preview",
     "linear_pattern",
     "polar_pattern",
+    "grid_pattern",
+    "fuse_all",
+    "cut_all",
     "param", // REPL control
     "help",
     "exit",
@@ -165,7 +177,10 @@ const SHAPE_METHODS: &[&str] = &[
     // Phase 4 — 3-D ops and Tier 4 quality
     "shell",
     "offset",
+    "offset_2d",
     "simplify",
+    // Phase 7 Tier 1
+    "chamfer_asym",
     // Phase 5 — color and mating
     "color",
     "mate",
