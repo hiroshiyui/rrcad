@@ -100,157 +100,48 @@ Validated by `tests/teapot_sample.rs` (9 tests including `bezier_patch` and
 
 ---
 
-## Phase 7 — Improve OCCT Coverage & Compatibility
+## ✓ Phase 7 — Improve OCCT Coverage & Compatibility
 
-### ✓ Tier 1 — Quick wins, high ROI (complete existing patterns)
-
-All four Tier 1 features are implemented and tested in `tests/phase7_tier1.rs` (12 tests).
-
-| # | Feature | DSL | OCCT API |
-|---|---------|-----|----------|
-| 1 | **Asymmetric chamfer** ✓ | `.chamfer_asym(d1, d2[, :sel])` | `BRepFilletAPI_MakeChamfer::Add(d1, d2, edge, face)` with edge→face map |
-| 2 | **2D profile offset** ✓ | `.offset_2d(d)` | `BRepOffsetAPI_MakeOffset` on a Face or Wire |
-| 3 | **Grid pattern** ✓ | `grid_pattern(s, nx, ny, dx, dy)` | Pure Rust: two nested `linear_pattern` calls |
-| 4 | **Multi-shape fuse/cut** ✓ | `fuse_all([a,b,c])`, `cut_all(base,[t1,t2])` | Fold-left over existing `.fuse` / `.cut` in Rust |
-
-### ✓ Tier 2 — Validation & introspection (robustness for real workflows)
-
-All four Tier 2 features are implemented and tested in `tests/phase7_tier2.rs` (12 tests).
-
-| # | Feature | DSL | OCCT API |
-|---|---------|-----|----------|
-| 5 | **Shape type query** ✓ | `.shape_type` → `:solid/:shell/:face/:wire/:edge/:vertex` | `shape.ShapeType()` → `TopAbs_ShapeEnum` |
-| 6 | **Closed / manifold check** ✓ | `.closed?`, `.manifold?` | `TopTools_IndexedDataMapOfShapeListOfShape` edge→face map |
-| 7 | **Centroid** ✓ | `.centroid` → `[x, y, z]` | `BRepGProp::VolumeProperties/SurfaceProperties/LinearProperties` dispatch |
-| 8 | **Topology validation** ✓ | `.validate` → `:ok` or error list | `BRepCheck_Analyzer` (already used in export guard) |
-
-### ✓ Tier 3 — Surface modeling (next frontier)
-
-All three Tier 3 features are implemented and tested in `tests/phase7_tier3.rs` (10 tests).
-
-| # | Feature | DSL | OCCT API |
-|---|---------|-----|----------|
-| 9 | **Ruled surface** ✓ | `ruled_surface(wire_a, wire_b)` | `BRepFill::Shell` (static method) |
-| 10 | **Fill surface** ✓ | `fill_surface(boundary_wire)` | `BRepFill_Filling` with C0 edge constraints |
-| 11 | **Slice by plane** ✓ | `.slice(plane: :xy, z: 5.0)` → compound | `BRepAlgoAPI_Section` |
-
-### Tier 4 — Interop (legacy CAD exchange)
-
-IGES import/export was deprioritised; 2-D drawing output (SVG/DXF) was delivered
-in Phase 8 Tier 4 instead (see below).
-
-| # | Feature | Status |
-|---|---------|--------|
-| 12 | **IGES import** (`import_iges`) | Not implemented — low demand; STEP import covers most workflows |
-| 13 | **IGES export** | Not implemented |
-| 14 | **SVG/DXF 2-D drawing** | ✓ Implemented in Phase 8 Tier 4 |
+Asymmetric chamfer (`.chamfer(d1, d2)`), 2-D profile offset (`.offset_2d`), grid
+pattern (`grid_pattern`), and multi-shape `fuse_all`/`cut_all`.  Shape introspection:
+`.shape_type`, `.closed?`, `.manifold?`, `.centroid`, `.validate`
+(`BRepCheck_Analyzer`).  Surface modeling: `ruled_surface` (`BRepFill::Shell`),
+`fill_surface` (`BRepFill_Filling`), `.slice` by axis-aligned plane
+(`BRepAlgoAPI_Section`).  IGES import/export was deprioritised (STEP covers the same
+workflows); SVG/DXF 2-D drawing landed in Phase 8 Tier 4 instead.
+See `tests/phase7_tier1.rs` (12), `tests/phase7_tier2.rs` (12), `tests/phase7_tier3.rs` (10).
 
 ---
 
-## Phase 8 — Part Design: Sketch-on-Face, Pad & Pocket
+## ✓ Phase 8 — Part Design, Manufacturing & Advanced Composition
 
-**Goal:** close the gap with FreeCAD's Part Design workbench for "CAD as code" workflows.
-FreeCAD's core loop is: select a face → sketch in its plane → pad (extrude outward) or
-pocket (cut inward).  This phase brings that loop to the Ruby DSL, making rrcad a credible
-alternative for mechanical part modelling without a GUI.
+**Part Design (Tier 1):** `.pad(face, height:) { sketch }` and `.pocket(face, depth:) { sketch }`
+via face-local `gp_Ax3` transform + `BRepPrimAPI_MakePrism` + fuse/cut.  `.fillet_wire(r)`
+rounds 2-D sketch corners before extrude (`BRepFilletAPI_MakeFillet2d`).  `datum_plane`
+constructs reusable reference planes from origin/normal/x-dir.
+See `tests/phase8_tier1.rs` (11 tests).
 
-### The core DSL pattern
+**Manufacturing (Tier 2):** Draft-angle extrude (`BRepOffsetAPI_DraftAngle`);
+`helix(radius:, pitch:, height:)` Wire path (BSpline at 16 samples/turn); `thread` and
+`cbore`/`csink` as pure Ruby DSL macros built on helix + sweep + cut.
+See `tests/phase8_tier2.rs` (13 tests).
 
-```ruby
-plate = box(100, 60, 10)
+**Inspection (Tier 3):** `.distance_to` (`BRepExtrema_DistShapeShape`), `.inertia` tensor
+(`BRepGProp::VolumeProperties` → `MatrixOfInertia`), `.min_thickness` via inward
+ray-casting (`IntCurvesFace_ShapeIntersector`).
+See `tests/phase8_tier3.rs` (10 tests).
 
-# Pocket: cut a rounded slot from the top face
-result = plate.pocket(:top, depth: 8) do
-  rect(40, 20).fillet_wire(4)          # 2D sketch in face-local coords
-end
+**2-D drawing (Tier 4):** `.export("part.svg")` / `.export("part.dxf")` via
+`HLRBRep_PolyAlgo` hidden-line removal.  Three view directions: `:top` (default),
+`:front`, `:side`.  SVG outputs `<polyline>` with Y-down coordinates; DXF outputs
+`LINE` entities (R12 ASCII, Y-up).
+See `tests/phase8_tier4.rs` (11 tests).
 
-# Pad: add a boss on the bottom face
-result = plate.pad(:bottom, height: 6) do
-  circle(10)
-end
-
-# Arbitrary face by index or direction string
-result = plate.pocket(">X", depth: 5) do
-  circle(4).translate(0, 5)            # face-local X/Y
-  circle(4).translate(0, -5)
-end
-```
-
-Face-local coordinate system: origin at the face centroid, X/Y along the face
-tangent directions, Z along the outward normal.  All 2D shapes in the block are
-interpreted in this local frame.  The implementation transforms them to world
-coordinates before extrude/cut.
-
-### ✓ Tier 1 — Core Part Design primitives
-
-All four Tier 1 features are implemented and tested in `tests/phase8_tier1.rs` (11 tests).
-
-| # | Feature | DSL | OCCT API |
-|---|---------|-----|----------|
-| 1 | **Pad** ✓ | `.pad(face_sel, height:) { sketch }` | `BRepPrimAPI_MakePrism` along face normal + `BRepAlgoAPI_Fuse` |
-| 2 | **Pocket** ✓ | `.pocket(face_sel, depth:) { sketch }` | `BRepPrimAPI_MakePrism` along −normal + `BRepAlgoAPI_Cut` |
-| 3 | **Wire fillet** ✓ | `.fillet_wire(r)` on a Face/Wire | `BRepFilletAPI_MakeFillet2d` |
-| 4 | **Datum plane** ✓ | `datum_plane(origin:, normal:, x_dir:)` | `gp_Ax3` + `BRepBuilderAPI_MakeFace(gp_Pln)` — returns a reusable plane shape for `.pad`/`.pocket` |
-
-Implementation of face-local transform (shared by pad + pocket):
-1. `BRep_Tool::Surface(face)` → cast to `Geom_Plane` → get `gp_Ax3`
-2. `BRepGProp::SurfaceProperties` → face centroid as `gp_Pnt` origin
-3. `gp_Trsf::SetTransformation(ax3)` → maps world → face-local (invert for local → world)
-4. `BRepBuilderAPI_Transform(sketch, trsf)` → sketch in world coords
-5. `BRepPrimAPI_MakePrism(sketch_face, normal_vec * depth)` → tool solid
-6. `BRepAlgoAPI_Fuse` (pad) or `BRepAlgoAPI_Cut` (pocket)
-
-### ✓ Tier 2 — Manufacturing features
-
-All four Tier 2 features are implemented and tested in `tests/phase8_tier2.rs` (13 tests).
-
-| # | Feature | DSL | OCCT API |
-|---|---------|-----|----------|
-| 5 | **Draft angle** ✓ | `.extrude(h, draft: angle_deg)` | `BRepPrimAPI_MakePrism` + `BRepOffsetAPI_DraftAngle` on lateral faces |
-| 6 | **Helix path** ✓ | `helix(radius:, pitch:, height:)` → Wire | `GeomAPI_Interpolate` (16 samples/turn BSpline) |
-| 7 | **Thread** ✓ | `thread(solid, face_sel, pitch:, depth:)` | helix path + triangular polygon profile + `.sweep` + `.cut` — pure Ruby DSL |
-| 8 | **Counterbore / countersink** ✓ | `cbore(d:, cbore_d:, cbore_h:, depth:)`, `csink(d:, csink_d:, csink_angle:, depth:)` | pure Ruby DSL — `circle.extrude` + `cone` + `.fuse`; use with `.cut` |
-
-### ✓ Tier 3 — Inspection & clearance
-
-All three Tier 3 features are implemented and tested in `tests/phase8_tier3.rs` (10 tests).
-
-| # | Feature | DSL | OCCT API |
-|---|---------|-----|----------|
-| 9 | **Distance between shapes** ✓ | `.distance_to(other)` → Float | `BRepExtrema_DistShapeShape` |
-| 10 | **Moment of inertia** ✓ | `.inertia` → `{ixx:, iyy:, izz:, ixy:, …}` | `BRepGProp::VolumeProperties` → `GProp_GProps::MatrixOfInertia` |
-| 11 | **Minimum wall thickness** ✓ | `.min_thickness` → Float | Ray-casting via `IntCurvesFace_ShapeIntersector` — shoots inward ray from each face centroid, returns shortest intersection distance |
-
-### ✓ Tier 4 — 2D drawing output
-
-All three Tier 4 features are implemented and tested in `tests/phase8_tier4.rs` (11 tests).
-
-| # | Feature | DSL | OCCT API |
-|---|---------|-----|----------|
-| 12 | **Slice to face** ✓ | `.slice(plane: :xy, z: 5.0)` → compound | Already landed in Phase 7 Tier 3 (`BRepAlgoAPI_Section`) |
-| 13 | **SVG export** ✓ | `shape.export("part.svg")`, `shape.export("part.svg", view: :front\|:side)` | `HLRBRep_PolyAlgo` + `HLRBRep_PolyHLRToShape` → polylines → SVG `<polyline>` elements |
-| 14 | **DXF export** ✓ | `shape.export("part.dxf")`, `shape.export("part.dxf", view: :front\|:side)` | Same HLR pipeline → hand-rolled DXF R12 ASCII (LINE entities) |
-
-SVG/DXF projection uses `HLRBRep_PolyAlgo` (polygon-based hidden-line removal):
-tessellate → set orthographic `HLRAlgo_Projector` → `Update()` → extract
-`VCompound()` + `OutLineVCompound()` → discretise each edge at 32 samples →
-write SVG `<polyline>` (Y-flipped) or DXF `LINE` entities (Y-up).
-Three view directions: `:top` (XY plane, default), `:front` (XZ plane), `:side` (YZ plane).
-
-### Tier 5 — Advanced composition ✓
-
-| # | Feature | DSL | OCCT API | Status |
-|---|---------|-----|----------|--------|
-| 15 | **Boolean fragment** | `fragment([a, b, c])` → Compound | `BRepAlgoAPI_BuilderAlgo::SetArguments` + builder pattern | ✓ |
-| 16 | **Convex hull** | `.convex_hull` | Incremental 3-D QuickHull on tessellated mesh vertices; BRep solid via `BRepBuilderAPI_Sewing` + `BRepBuilderAPI_MakeSolid` | ✓ |
-| 17 | **Path pattern** | `path_pattern(shape, path, n)` | `GCPnts_UniformAbscissa` on `BRepAdaptor_CompCurve` for arc-length sampling; Z→tangent orientation per copy | ✓ |
-| 18 | **Pipe with guide** | `shape.sweep(path, guide: guide_wire)` | `BRepOffsetAPI_MakePipeShell::SetMode(auxiliary_spine, true, BRepFill_Contact)` | ✓ |
-
-**Implementation details:**
-- `fragment` uses a builder (`FragmentBuilder`) since `BRepAlgoAPI_BuilderAlgo` needs all shapes in a `TopTools_ListOfShape`; single-shape case returns a trivial Compound.
-- `convex_hull` uses an incremental QuickHull (seeded from 4 extreme points, then horizon-edge expansion). Hull triangles are sewn into a BRep solid.
-- `path_pattern` distributes `n` copies using arc-length-evenly-spaced parameter values; each copy is rotated so its local Z-axis aligns with the path tangent.
-- Guided sweep extends the existing `.sweep(path)` method by accepting an optional `guide:` keyword; the guide wire controls the profile's X-axis orientation using `BRepFill_Contact`.
+**Advanced composition (Tier 5):** `fragment([a,b,c])` via `BRepAlgoAPI_BuilderAlgo`;
+`.convex_hull` via incremental 3-D QuickHull + sewing; `path_pattern(shape, path, n)`
+via `GCPnts_UniformAbscissa` arc-length sampling; guided `.sweep(path, guide: wire)`
+via `BRepOffsetAPI_MakePipeShell::SetMode`.
+See `tests/phase8_tier5.rs` (11 tests).
 
 ---
 
