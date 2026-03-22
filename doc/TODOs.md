@@ -82,8 +82,7 @@ All 3-D operations shipped. Completed: `loft`, `.shell`, `.offset`, `.extrude(tw
 ## OCCT API Improvements (existing code)
 
 Targeted improvements to the current `bridge.cpp` implementation using newer OCCT APIs.
-Items marked `[ ]` are ready to implement (pure C++ changes, no DSL surface change).
-Items marked `(phase 5)` require DSL/API design work and belong in Phase 5.
+All items below are complete. Items requiring DSL changes have been moved to Phase 5.
 
 ### [x] Boolean operations — robustness and performance
 
@@ -184,40 +183,6 @@ which is already linked.
 
 ---
 
-### (phase 5) Spline tangent constraints
-
-**File:** `src/occt/bridge.cpp` — `make_spline_2d`, `make_spline_3d`
-
-**Problem:** Natural boundary conditions can cause endpoint oscillation on short
-splines (visible on the teapot spout sweep path).
-
-**Fix:** `GeomAPI_Interpolate::Load(startTangent, endTangent)` sets explicit end
-tangents before `Perform()`. Requires exposing a `tangents:` keyword argument
-in the DSL — a Phase 5 concern.
-
----
-
-### (phase 5) GLB color/material support
-
-**File:** `src/occt/bridge.cpp` — `make_xde_doc` or `export_glb`
-
-**Problem:** All shapes export with the default grey material. Multi-part
-assemblies need per-part colors for useful preview.
-
-**Fix:** Attach colors to XDE shape labels via `XCAFDoc_ColorTool` before
-`RWGltf_CafWriter::Perform`. Requires a new DSL method (`.color(r, g, b)`) to
-carry color metadata through to the export path — a Phase 5 concern.
-
----
-
-### (phase 5) Feature removal — `.simplify`
-
-`BRepAlgoAPI_Defeaturing` (OCCT 7.4+) removes small holes/fillets for
-simplified simulation meshes. Not urgent; defer to Phase 5 as
-`.simplify(min_feature_size)`.
-
----
-
 ## Phase 5 — Parametric Design & Constraints
 
 Goal: scripts with parameters, constraints, and design tables.
@@ -226,6 +191,37 @@ Goal: scripts with parameters, constraints, and design tables.
 - [ ] Constraint solver integration (research options: SolveSpace lib, custom)
 - [ ] Design table: vary params across rows, export batch of STEP files
 - [ ] `--param width=20` CLI override
+
+### Spline tangent constraints
+
+**File:** `src/occt/bridge.cpp` — `make_spline_2d`, `make_spline_3d`
+
+**Problem:** Natural boundary conditions can cause endpoint oscillation on short
+splines (visible on the teapot spout sweep path).
+
+**Fix:** `GeomAPI_Interpolate::Load(startTangent, endTangent)` sets explicit end
+tangents before `Perform()`. Requires exposing a `tangents:` keyword argument
+in the DSL.
+
+---
+
+### GLB color/material support
+
+**File:** `src/occt/bridge.cpp` — `make_xde_doc` or `export_glb`
+
+**Problem:** All shapes export with the default grey material. Multi-part
+assemblies need per-part colors for useful preview.
+
+**Fix:** Attach colors to XDE shape labels via `XCAFDoc_ColorTool` before
+`RWGltf_CafWriter::Perform`. Requires a new DSL method (`.color(r, g, b)`) to
+carry color metadata through to the export path.
+
+---
+
+### Feature removal — `.simplify`
+
+`BRepAlgoAPI_Defeaturing` (OCCT 7.4+) removes small holes/fillets for
+simplified simulation meshes. Not urgent; implement as `.simplify(min_feature_size)`.
 
 ---
 
