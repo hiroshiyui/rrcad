@@ -366,7 +366,7 @@ part.export("model.glb", linear_deflection: 0.5)   # coarse (quick preview)
 cargo run -- --preview script.rb
 ```
 
-1. Launches an HTTP server (default `http://localhost:7878`)
+1. Launches an HTTP server at `http://localhost:3000`
 2. Opens your browser to a Three.js 3D viewer
 3. Watches the script file; on every save, re-evaluates the script and pushes the new geometry over WebSocket
 4. Call `preview(shape)` in your script to specify which shape to display
@@ -449,7 +449,7 @@ Starts a stdio JSON-RPC server compatible with Claude Desktop and Claude Code. A
 |------|-------|--------|
 | `cad_eval` | `{ "code": "..." }` | Shape type, volume, surface area, bounding box, validity |
 | `cad_export` | `{ "code": "...", "format": "step" }` | `{ "path": "/tmp/rrcad_mcp/shape.step" }` |
-| `cad_preview` | `{ "code": "..." }` | `{ "url": "http://localhost:7878" }` |
+| `cad_preview` | `{ "code": "..." }` | `{ "url": "http://localhost:<port>" }` (OS-assigned port) |
 | `cad_validate` | `{ "code": "..." }` | `{ "status": "ok" }` or `{ "errors": [...] }` |
 
 ### Resources
