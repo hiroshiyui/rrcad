@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.0] - 2026-03-23
+
+### Added
+
+- **MCP server** (`rrcad --mcp`): exposes four tools over stdio JSON-RPC —
+  `cad_eval`, `cad_export`, `cad_preview`, `cad_validate` — and two resources
+  (`rrcad://api`, `rrcad://examples`). Compatible with Claude Desktop and
+  Claude Code out of the box.
+- MCP server configuration template (`.mcp.json.example`) for easy client setup.
+- User guide (`doc/user-guide.md`) covering all run modes including the MCP server.
+
+### Fixed
+
+- **MCP stability**: `setrlimit(RLIMIT_AS)` was called inside every
+  `spawn_blocking` closure, permanently capping the entire server process's
+  virtual address space to 512 MB after the first tool call. Moved to a single
+  call in `start()` and raised the limit to 2 GB so OCCT boolean operations no
+  longer crash the server.
+
+### Changed
+
+- rrcad-specific mruby build configs (`rrcad.rb`, `mcp_safe.gembox`) moved from
+  `vendor/mruby/build_config/` into `mruby_configs/` in the rrcad repo.
+  `build.rs` now copies them into the submodule before invoking `rake`, keeping
+  the vendored mruby tree pristine at tag `3.4.0`.
+
+---
+
 ## [0.0.1] - 2026-03-23
 
 Initial public release of **rrcad** — a Ruby DSL-driven 3D CAD language backed
