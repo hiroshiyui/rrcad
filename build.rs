@@ -11,9 +11,15 @@ fn main() {
 
     // Build mRuby with its own build system (requires `rake`).
     // Skipped if the library already exists to keep incremental builds fast.
+    //
+    // Uses the rrcad-specific build config (build_config/rrcad.rb) which
+    // restricts the gembox to stdlib + math, removing the filesystem / network
+    // / eval attack surface.  To force a rebuild after changing the gembox:
+    //   rm vendor/mruby/build/host/lib/libmruby.a && cargo build
     if !lib_path.exists() {
         let status = Command::new("rake")
             .current_dir(&mruby_dir)
+            .env("MRUBY_CONFIG", "build_config/rrcad")
             .status()
             .expect(
                 "failed to run `rake` — is Ruby (with rake) installed? \
@@ -88,6 +94,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/occt/mod.rs");
     println!("cargo:rerun-if-changed=src/occt/bridge.h");
     println!("cargo:rerun-if-changed=src/occt/bridge.cpp");
+    println!("cargo:rerun-if-changed=vendor/mruby/build_config/rrcad.rb");
+    println!("cargo:rerun-if-changed=vendor/mruby/build_config/mcp_safe.gembox");
     println!(
         "cargo:rerun-if-changed={}",
         mruby_dir.join("build/host/lib/libmruby.a").display()

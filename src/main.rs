@@ -346,7 +346,12 @@ enum Mode {
     Repl,
     Script(String),
     Preview(String),
-    DesignTable { table: String, script: String },
+    DesignTable {
+        table: String,
+        script: String,
+    },
+    /// MCP server mode: serve CAD tools over stdio to an AI client.
+    Mcp,
 }
 
 struct CliArgs {
@@ -393,6 +398,7 @@ fn parse_args() -> CliArgs {
 
     let mode = match rest.first().map(String::as_str) {
         None | Some("--repl") => Mode::Repl,
+        Some("--mcp") => Mode::Mcp,
         Some("--preview") => match rest.get(1) {
             Some(path) => Mode::Preview(path.clone()),
             None => {
@@ -426,6 +432,12 @@ fn main() {
         Mode::DesignTable { table, script } => {
             if let Err(e) = run_design_table(&table, &script, &params) {
                 eprintln!("{e}");
+                std::process::exit(1);
+            }
+        }
+        Mode::Mcp => {
+            if let Err(e) = rrcad::mcp::start() {
+                eprintln!("rrcad MCP server error: {e}");
                 std::process::exit(1);
             }
         }

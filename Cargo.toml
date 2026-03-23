@@ -10,9 +10,16 @@ rustyline = "14"
 
 # Phase 3: live preview
 axum = { version = "0.7", features = ["ws"] }
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "fs", "time", "io-std"] }
 notify = "6"
 open = "5"
+
+# Phase 9: MCP server
+rmcp = { version = "0.1", features = ["server"] }
+uuid = { version = "1", features = ["v4"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"
 
 [build-dependencies]
 cc = "1"
