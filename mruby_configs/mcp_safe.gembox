@@ -18,4 +18,10 @@
 MRuby::GemBox.new do |conf|
   conf.gembox "stdlib"
   conf.gembox "math"
+
+  # mruby-compiler provides the C-level parser and mrb_load_string(), which
+  # rrcad's glue.c uses to evaluate DSL strings.  This is NOT the same as
+  # mruby-eval (Ruby-level Kernel#eval, intentionally excluded above) —
+  # mruby-compiler is the compiler back-end, not a runtime escape hatch.
+  conf.gem :core => "mruby-compiler"
 end
