@@ -71,10 +71,17 @@ const MCP_MAX_CODE_BYTES: usize = 64 * 1024;
 /// Per-call evaluation time limit in seconds (Mitigation 3).
 const MCP_EVAL_TIMEOUT_SECS: u64 = 30;
 
-/// Address-space ceiling for the mRuby eval process (Mitigation 4).
-/// 512 MB is enough for complex OCCT geometry without threatening the host.
+/// Address-space ceiling applied once at server startup (Mitigation 4).
+///
+/// `setrlimit(RLIMIT_AS)` is **process-wide** on Linux — calling it from a
+/// `spawn_blocking` thread would permanently cap the entire server's VAS after
+/// the first tool call, causing tokio, OCCT, and mRuby to fail on subsequent
+/// calls.  We apply the limit once in `start()` instead.
+///
+/// 2 GB gives OCCT's BRep kernel enough virtual address space for complex
+/// boolean operations and tessellation while still bounding runaway allocations.
 #[cfg(target_os = "linux")]
-const MCP_MEMORY_LIMIT_BYTES: u64 = 512 * 1024 * 1024;
+const MCP_MEMORY_LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 /// MCP security prelude — evaluated once per VM before user code (Mitigation 2).
 ///
@@ -181,10 +188,12 @@ fn validate_format(format: &str) -> Result<(), String> {
     }
 }
 
-/// Mitigation 4: set the address-space limit for the current process.
+/// Mitigation 4: set the process-wide address-space limit at server startup.
 ///
-/// Called inside every `spawn_blocking` closure before mRuby eval so that
-/// pathological geometry or loops cannot exhaust the host's memory.
+/// Must be called **once** from `start()`, not per-call.  `setrlimit(RLIMIT_AS)`
+/// is process-wide on Linux — applying it inside a `spawn_blocking` thread would
+/// permanently cap the server's VAS after the first eval, causing all subsequent
+/// tokio/OCCT/mRuby allocations to fail.
 fn apply_memory_limit() {
     #[cfg(target_os = "linux")]
     // SAFETY: setrlimit is async-signal-safe and idempotent.
@@ -287,8 +296,8 @@ async fn do_cad_eval(code: String) -> CallToolResult {
     let result = timeout(
         Duration::from_secs(MCP_EVAL_TIMEOUT_SECS),
         spawn_blocking(move || -> Result<Value, String> {
-            // Mitigations 4, 6, 2.
-            apply_memory_limit();
+            // Mitigations 6, 2.  Mitigation 4 (memory limit) is applied once
+            // at startup in start() — setrlimit is process-wide, not per-thread.
             let mut vm = create_mcp_vm()?;
 
             // Capture the last shape in a global so we can query it.
@@ -369,7 +378,6 @@ async fn do_cad_export(code: String, format: String) -> CallToolResult {
     let result = timeout(
         Duration::from_secs(MCP_EVAL_TIMEOUT_SECS),
         spawn_blocking(move || -> Result<(), String> {
-            apply_memory_limit();
             let mut vm = create_mcp_vm()?;
             vm.eval(&format!("$__s = begin\n{code}\nend"))?;
             // Relative filename → resolves under CWD = /tmp/rrcad_mcp/.
@@ -433,7 +441,6 @@ async fn do_cad_preview(code: String) -> CallToolResult {
     let result = timeout(
         Duration::from_secs(MCP_EVAL_TIMEOUT_SECS),
         spawn_blocking(move || -> Result<(), String> {
-            apply_memory_limit();
             let mut vm = create_mcp_vm()?;
             vm.eval(&format!("$__s = begin\n{code}\nend"))?;
             vm.eval("$__s.export(\"preview.glb\")")?;
@@ -469,7 +476,6 @@ async fn do_cad_validate(code: String) -> CallToolResult {
     let result = timeout(
         Duration::from_secs(MCP_EVAL_TIMEOUT_SECS),
         spawn_blocking(move || -> Result<Value, String> {
-            apply_memory_limit();
             let mut vm = create_mcp_vm()?;
 
             // Try to evaluate and assign the shape.
@@ -722,6 +728,12 @@ impl ServerHandler for McpServer {
 ///
 /// Per-call mitigations (2, 3, 4, 6, 7) are applied inside each `do_*` helper.
 pub fn start() -> Result<(), Box<dyn std::error::Error>> {
+    // Mitigation 4: cap virtual address space for the whole server process.
+    // Must be done here (once, before any threads are spawned) because
+    // setrlimit(RLIMIT_AS) is process-wide — applying it per spawn_blocking
+    // thread would re-apply after every eval and starve tokio/OCCT.
+    apply_memory_limit();
+
     // Mitigation 5: create export sandbox with restricted permissions.
     let sandbox = PathBuf::from("/tmp/rrcad_mcp");
     std::fs::create_dir_all(&sandbox)?;
