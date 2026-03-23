@@ -29,6 +29,7 @@ See [`samples/`](samples/) for more complete examples.
 | Glue | Rust | Binding layer, memory ownership, CLI |
 | Geometry | OpenCASCADE (OCCT) | BRep modeling, boolean ops, export |
 | Preview | Three.js + axum | Browser-based live 3D viewer (`--preview` mode) |
+| MCP | rmcp + stdio | Model Context Protocol server (`--mcp` mode) |
 
 ## Architecture
 
@@ -56,6 +57,7 @@ cargo build
 cargo run                          # start REPL
 cargo run -- script.rb             # run a .rb script
 cargo run -- --preview script.rb   # live browser preview (auto-reloads on save)
+cargo run -- --mcp                 # MCP server over stdio (for Claude Desktop / Claude Code)
 cargo test
 ```
 
@@ -74,6 +76,7 @@ See [`doc/TODOs.md`](doc/TODOs.md) for the phased implementation plan:
 - **Phase 6** ✓ — Variable-section sweep (`sweep_sections`); Bézier surface patches (`bezier_patch`); face/shell sewing (`sew`); Utah Teapot rebuild from 28 Newell patches
 - **Phase 7** ✓ — Asymmetric chamfer; 2D profile offset; grid pattern; `fuse_all`/`cut_all`; shape type / `closed?` / `manifold?` / `centroid` / `validate`; surface modeling (`ruled_surface`, `fill_surface`, `.slice`)
 - **Phase 8** ✓ — Part Design: `.pad`, `.pocket`, `.fillet_wire`, `datum_plane`; manufacturing: draft extrude, `helix`, thread, cbore/csink macros; inspection: `.distance_to`, `.inertia`, `.min_thickness`; 2-D drawing: `.export("part.svg")` / `.export("part.dxf")` via `HLRBRep_PolyAlgo`; advanced composition: `fragment`, `.convex_hull`, `path_pattern`, guided `.sweep`
+- **Phase 9** ✓ — MCP server: `rrcad --mcp` exposes four tools (`cad_eval`, `cad_export`, `cad_preview`, `cad_validate`) and two resources (`rrcad://api`, `rrcad://examples`) over stdio; full security hardening (sandboxed VM per call, 30 s timeout, 64 KB input cap, export path confinement)
 
 ## Third-party components
 

@@ -59,8 +59,8 @@ rrcad/
 ├── Cargo.toml              # crate manifest
 ├── build.rs                # three-phase build orchestration
 ├── src/
-│   ├── lib.rs              # library root (re-exports occt, preview, ruby)
-│   ├── main.rs             # CLI entry point (REPL + script + --preview modes)
+│   ├── lib.rs              # library root (re-exports mcp, occt, preview, ruby)
+│   ├── main.rs             # CLI entry point (REPL + script + --preview + --mcp modes)
 │   ├── ruby/               # mRuby integration
 │   │   ├── mod.rs          # re-exports ffi, vm, native submodules
 │   │   ├── ffi.rs          # extern "C" declarations for libmruby + glue.c
@@ -72,10 +72,13 @@ rrcad/
 │   │   ├── mod.rs          # cxx::bridge + safe Shape wrapper + tests
 │   │   ├── bridge.h        # C++ header: OcctShape class + fn declarations
 │   │   └── bridge.cpp      # C++ implementation of all OCCT operations
-│   └── preview/            # Live browser preview (Phase 3)
-│       ├── mod.rs          # PreviewState, PREVIEW global, start()
-│       ├── server.rs       # axum routes: /, /model.glb, /ws
-│       └── viewer.html     # Three.js viewer (embedded via include_str!)
+│   ├── preview/            # Live browser preview (Phase 3)
+│   │   ├── mod.rs          # PreviewState, PREVIEW global, start()
+│   │   ├── server.rs       # axum routes: /, /model.glb, /ws
+│   │   └── viewer.html     # Three.js viewer (embedded via include_str!)
+│   └── mcp/                # MCP server over stdio (Phase 9)
+│       └── mod.rs          # cad_eval, cad_export, cad_preview, cad_validate tools;
+│                           #   rrcad://api + rrcad://examples resources; 7 security mitigations
 ├── samples/                # DSL example scripts
 │   ├── README.md
 │   ├── 01_hello_box.rb … 07_teapot.rb
@@ -99,7 +102,8 @@ rrcad/
 │   ├── phase8_tier2.rs    # Phase 8 Tier 2: draft angle, helix, thread, cbore/csink (13 tests)
 │   ├── phase8_tier3.rs    # Phase 8 Tier 3: distance_to, inertia, min_thickness (10 tests)
 │   ├── phase8_tier4.rs    # Phase 8 Tier 4: SVG/DXF 2-D drawing export (11 tests)
-│   └── phase8_tier5.rs    # Phase 8 Tier 5: fragment, convex_hull, path_pattern, guided sweep (11 tests)
+│   ├── phase8_tier5.rs    # Phase 8 Tier 5: fragment, convex_hull, path_pattern, guided sweep (11 tests)
+│   └── mcp_tools.rs       # Phase 9 MCP security + DSL-in-VM integration tests (12 tests)
 ├── vendor/
 │   └── mruby/              # git submodule — mRuby 3.4.0
 └── doc/

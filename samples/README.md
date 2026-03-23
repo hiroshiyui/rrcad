@@ -39,3 +39,10 @@ Batch export via design table (Phase 5):
 ```sh
 cargo run -- --design-table samples/08_box_sizes.csv samples/08_parametric_box.rb
 ```
+
+Via MCP (Phase 9) — any of these scripts can be run by an AI client using the
+`cad_eval` or `cad_export` tools once `rrcad --mcp` is active:
+
+```sh
+cargo run -- --mcp   # start MCP server; connect Claude Desktop or Claude Code
+```
