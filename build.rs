@@ -9,6 +9,18 @@ fn main() {
     let mruby_dir = manifest.join("vendor/mruby");
     let lib_path = mruby_dir.join("build/host/lib/libmruby.a");
 
+    // Copy rrcad-specific mruby build configs from the rrcad repo into the
+    // vendor/mruby/build_config/ directory before invoking rake.  These files
+    // are intentionally kept outside the submodule so the vendored mruby tree
+    // stays pristine at its tagged commit.
+    let configs_src = manifest.join("mruby_configs");
+    let configs_dst = mruby_dir.join("build_config");
+    for name in &["rrcad.rb", "mcp_safe.gembox"] {
+        std::fs::copy(configs_src.join(name), configs_dst.join(name)).unwrap_or_else(|e| {
+            panic!("failed to copy mruby_configs/{name} → vendor/mruby/build_config/{name}: {e}")
+        });
+    }
+
     // Build mRuby with its own build system (requires `rake`).
     // Skipped if the library already exists to keep incremental builds fast.
     //
@@ -94,8 +106,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/occt/mod.rs");
     println!("cargo:rerun-if-changed=src/occt/bridge.h");
     println!("cargo:rerun-if-changed=src/occt/bridge.cpp");
-    println!("cargo:rerun-if-changed=vendor/mruby/build_config/rrcad.rb");
-    println!("cargo:rerun-if-changed=vendor/mruby/build_config/mcp_safe.gembox");
+    println!("cargo:rerun-if-changed=mruby_configs/rrcad.rb");
+    println!("cargo:rerun-if-changed=mruby_configs/mcp_safe.gembox");
     println!(
         "cargo:rerun-if-changed={}",
         mruby_dir.join("build/host/lib/libmruby.a").display()
