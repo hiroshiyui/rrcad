@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-03-23
+
+### Fixed
+
+- **`MRUBY_CONFIG` path doubling**: mruby's Rakefile already prepends
+  `build_config/` when resolving `MRUBY_CONFIG`, so passing
+  `build_config/rrcad` produced `build_config/build_config/rrcad.rb` and
+  broke every CI build from scratch. Fixed by passing the bare name `rrcad`.
+  The bug was masked locally by the cached `libmruby.a`.
+- **Missing `mruby-compiler` in `mcp_safe` gembox**: `mrb_load_string()` —
+  used by `glue.c` to evaluate DSL strings — is implemented in the
+  `mruby-compiler` core gem, not in mruby's base C library. Omitting it
+  caused a linker error on all clean builds. `mruby-compiler` (C-level
+  parser) is distinct from `mruby-eval` (Ruby-level `Kernel#eval`), which
+  remains excluded.
+
+### Changed
+
+- Added `scripts/clean-build.sh` and a `pre-push` git hook that
+  automatically runs a clean mruby build when `build.rs` or
+  `mruby_configs/` are in the outgoing commits, catching build-plumbing
+  bugs before they reach CI.
+
+---
+
 ## [0.1.0] - 2026-03-23
 
 ### Added
