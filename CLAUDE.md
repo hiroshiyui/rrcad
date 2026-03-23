@@ -19,6 +19,16 @@ cargo test <test_name>   # run a single test by name substring
 cargo clippy
 ```
 
+**Clean build** (required after changing `build.rs` or `mruby_configs/`):
+
+```sh
+./scripts/clean-build.sh
+```
+
+`cargo build` skips the mruby `rake` step when `vendor/mruby/build/host/lib/libmruby.a`
+exists. The clean-build script deletes it first, mirroring what CI does on every run.
+A `pre-push` git hook runs this automatically when either file is in the outgoing commits.
+
 ## Architecture
 
 ```
