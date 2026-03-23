@@ -28,10 +28,15 @@ fn main() {
     // restricts the gembox to stdlib + math, removing the filesystem / network
     // / eval attack surface.  To force a rebuild after changing the gembox:
     //   rm vendor/mruby/build/host/lib/libmruby.a && cargo build
+    //
+    //
+    // mruby's Rakefile resolves MRUBY_CONFIG via:
+    //   "#{MRUBY_ROOT}/build_config/#{MRUBY_CONFIG}.rb"
+    // so pass only the bare name ("rrcad"), not the full relative path.
     if !lib_path.exists() {
         let status = Command::new("rake")
             .current_dir(&mruby_dir)
-            .env("MRUBY_CONFIG", "build_config/rrcad")
+            .env("MRUBY_CONFIG", "rrcad")
             .status()
             .expect(
                 "failed to run `rake` — is Ruby (with rake) installed? \
