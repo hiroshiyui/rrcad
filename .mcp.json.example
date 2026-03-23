@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "rrcad": {
+      "type": "stdio",
+      "command": "/path/to/rrcad/target/debug/rrcad",
+      "args": ["--mcp"]
+    }
+  }
+}

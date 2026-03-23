@@ -1,4 +1,5 @@
 {
+  "enabledMcpjsonServers": ["rrcad"],
   "hooks": {
     "PostToolUse": [
       {

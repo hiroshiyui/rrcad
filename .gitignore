@@ -2,3 +2,4 @@
 /vendor/mruby/build
 *.step
 /.claude/worktrees/
+/.mcp.json
