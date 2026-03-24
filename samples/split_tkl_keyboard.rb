@@ -125,20 +125,27 @@ lplate, lpw, lph = build_plate(lk)
 lcase = build_case(lpw, lph)
 
 # USB micro — back wall at 1/4 width (outer/left side)
+# Z raised to WT+M25_BOSS_H so the cutout aligns with the Pico PCB level.
 lcase = lcase.cut(
   box(USB_W, WT+2.0, USB_H)
-    .translate(WT + lpw/4.0 - USB_W/2.0, WT+lph-1.0, WT)
+    .translate(WT + lpw/4.0 - USB_W/2.0, WT+lph-1.0, WT + M25_BOSS_H)
 )
 # RJ-45 — back wall at 3/4 width (inner/right side)
 lcase = lcase.cut(
   box(ETH_W, WT+2.0, ETH_H)
     .translate(WT + 3.0*lpw/4.0 - ETH_W/2.0, WT+lph-1.0, WT)
 )
-# M2.5 heat-set insert standoffs for Pico (left side — Pico near inner/right edge)
-# Board corner origin in case coordinates: x = WT+lpw-PICO_L-6, y = WT+lph/2-PICO_W/2
-PICO_HOLES.each do |hx, hy|
-  bx = WT + lpw - PICO_L - 6.0 + hx
-  by = WT + lph/2.0 - PICO_W/2.0 + hy
+# M2.5 heat-set insert standoffs for Pico (left side)
+# Pico rotated 90°: 21 mm along case X, USB end facing back wall (51 mm along case Y).
+# Board SWD-end corner placed at (lpico_x, lpico_y); USB end sits flush at back wall.
+# This centres the USB port on the existing cutout at x = WT + lpw/4.
+lpico_x = WT + lpw/4.0 - PICO_W/2.0
+lpico_y = WT + lph - PICO_L
+# Datasheet holes (X_b, Y_b) map to case offsets (+Y_b, PICO_L−X_b) after 90° rotation:
+# (2,2)→(+2,+49)  (2,19)→(+19,+49)  (49,2)→(+2,+2)  (49,19)→(+19,+2)
+[[2.0, 49.0], [19.0, 49.0], [2.0, 2.0], [19.0, 2.0]].each do |hx, hy|
+  bx = lpico_x + hx
+  by = lpico_y + hy
   lcase = lcase.fuse(cylinder(M25_BOSS_R, M25_BOSS_H).translate(bx, by, WT))
   lcase = lcase.cut(cylinder(M25_INSERT_R, M25_BOSS_H + 1.0).translate(bx, by, WT - 0.5))
 end
