@@ -138,15 +138,15 @@ end
 lk = []
 lk << [0.5*U, R0]
 (1..6).each { |i| lk << [(0.5+i)*U, R0] }        # F1–F6 (aligned with 1–6 below)
-(0..6).each { |i| lk << [(0.5+i)*U, R1] }        # ` 1–6 (7 keys for consistency)
-lk << [0.5*U, R2]                                 # Tab (1U)
-(0..4).each { |i| lk << [(1.5+i)*U, R2] }        # Q W E R T
-lk << [0.5*U, R3]                                 # CapsLock (1U)
-(0..4).each { |i| lk << [(1.625+i)*U, R3] }      # A S D F G (slight shift)
-lk << [0.625*U, R4]                               # LShift (1.5U)
-(0..4).each { |i| lk << [(2.125+i)*U, R4] }      # Z X C V B
-lk << [0.5*U, R5]; lk << [1.5*U,  R5]            # LCtrl, Win
-lk << [2.75*U, R5]; lk << [5.0*U,  R5]           # LAlt, Space
+(0..6).each { |i| lk << [(0.5+i)*U, R1] }        # ` 1–6 (7 keys)
+lk << [0.75*U, R2]                                # Tab (1.5 U)
+(0..4).each { |i| lk << [(2.0+i)*U, R2] }        # Q W E R T
+lk << [0.875*U, R3]                               # CapsLock (1.75 U)
+(0..4).each { |i| lk << [(2.25+i)*U, R3] }       # A S D F G
+lk << [1.125*U, R4]                               # LShift (2.25 U)
+(0..4).each { |i| lk << [(2.75+i)*U, R4] }       # Z X C V B
+lk << [0.75*U, R5]; lk << [2.0*U,  R5]           # LCtrl, Win
+lk << [3.25*U, R5]; lk << [5.5*U,  R5]           # LAlt, Space
 
 lplate, lpw, lph = build_plate(lk)
 lcase = build_case(lpw, lph)
