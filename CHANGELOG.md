@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-03-24
+
+### Added
+
+- **Schmidt ball pen sample** (`samples/pen_schmidt.rb`): four-part pen body
+  (barrel, tip, front cap, tail cap) demonstrating `cone`, `rotate`,
+  boolean ops, and multi-part layout. Tip-to-barrel joint uses an L-shaped
+  tenon & mortise (quarter-turn bayonet) with spring-relief cantilever tabs
+  for tactile snap-fit installation. Exports STEP and STL.
+
+### Changed
+
+- **Preview render quality** (`src/preview/viewer.html`): replaced the ad-hoc
+  three-directional-light rig (including a blue fill that caused unnatural
+  colour casts) with ACES filmic tone mapping, a `RoomEnvironment` PBR
+  ambient map, a `HemisphereLight` (cool sky / warm ground), and a single
+  clean key light. Shadows upgraded to `PCFSoftShadowMap` at 2048 × 2048
+  with bias to eliminate shadow acne.
+
+### Fixed
+
+- **`set_params()` backslash injection** (`src/ruby/vm.rs`): only
+  double-quotes were escaped when building the `$_rrcad_params` Ruby hash
+  literal from `--param` CLI values. A backslash in a value (e.g.
+  `--param path=C:\dir`) produced an unterminated string literal. Backslashes
+  are now escaped before double-quotes.
+- **Memory-limit doc discrepancy** (`src/mcp/mod.rs`): module-level table
+  said `512 MB` but the constant is `2 GB`. Updated to match actual value and
+  clarified that the limit is applied once in `start()`, not per-call.
+
+---
+
 ## [0.1.1] - 2026-03-23
 
 ### Fixed
