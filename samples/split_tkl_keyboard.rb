@@ -100,6 +100,19 @@ def add_mid_bosses(plate, cshape, pts)
   [plate, cshape]
 end
 
+# ── Screw-less support pillars (no plate via holes) ───────────
+# Use for central positions where switch-cutout avoidance would
+# complicate via placement.  Pillars rise to 0.2 mm below the
+# plate underside so the plate rests on the corner screws while
+# the pillars resist flex under typing load.
+def add_pillars(cshape, pts)
+  post_h = CH - PT - 0.2
+  pts.each do |sx, sy|
+    cshape = cshape.fuse(cylinder(POST_R, post_h).translate(WT+sx, WT+sy, WT))
+  end
+  cshape
+end
+
 # ── Solid wedge base for forward pitch tenting ────────────────
 # Fills the triangular gap under the tilted case so the bottom
 # is flat and the assembly sits flush on a table.
@@ -163,16 +176,16 @@ lpico_y = WT + lph - PICO_L
   lcase = lcase.fuse(cylinder(M25_BOSS_R, M25_BOSS_H).translate(bx, by, WT))
   lcase = lcase.cut(cylinder(M25_INSERT_R, M25_BOSS_H + 1.0).translate(bx, by, WT - 0.5))
 end
-# 3 extra M2 bosses for left plate–case rigidity:
+# Extra M2 screw bosses — left side (2 edge positions, via holes through plate)
 #   ox = SW/2 + MG − 0.5·U = 5.475 mm (plate coordinate origin offset)
-#   1. plate centre — clear of Pico board (X 30–51, Y 74–125) on both axes
-#   2. bottom edge — midpoint of the 2.25U LAlt–Space gap (x = 4.375U + ox)
-#   3. right edge — mid-height
 _lox = SW/2.0 + MG - 0.5*U
 lplate, lcase = add_mid_bosses(lplate, lcase, [
-  [lpw / 2.0,       lph / 2.0    ],   # plate centre ← avoids Pico footprint
   [4.375*U  + _lox, SCREW_D      ],   # bottom edge, LAlt–Space gap
   [lpw - SCREW_D,   lph / 2.0    ],   # right edge, mid-height
+])
+# Central pillar — no via hole; resists flex at plate midspan
+lcase = add_pillars(lcase, [
+  [lpw / 2.0, lph / 2.0],
 ])
 
 # ════════════════════════════════════════════════════════════
@@ -233,14 +246,15 @@ PICO_HOLES.each do |hx, hy|
   rcase = rcase.cut(cylinder(M25_INSERT_R, M25_BOSS_H + 1.0).translate(bx, by, WT - 0.5))
 end
 
-# Extra M2 mid-edge bosses — right side (3 additional plate↔case attachment points)
-# Left-edge boss omitted: it would overlap the Pico board (case X 9–60, Y 55–76).
-# Centre boss replaces it and also satisfies the central-region strength requirement.
+# Extra M2 screw bosses — right side (2 edge positions, via holes through plate)
 _rox = SW/2.0 + MG - 0.5*U
 rplate, rcase = add_mid_bosses(rplate, rcase, [
-  [rpw / 2.0,      rph / 2.0  ],   # plate centre ← avoids Pico (X 6–57) and adds central support
   [2.5*U + _rox,   SCREW_D    ],   # bottom edge, Space–RAlt gap
   [rpw - SCREW_D,  rph / 2.0  ],   # right edge, mid-height
+])
+# Central pillar — no via hole; resists flex at plate midspan
+rcase = add_pillars(rcase, [
+  [rpw / 2.0, rph / 2.0],
 ])
 
 # ════════════════════════════════════════════════════════════
