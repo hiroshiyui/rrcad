@@ -163,16 +163,16 @@ lpico_y = WT + lph - PICO_L
   lcase = lcase.fuse(cylinder(M25_BOSS_R, M25_BOSS_H).translate(bx, by, WT))
   lcase = lcase.cut(cylinder(M25_INSERT_R, M25_BOSS_H + 1.0).translate(bx, by, WT - 0.5))
 end
-# 3 extra mid-edge M2 bosses for left plate–case rigidity:
+# 3 extra M2 bosses for left plate–case rigidity:
 #   ox = SW/2 + MG − 0.5·U = 5.475 mm (plate coordinate origin offset)
-#   1. top edge — midpoint of the 2U Esc–F1 gap (x = 1.5U + ox)
+#   1. plate centre — clear of Pico board (X 30–51, Y 74–125) on both axes
 #   2. bottom edge — midpoint of the 2.25U LAlt–Space gap (x = 4.375U + ox)
-#   3. right edge — mid-height (clear of F6 cutout by 0.5 mm, same as corner bosses)
+#   3. right edge — mid-height
 _lox = SW/2.0 + MG - 0.5*U
 lplate, lcase = add_mid_bosses(lplate, lcase, [
-  [1.5*U    + _lox, lph - SCREW_D],
-  [4.375*U  + _lox, SCREW_D      ],
-  [lpw - SCREW_D,   lph / 2.0    ],
+  [lpw / 2.0,       lph / 2.0    ],   # plate centre ← avoids Pico footprint
+  [4.375*U  + _lox, SCREW_D      ],   # bottom edge, LAlt–Space gap
+  [lpw - SCREW_D,   lph / 2.0    ],   # right edge, mid-height
 ])
 
 # ════════════════════════════════════════════════════════════
@@ -234,9 +234,11 @@ PICO_HOLES.each do |hx, hy|
 end
 
 # Extra M2 mid-edge bosses — right side (3 additional plate↔case attachment points)
+# Left-edge boss omitted: it would overlap the Pico board (case X 9–60, Y 55–76).
+# Centre boss replaces it and also satisfies the central-region strength requirement.
 _rox = SW/2.0 + MG - 0.5*U
 rplate, rcase = add_mid_bosses(rplate, rcase, [
-  [SCREW_D,        rph / 2.0  ],   # left edge, mid-height
+  [rpw / 2.0,      rph / 2.0  ],   # plate centre ← avoids Pico (X 6–57) and adds central support
   [2.5*U + _rox,   SCREW_D    ],   # bottom edge, Space–RAlt gap
   [rpw - SCREW_D,  rph / 2.0  ],   # right edge, mid-height
 ])
