@@ -202,32 +202,32 @@ lcase = add_pillars(lcase, [
 # ════════════════════════════════════════════════════════════
 rk = []
 (0..5).each { |i| rk << [(0.5+i)*U, R0] }        # F7–F12
-rk << [6.75*U,R0]; rk << [8.25*U,R0]; rk << [9.75*U,R0]   # PrtSc(1.5U) ScrLk(1.5U) Pause(1.5U)
-rk << [11.5*U, R0]                                 # Ins          ← nav col
+rk << [6.5*U,R0]; rk << [7.5*U,R0]; rk << [8.5*U,R0]   # PrtSc ScrLk Pause
+rk << [9.5*U, R0]                                  # Ins          ← nav col
 
 (0..5).each { |i| rk << [(0.5+i)*U, R1] }        # 7 8 9 0 - =
 rk << [7.0*U,  R1]                                 # BS (2 U)
-rk << [11.5*U,  R1]                                # Home         ← nav col
+rk << [9.5*U,  R1]                                 # Home         ← nav col
 
 (0..6).each { |i| rk << [(0.5+i)*U, R2] }        # Y U I O P [ ]
-rk << [8.0*U, R2]                                  # \ (1.5 U)
-rk << [11.5*U,  R2]                                # PgUp         ← nav col
+rk << [7.75*U, R2]                                 # \ (1.5 U)
+rk << [9.5*U,  R2]                                 # PgUp         ← nav col
 
 (0..5).each { |i| rk << [(0.5+i)*U, R3] }        # H J K L ; '
-rk << [7.375*U, R3]                                # Enter (2.25 U)
-rk << [11.5*U,   R3]                               # Del          ← nav col
+rk << [7.125*U, R3]                                # Enter (2.25 U)
+rk << [9.5*U,   R3]                                # Del          ← nav col
 
 (0..4).each { |i| rk << [(0.5+i)*U, R4] }        # N M , . /
 rk << [5.5*U,   R4]                                # RShift (2 U)
-rk << [7.75*U,   R4]                               # Up ↑         ← direction cluster
-rk << [11.5*U,   R4]                               # End          ← nav col
+rk << [7.5*U,   R4]                                # Up ↑         ← direction cluster
+rk << [9.5*U,   R4]                                # End          ← nav col
 
 rk << [1.5*U,  R5]                                 # Space (inner)
 rk << [3.5*U,  R5]; rk << [4.5*U,  R5]            # RAlt, Fn
 rk << [5.5*U,  R5]                                 # RCtrl
-rk << [6.75*U,  R5]; rk << [7.75*U,  R5]          # Left ←, Down ↓  ← direction cluster
-rk << [8.75*U,  R5]                                # Right →       ← direction cluster
-rk << [11.5*U,  R5]                                # PgDn         ← nav col
+rk << [6.5*U,  R5]; rk << [7.5*U,  R5]            # Left ←, Down ↓  ← direction cluster
+rk << [8.5*U,  R5]                                 # Right →       ← direction cluster
+rk << [9.5*U,  R5]                                 # PgDn         ← nav col
 
 rplate, rpw, rph = build_plate(rk)
 rcase = build_case(rpw, rph)
