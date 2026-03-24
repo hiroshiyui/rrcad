@@ -13,6 +13,7 @@ Scripts are numbered in order of increasing complexity.
 | `06_live_preview.rb` | Live browser viewer with `preview` | Phase 1, 3 |
 | `07_teapot.rb` | Utah Teapot from 28 Newell Bézier patches (`bezier_patch`, `sew`) | Phase 6 |
 | `08_parametric_box.rb` | Parametric box with `param` DSL; drive with `--param` or `--design-table` | Phase 5 |
+| `pen_schmidt.rb` | Ball pen body (4 parts): barrel, tip, front cap, tail cap — L-tenon/mortise joint, spring-relief snap tabs, Schmidt refill compatible | Phase 1, 3 |
 
 `08_box_sizes.csv` is the design-table CSV for `08_parametric_box.rb`.
 
