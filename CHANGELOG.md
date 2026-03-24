@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Split TKL keyboard sample** (`samples/split_tkl_keyboard.rb`): complete
+  86-key split TKL mechanical keyboard (Cherry MX, 19.05 mm pitch) with a
+  compact right half (≈20.7 cm) that fits a 22 cm print bed. Layout features:
+  single nav column, inverted-T arrow cluster on the bottom row,
+  PrtSc/ScrLk/Pause on the Fn row alongside F7–F12.
+- **M2.5 heat-set insert standoffs** for Raspberry Pi Pico mounting (4 bosses
+  per side, 4 mm tall, 3.2 mm Ø press-fit holes). Left Pico rotated 90° so
+  the micro-USB port faces the back wall; USB cutout Z-offset raised to align
+  with the Pico PCB level.
+- **Mid-edge M2 screw bosses** (2 per side) at verified switch-cutout-clear
+  edge positions to improve plate–case rigidity beyond the four corner screws.
+- **Central screw-less support pillar** (1 per side) at the plate midpoint —
+  a solid post rising to 0.2 mm below the plate underside to resist flex under
+  typing load without requiring a via hole through the plate.
+- `doc/split_tkl_keyboard.stl` — 2×2 preview layout (cases + plates) for
+  interactive 3D viewing on GitHub.
+
+---
+
 ## [0.1.2] - 2026-03-24
 
 ### Added

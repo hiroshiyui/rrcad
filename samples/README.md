@@ -14,7 +14,7 @@ Scripts are numbered in order of increasing complexity.
 | `07_teapot.rb` | Utah Teapot from 28 Newell Bézier patches (`bezier_patch`, `sew`) | Phase 6 |
 | `08_parametric_box.rb` | Parametric box with `param` DSL; drive with `--param` or `--design-table` | Phase 5 |
 | `pen_schmidt.rb` | Ball pen body (4 parts): barrel, tip, front cap, tail cap — L-tenon/mortise joint, spring-relief snap tabs, Schmidt refill compatible | Phase 1, 3 |
-| `split_tkl_keyboard.rb` | 86-key split TKL mechanical keyboard (Cherry MX, 19.05 mm spacing): compact right half (≈20.7 cm) with single nav column, inverted-T arrows on bottom row, PrtSc/ScrLk/Pause on Fn row; 5° pitch wedge base, M2 screw bosses, USB + RJ-45 cutouts, Pico recess. Preview: [`doc/split_tkl_keyboard.stl`](../doc/split_tkl_keyboard.stl) | Phase 1, 2 |
+| `split_tkl_keyboard.rb` | 86-key split TKL mechanical keyboard (Cherry MX, 19.05 mm spacing): compact right half (≈20.7 cm) with single nav column, inverted-T arrows on bottom row, PrtSc/ScrLk/Pause on Fn row; 5° pitch wedge base; M2 corner + edge screw bosses + central screw-less support pillar per side; M2.5 copper heat-set insert standoffs (4 per side) for Raspberry Pi Pico; micro-USB + RJ-45 wall cutouts. Preview: [`doc/split_tkl_keyboard.stl`](../doc/split_tkl_keyboard.stl) | Phase 1, 2 |
 
 `08_box_sizes.csv` is the design-table CSV for `08_parametric_box.rb`.
 
