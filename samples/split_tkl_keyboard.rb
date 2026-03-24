@@ -137,16 +137,16 @@ end
 # ════════════════════════════════════════════════════════════
 lk = []
 lk << [0.5*U, R0]
-(1..6).each { |i| lk << [(1.5+i)*U, R0] }        # F1–F6
-(0..6).each { |i| lk << [(0.5+i)*U, R1] }        # ` 1–6
-lk << [0.75*U, R2]                                # Tab (1.5 U)
-(0..4).each { |i| lk << [(2.0+i)*U, R2] }        # Q W E R T
-lk << [0.875*U, R3]                               # CapsLock (1.75 U)
-(0..4).each { |i| lk << [(2.25+i)*U, R3] }       # A S D F G
-lk << [1.125*U, R4]                               # LShift (2.25 U)
-(0..4).each { |i| lk << [(2.75+i)*U, R4] }       # Z X C V B
-lk << [0.75*U, R5]; lk << [2.0*U,  R5]           # LCtrl, Win
-lk << [3.25*U, R5]; lk << [5.5*U,  R5]           # LAlt, Space
+(1..6).each { |i| lk << [(0.5+i)*U, R0] }        # F1–F6 (aligned with 1–6 below)
+(0..6).each { |i| lk << [(0.5+i)*U, R1] }        # ` 1–6 (7 keys for consistency)
+lk << [0.5*U, R2]                                 # Tab (1U)
+(0..4).each { |i| lk << [(1.5+i)*U, R2] }        # Q W E R T
+lk << [0.5*U, R3]                                 # CapsLock (1U)
+(0..4).each { |i| lk << [(1.625+i)*U, R3] }      # A S D F G (slight shift)
+lk << [0.625*U, R4]                               # LShift (1.5U)
+(0..4).each { |i| lk << [(2.125+i)*U, R4] }      # Z X C V B
+lk << [0.5*U, R5]; lk << [1.5*U,  R5]            # LCtrl, Win
+lk << [2.75*U, R5]; lk << [5.0*U,  R5]           # LAlt, Space
 
 lplate, lpw, lph = build_plate(lk)
 lcase = build_case(lpw, lph)
@@ -232,10 +232,10 @@ rk << [9.5*U,  R5]                                 # PgDn         ← nav col
 rplate, rpw, rph = build_plate(rk)
 rcase = build_case(rpw, rph)
 
-# RJ-45 — back wall, centred
+# RJ-45 — back wall at 1/4 width (mirrors left side's 3/4 position)
 rcase = rcase.cut(
   box(ETH_W, WT+2.0, ETH_H)
-    .translate(WT+rpw/2.0-ETH_W/2.0, WT+rph-1.0, WT)
+    .translate(WT + rpw/4.0 - ETH_W/2.0, WT+rph-1.0, WT)
 )
 # M2.5 heat-set insert standoffs for Pico (right side — Pico near inner/left edge)
 # Board corner origin in case coordinates: x = WT+6, y = WT+rph/2-PICO_W/2
