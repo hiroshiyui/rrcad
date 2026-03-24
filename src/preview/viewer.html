@@ -32,39 +32,50 @@
 <img id="logo" src="/logo.png" alt="rrcad">
 <script type="module">
 import * as THREE from 'three';
-import { GLTFLoader }    from 'three/addons/loaders/GLTFLoader.js';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader }      from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls }   from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 
 // ── Renderer ──────────────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(devicePixelRatio);
 renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = true;
-renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled  = true;
+renderer.shadowMap.type     = THREE.PCFSoftShadowMap;  // softer shadow edges
+renderer.outputColorSpace   = THREE.SRGBColorSpace;
+renderer.toneMapping        = THREE.ACESFilmicToneMapping;  // natural highlight rolloff
+renderer.toneMappingExposure = 1.0;
 document.body.prepend(renderer.domElement);
 
 // ── Scene ─────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x111827);
 
+// PBR environment: baked room lighting used for ambient reflections on surfaces.
+// This replaces the old coloured fill lights — gives materials a natural look
+// without any artificial colour cast.
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment()).texture;
+pmrem.dispose();
+
 scene.add(new THREE.GridHelper(400, 40, 0x374151, 0x1f2937));
 scene.add(new THREE.AxesHelper(30));
 
-const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-scene.add(ambient);
+// HemisphereLight: cool sky above, warm ground below — the most natural-looking
+// ambient source for indoor/studio scenes; replaces the old AmbientLight + blue fill.
+const hemi = new THREE.HemisphereLight(0xddeeff, 0x221a0f, 0.6);
+scene.add(hemi);
 
-const key = new THREE.DirectionalLight(0xffffff, 2.0);
+// Single key light: clean white, casts soft shadows.
+const key = new THREE.DirectionalLight(0xffffff, 1.5);
 key.position.set(3, 6, 4);
-key.castShadow = true;
+key.castShadow                   = true;
+key.shadow.mapSize.width         = 2048;
+key.shadow.mapSize.height        = 2048;
+key.shadow.camera.near           = 0.5;
+key.shadow.camera.far            = 1000;
+key.shadow.bias                  = -0.0005;  // reduces shadow acne
 scene.add(key);
-
-const fill = new THREE.DirectionalLight(0x8090ff, 0.5);
-fill.position.set(-4, 2, -3);
-scene.add(fill);
-
-const fill2 = new THREE.DirectionalLight(0xffffff, 0.4);
-fill2.position.set(-3, -4, 4);
-scene.add(fill2);
 
 // ── Camera ────────────────────────────────────────────────────────────────
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.01, 100000);
