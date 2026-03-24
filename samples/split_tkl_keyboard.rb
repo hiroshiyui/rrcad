@@ -24,7 +24,15 @@ CHAMFER_CASE  = 1.5
 CHAMFER_PLATE = 1.0
 PITCH   = 5.0     # Forward tilt in degrees
 
-PICO_W = 21.0; PICO_L = 51.0; PICO_BOSS = 2.5
+# Raspberry Pi Pico board dimensions
+PICO_W = 21.0; PICO_L = 51.0
+# Pico mounting hole offsets from board corner (Raspberry Pi Pico datasheet):
+# four M2.1 holes at (2, 2), (2, 19), (49, 2), (49, 19) mm in board coordinates.
+PICO_HOLES = [[2.0, 2.0], [2.0, 19.0], [49.0, 2.0], [49.0, 19.0]]
+# M2.5 copper heat-set insert standoffs
+M25_BOSS_R   = 3.5   # standoff outer radius (7 mm OD; 2.3 mm wall around insert)
+M25_BOSS_H   = 4.0   # standoff height = insert pocket depth (insert length: 4 mm)
+M25_INSERT_R = 1.6   # press-fit hole radius (3.2 mm Ø for M2.5 knurled insert)
 USB_W  =  8.0; USB_H  =  3.5
 ETH_W  = 16.0; ETH_H  = 14.0
 
@@ -126,11 +134,14 @@ lcase = lcase.cut(
   box(ETH_W, WT+2.0, ETH_H)
     .translate(WT + 3.0*lpw/4.0 - ETH_W/2.0, WT+lph-1.0, WT)
 )
-# Pico recess in case floor
-lcase = lcase.cut(
-  box(PICO_L, PICO_W, PICO_BOSS+1.0)
-    .translate(WT+lpw-PICO_L-6.0, WT+lph/2.0-PICO_W/2.0, WT-0.5)
-)
+# M2.5 heat-set insert standoffs for Pico (left side — Pico near inner/right edge)
+# Board corner origin in case coordinates: x = WT+lpw-PICO_L-6, y = WT+lph/2-PICO_W/2
+PICO_HOLES.each do |hx, hy|
+  bx = WT + lpw - PICO_L - 6.0 + hx
+  by = WT + lph/2.0 - PICO_W/2.0 + hy
+  lcase = lcase.fuse(cylinder(M25_BOSS_R, M25_BOSS_H).translate(bx, by, WT))
+  lcase = lcase.cut(cylinder(M25_INSERT_R, M25_BOSS_H + 1.0).translate(bx, by, WT - 0.5))
+end
 
 # ════════════════════════════════════════════════════════════
 # RIGHT SIDE — 51 keys  (compact; ≈ 20.7 cm case width)
@@ -181,11 +192,14 @@ rcase = rcase.cut(
   box(ETH_W, WT+2.0, ETH_H)
     .translate(WT+rpw/2.0-ETH_W/2.0, WT+rph-1.0, WT)
 )
-# Pico recess in case floor
-rcase = rcase.cut(
-  box(PICO_L, PICO_W, PICO_BOSS+1.0)
-    .translate(WT+6.0, WT+rph/2.0-PICO_W/2.0, WT-0.5)
-)
+# M2.5 heat-set insert standoffs for Pico (right side — Pico near inner/left edge)
+# Board corner origin in case coordinates: x = WT+6, y = WT+rph/2-PICO_W/2
+PICO_HOLES.each do |hx, hy|
+  bx = WT + 6.0 + hx
+  by = WT + rph/2.0 - PICO_W/2.0 + hy
+  rcase = rcase.fuse(cylinder(M25_BOSS_R, M25_BOSS_H).translate(bx, by, WT))
+  rcase = rcase.cut(cylinder(M25_INSERT_R, M25_BOSS_H + 1.0).translate(bx, by, WT - 0.5))
+end
 
 # ════════════════════════════════════════════════════════════
 # PRINTABLE PARTS (4 separate pieces)
