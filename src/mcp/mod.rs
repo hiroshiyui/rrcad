@@ -29,7 +29,7 @@
 //! | 1 | MCP-safe mRuby gembox | `vendor/mruby/build_config/mcp_safe.gembox` |
 //! | 2 | Runtime prelude hardening | `MCP_SECURITY_PRELUDE` evaluated in every VM |
 //! | 3 | Execution timeout | `tokio::time::timeout(30 s, spawn_blocking(...))` |
-//! | 4 | Memory limit | `setrlimit(RLIMIT_AS, 512 MB)` inside spawn_blocking |
+//! | 4 | Memory limit | `setrlimit(RLIMIT_AS, 2 GB)` applied once in `start()` |
 //! | 5 | Export path confinement | CWD → `/tmp/rrcad_mcp/` (mode 0700) |
 //! | 6 | Per-call VM isolation | fresh `MrubyVm::new()` per tool call |
 //! | 7 | Input validation | length cap, null-byte check, format allowlist |

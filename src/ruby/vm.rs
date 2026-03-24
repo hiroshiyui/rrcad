@@ -55,9 +55,12 @@ impl MrubyVm {
         let entries: String = params
             .iter()
             .map(|(k, v)| {
-                // Escape double-quotes so the generated Ruby literal is safe.
-                let k = k.replace('"', "\\\"");
-                let v = v.replace('"', "\\\"");
+                // Escape backslashes first, then double-quotes, so the generated
+                // Ruby string literal is well-formed for any input value.
+                // Order matters: escaping `\` after `"` would double-escape the
+                // backslashes we just inserted for the quote escapes.
+                let k = k.replace('\\', "\\\\").replace('"', "\\\"");
+                let v = v.replace('\\', "\\\\").replace('"', "\\\"");
                 format!("\"{k}\" => \"{v}\"")
             })
             .collect::<Vec<_>>()
