@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Split TKL keyboard layout refinements** (`samples/split_tkl_keyboard.rb`):
-  - Left Fn row (F1–F6) now aligned with number row (` 1–6) for a more compact left half
+  - Left Fn row (F1–F6) aligned with number row (` 1–6) while maintaining proper Tab/Home/Shift row key widths (1.5U, 1.75U, 2.25U respectively)
   - RJ-45 Ethernet ports repositioned to symmetrical 1/4-width positions on both left and right cases (mirrors USB positioning)
 
 ---
