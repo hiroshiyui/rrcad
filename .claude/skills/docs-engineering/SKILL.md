@@ -5,14 +5,18 @@ description: Audit and update all project documentation to stay in sync with the
 
 When performing documentation engineering, always follow these steps:
 
-1. **Audit** all documentation against the current codebase and development status. The review scope must include — without exception:
+1. **Survey recent changes** by running `git log --oneline -20` and skimming the diff of recent commits. This surfaces new features, removed dependencies, and behavioral changes that documentation may not yet reflect.
+
+2. **Audit** all documentation against the current codebase and development status. The review scope must include — without exception:
    - `README.md` — features list, prerequisites, acknowledgements
+   - `CHANGELOG.md` — release notes and version history
    - `CLAUDE.md` — stack, architecture, key gotchas, project conventions
-   - `doc/` — `development.md`, `api.md`, `troubleshooting.md`, `TODOs.md`
+   - `doc/development.md`, `doc/user-guide.md`, `doc/api.md`, `doc/troubleshooting.md`, `doc/TODOs.md`
+   - `samples/README.md` — sample scripts and their required features/phases
    - Code comments for human developers
 
-2. **Revise and update** any documentation that is stale, incomplete, or inconsistent with the current code. Ensure new features, removed dependencies, behavioral changes, and architectural decisions are reflected accurately.
+3. **Revise and update** any documentation that is stale, incomplete, or inconsistent with the current code. Ensure new features, removed dependencies, behavioral changes, and architectural decisions are reflected accurately.
 
-3. **Remove completed items** from `doc/TODOs.md`. If a summary of completed work is warranted, add a brief note before removing the items.
+4. **Remove completed items** from `doc/TODOs.md`. If a summary of completed work is warranted, add a brief note before removing the items.
 
-4. **Commit** documentation changes in Git, grouped by topic. Do not mix unrelated documentation changes in a single commit.
+5. **Commit** documentation changes using the `commit-and-push` skill, grouped by topic. Do not mix unrelated documentation changes in a single commit.
