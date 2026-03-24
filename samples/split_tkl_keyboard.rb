@@ -86,6 +86,20 @@ def build_case(pw, ph)
   cshape
 end
 
+# ── Extra mid-edge M2 boss+via pairs for plate–case rigidity ──
+# pts: [[x, y], …] in plate coordinates.
+# Returns [plate, cshape] with via holes and matching screw bosses added.
+def add_mid_bosses(plate, cshape, pts)
+  post_h = CH - PT - 0.5   # boss height: reaches just below plate underside
+  pts.each do |sx, sy|
+    plate  = plate.cut(cylinder(M2_R, PT+2.0).translate(sx, sy, -1.0))
+    cshape = cshape
+               .fuse(cylinder(POST_R, post_h).translate(WT+sx, WT+sy, WT))
+               .cut(cylinder(M2_R, post_h+2.0).translate(WT+sx, WT+sy, WT-1.0))
+  end
+  [plate, cshape]
+end
+
 # ── Solid wedge base for forward pitch tenting ────────────────
 # Fills the triangular gap under the tilted case so the bottom
 # is flat and the assembly sits flush on a table.
@@ -149,6 +163,17 @@ lpico_y = WT + lph - PICO_L
   lcase = lcase.fuse(cylinder(M25_BOSS_R, M25_BOSS_H).translate(bx, by, WT))
   lcase = lcase.cut(cylinder(M25_INSERT_R, M25_BOSS_H + 1.0).translate(bx, by, WT - 0.5))
 end
+# 3 extra mid-edge M2 bosses for left plate–case rigidity:
+#   ox = SW/2 + MG − 0.5·U = 5.475 mm (plate coordinate origin offset)
+#   1. top edge — midpoint of the 2U Esc–F1 gap (x = 1.5U + ox)
+#   2. bottom edge — midpoint of the 2.25U LAlt–Space gap (x = 4.375U + ox)
+#   3. right edge — mid-height (clear of F6 cutout by 0.5 mm, same as corner bosses)
+_lox = SW/2.0 + MG - 0.5*U
+lplate, lcase = add_mid_bosses(lplate, lcase, [
+  [1.5*U    + _lox, lph - SCREW_D],
+  [4.375*U  + _lox, SCREW_D      ],
+  [lpw - SCREW_D,   lph / 2.0    ],
+])
 
 # ════════════════════════════════════════════════════════════
 # RIGHT SIDE — 51 keys  (compact; ≈ 20.7 cm case width)
@@ -207,6 +232,14 @@ PICO_HOLES.each do |hx, hy|
   rcase = rcase.fuse(cylinder(M25_BOSS_R, M25_BOSS_H).translate(bx, by, WT))
   rcase = rcase.cut(cylinder(M25_INSERT_R, M25_BOSS_H + 1.0).translate(bx, by, WT - 0.5))
 end
+
+# Extra M2 mid-edge bosses — right side (3 additional plate↔case attachment points)
+_rox = SW/2.0 + MG - 0.5*U
+rplate, rcase = add_mid_bosses(rplate, rcase, [
+  [SCREW_D,        rph / 2.0  ],   # left edge, mid-height
+  [2.5*U + _rox,   SCREW_D    ],   # bottom edge, Space–RAlt gap
+  [rpw - SCREW_D,  rph / 2.0  ],   # right edge, mid-height
+])
 
 # ════════════════════════════════════════════════════════════
 # PRINTABLE PARTS (4 separate pieces)
