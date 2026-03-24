@@ -17,10 +17,10 @@ preview bucket
 
 See [`samples/`](samples/) for more complete examples.
 
-> **3D preview:** open [`doc/bucket.stl`](doc/bucket.stl) in GitHub to view the model interactively in your browser.
+> **3D preview:** open [`doc/bucket.stl`](doc/bucket.stl) or [`doc/split_tkl_keyboard.stl`](doc/split_tkl_keyboard.stl) in GitHub to view the models interactively in your browser.
 
-![Web-based preview of rendered object](doc/images/Screenshot%202026-03-22%20at%2014-39-04%20rrcad%20preview.png)
-![Web-based preview of rendered object](doc/images/Screenshot%202026-03-24%20at%2019-47-41%20rrcad%20preview.png)
+![Three.js live preview of the bucket sample](doc/images/Screenshot%202026-03-22%20at%2014-39-04%20rrcad%20preview.png)
+![Three.js live preview of the split TKL keyboard assembly (cases + switch plates, 2×2 layout)](doc/images/Screenshot%202026-03-24%20at%2019-47-41%20rrcad%20preview.png)
 
 ## Stack
 
