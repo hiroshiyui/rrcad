@@ -20,6 +20,7 @@ See [`samples/`](samples/) for more complete examples.
 > **3D preview:** open [`doc/bucket.stl`](doc/bucket.stl) in GitHub to view the model interactively in your browser.
 
 ![Web-based preview of rendered object](doc/images/Screenshot%202026-03-22%20at%2014-39-04%20rrcad%20preview.png)
+![Web-based preview of rendered object](doc/images/Screenshot%202026-03-24%20at%2019-47-41%20rrcad%20preview.png)
 
 ## Stack
 
