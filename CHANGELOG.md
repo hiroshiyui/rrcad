@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Split TKL keyboard layout refinements** (`samples/split_tkl_keyboard.rb`):
+  - Left Fn row (F1–F6) now aligned with number row (` 1–6) for a more compact left half
+  - RJ-45 Ethernet ports repositioned to symmetrical 1/4-width positions on both left and right cases (mirrors USB positioning)
+
+---
+
 ## [0.1.3] - 2026-03-24
 
 ### Added
