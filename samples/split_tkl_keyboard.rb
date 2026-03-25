@@ -176,7 +176,7 @@ def solid_tent(half, total_w, total_d, pitch)
   cutter = box(total_w+10, total_d+10, max_wh+50)
              .translate(-5, -5, 0)
              .rotate(1, 0, 0, pitch)
-  box(total_w, total_d, max_wh).cut(cutter)
+  box(total_w, total_d, max_wh).cut(cutter).chamfer(CHAMFER_CASE)
     .fuse(half.rotate(1, 0, 0, pitch))
 end
 
