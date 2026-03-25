@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Split TKL keyboard — connectors, bosses, and manufacturing details** (`samples/split_tkl_keyboard.rb`):
+  - Replaced RJ-45 inter-half connector with USB-C (safer for hot-plug; no VCC on interconnect
+    cable). Left half: USB Micro host port at back wall ¼-width + USB-C interconnect at ¾-width.
+    Right half: USB-C interconnect at ¼-width + USB-C host port at ¾-width.
+  - Added wall slots for USB-C adapter boards (12×4.2 mm PCB, open-top insertion pocket,
+    9×3.5 mm USB-C port opening in back wall).
+  - Upgraded corner and mid-edge screw bosses to M2.5 heat-set copper insert compatibility
+    (POST_R 2.5 → 3.2 mm, M2_R 1.2 → 1.6 mm; 3D print FIT_TOL 0.2 mm per side).
+  - Added M2.5 button-head counterbores (Ø4.8 mm, 1.5 mm deep) to all plate screw vias so
+    screw heads sit flush with the plate top face.
+  - Added bottom-face lead-in step (0.5 mm box-cut method) on all switch cutouts to ease
+    Cherry MX switch clip insertion from below.
+  - Added `CHAMFER_CASE` chamfer to the solid tent wedge base (applied before fusing with the
+    tilted case half to avoid BRepFilletAPI_MakeChamfer failures on complex fused geometry).
+  - Preview changed from 2×2 parts layout to a fully assembled side-by-side view (plates
+    seated in cases, left and right halves with a 20 mm gap).
+
+---
+
 ## [0.1.4] - 2026-03-24
 
 ### Changed

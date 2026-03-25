@@ -14,7 +14,7 @@ Scripts are numbered in order of increasing complexity.
 | `07_teapot.rb` | Utah Teapot from 28 Newell Bézier patches (`bezier_patch`, `sew`) | Phase 6 |
 | `08_parametric_box.rb` | Parametric box with `param` DSL; drive with `--param` or `--design-table` | Phase 5 |
 | `pen_schmidt.rb` | Ball pen body (4 parts): barrel, tip, front cap, tail cap — L-tenon/mortise joint, spring-relief snap tabs, Schmidt refill compatible | Phase 1, 3 |
-| `split_tkl_keyboard.rb` | 86-key split TKL mechanical keyboard (Cherry MX, 19.05 mm spacing): compact layout with left Fn row aligned with number row for tighter width, right half (≈20.7 cm) with single nav column and inverted-T arrows; 5° pitch wedge base; M2 corner + edge screw bosses + central screw-less pillar per side; M2.5 heat-set insert standoffs (4 per side) for Raspberry Pi Pico; symmetrical micro-USB (left 1/4) + RJ-45 (right 1/4) wall cutouts. Preview: [`doc/split_tkl_keyboard.stl`](../doc/split_tkl_keyboard.stl) | Phase 1, 2 |
+| `split_tkl_keyboard.rb` | 86-key split TKL mechanical keyboard (Cherry MX, 19.05 mm spacing): compact layout with left Fn row aligned with number row for tighter width, right half (≈20.7 cm) with single nav column and inverted-T arrows; 5° pitch wedge base with chamfered edges; M2.5 heat-set insert corner + mid-edge screw bosses with counterbored plate vias; central screw-less support pillar per side; M2.5 Pico mounting standoffs (4 per side); USB-C inter-half connectors + wall slots for USB-C adapter boards; bottom-face lead-in step on switch cutouts for easy Cherry MX clip insertion. Preview: [`doc/split_tkl_keyboard.stl`](../doc/split_tkl_keyboard.stl) | Phase 1, 2 |
 
 `08_box_sizes.csv` is the design-table CSV for `08_parametric_box.rb`.
 
