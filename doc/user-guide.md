@@ -462,7 +462,7 @@ Starts a stdio JSON-RPC server compatible with Claude Desktop and Claude Code. A
 ### Security
 
 - 30-second execution timeout
-- 512 MB address-space limit (Linux)
+- 2 GB address-space limit (Linux)
 - Fresh mRuby VM per call (no shared state)
 - Dangerous Kernel methods (`system`, `exec`, `fork`, …) are removed at startup
 - All exports confined to `/tmp/rrcad_mcp/` (mode 0700)
