@@ -21,7 +21,8 @@ SCREW_D = 5.0     # M2.5 boss/via centre distance from plate edge
 POST_R  = 3.2     # Boss outer radius (6.4 mm OD; 1.6 mm wall around M2.5 insert)
 M2_R    = 1.6     # M2.5 heat-set insert hole radius (3.2 mm Ø for M2.5 knurled insert)
 CHAMFER_CASE  = 1.5
-CHAMFER_PLATE = 1.0
+CHAMFER_PLATE = 1.0   # outer plate edge chamfer (applied to blank box before cuts)
+CHAMFER_CUTS  = 0.5   # bottom-face lead-in step on switch cutouts (per-side overshoot, depth = same)
 PITCH   = 5.0     # Forward tilt in degrees
 # Per-side clearance between plate and case cavity.
 # FDM (PLA/PETG): 0.2  — ABS: 0.3  — Resin (SLA/MSLA): 0.1
@@ -72,11 +73,19 @@ def build_plate(key_centres)
   ph = ys.max - ys.min + sw + 2.0*mg
   # Chamfer outer plate edges first, before switch/via cuts, so the chamfer
   # does not conflict with the tight gap between counterbore rims and switch cutouts.
+  # Step 1: chamfer outer plate edges on the blank box.
   plate = box(pw, ph, pt).chamfer(CHAMFER_PLATE)
+  # Step 2: cut switch holes with a bottom-face lead-in step.
+  # A box oversized by CHAMFER_CUTS on all sides is subtracted at the bottom, giving a
+  # stepped lead-in that guides switch insertion without requiring OCCT chamfer calls
+  # (which fail due to topology interactions with the pre-chamfered outer edges).
+  c = CHAMFER_CUTS
   shifted.each do |key|
     cx = key[0]; cy = key[1]
     plate = plate.cut(box(sw, sw, pt+2.0).translate(cx-sw/2.0, cy-sw/2.0, -1.0))
+    plate = plate.cut(box(sw+2.0*c, sw+2.0*c, c+1.0).translate(cx-(sw+2.0*c)/2.0, cy-(sw+2.0*c)/2.0, -1.0))
   end
+  # Step 3: cut via shaft + counterbore.
   screw_pts(pw, ph, sd).each do |sx, sy|
     plate = plate.cut(cylinder(m2r, pt+2.0).translate(sx, sy, -1.0))
     # Counterbore on top face: M2.5 button head sits flush with plate surface.
