@@ -44,7 +44,7 @@ renderer.shadowMap.enabled  = true;
 renderer.shadowMap.type     = THREE.PCFSoftShadowMap;  // softer shadow edges
 renderer.outputColorSpace   = THREE.SRGBColorSpace;
 renderer.toneMapping        = THREE.ACESFilmicToneMapping;  // natural highlight rolloff
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 1.3;
 document.body.prepend(renderer.domElement);
 
 // ── Scene ─────────────────────────────────────────────────────────────────
@@ -61,21 +61,30 @@ pmrem.dispose();
 scene.add(new THREE.GridHelper(400, 40, 0x374151, 0x1f2937));
 scene.add(new THREE.AxesHelper(30));
 
-// HemisphereLight: cool sky above, warm ground below — the most natural-looking
-// ambient source for indoor/studio scenes; replaces the old AmbientLight + blue fill.
-const hemi = new THREE.HemisphereLight(0xddeeff, 0x221a0f, 0.6);
+// HemisphereLight: cool sky above, warm ground below.
+const hemi = new THREE.HemisphereLight(0xddeeff, 0x221a0f, 0.8);
 scene.add(hemi);
 
-// Single key light: clean white, casts soft shadows.
-const key = new THREE.DirectionalLight(0xffffff, 1.5);
+// Key light: primary source, upper-left-front, casts soft shadows.
+const key = new THREE.DirectionalLight(0xffffff, 1.8);
 key.position.set(3, 6, 4);
 key.castShadow                   = true;
 key.shadow.mapSize.width         = 2048;
 key.shadow.mapSize.height        = 2048;
 key.shadow.camera.near           = 0.5;
 key.shadow.camera.far            = 1000;
-key.shadow.bias                  = -0.0005;  // reduces shadow acne
+key.shadow.bias                  = -0.0005;
 scene.add(key);
+
+// Fill light: soft counter-light from lower-right, lifts shadows without washing out.
+const fill = new THREE.DirectionalLight(0xc8d8ff, 0.6);
+fill.position.set(-4, 2, -2);
+scene.add(fill);
+
+// Rim light: back-top edge light separates the model from the dark background.
+const rim = new THREE.DirectionalLight(0xfff0e0, 0.9);
+rim.position.set(-1, 5, -6);
+scene.add(rim);
 
 // ── Camera ────────────────────────────────────────────────────────────────
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.01, 100000);
@@ -118,9 +127,19 @@ function loadModel() {
       // OCCT exports in Z-up; glTF/Three.js is Y-up.
       // Rotate -90° around X to convert: OCCT(X,Y,Z) → Three.js(X,Z,-Y)
       currentModel.rotation.x = -Math.PI / 2;
+      // ABS plastic material: dark charcoal, slight sheen via clearcoat.
+      const plastic = new THREE.MeshPhysicalMaterial({
+        color:              0x2b2d30,  // dark charcoal (typical keyboard housing)
+        roughness:          0.45,      // smooth but not mirror-like
+        metalness:          0.0,       // pure plastic — no metallic response
+        clearcoat:          0.4,       // thin glossy coat (injection-moulded look)
+        clearcoatRoughness: 0.25,      // slightly hazy clearcoat
+        reflectivity:       0.3,
+        side:               THREE.DoubleSide,
+      });
       currentModel.traverse(node => {
         if (node.isMesh) {
-          node.material.side = THREE.DoubleSide;
+          node.material  = plastic;
           node.castShadow    = true;
           node.receiveShadow = true;
         }

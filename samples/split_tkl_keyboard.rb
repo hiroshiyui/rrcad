@@ -5,10 +5,10 @@
 #   86 keys total (36 left + 51 right)
 #   Cherry MX switches, 19.05 mm key spacing (ANSI layout)
 #   Hand-wired, Raspberry Pi Pico per side
-#   Ethernet interconnect (RJ-45, both back walls)
-#   USB micro on left back wall → host computer
+#   USB-C interconnect (both back walls, inner sides) — UART TX/RX + GND only, no VCC on cable
+#   USB micro on left back wall → host computer; right Pico gets its own USB to host
 #   5° forward pitch (wrist→finger), solid wedge base
-#   M2 corner screws, chamfered case + plate edges
+#   M2.5 corner screws (heat-set inserts), chamfered case + plate edges
 # ============================================================
 
 U       = 19.05   # 1 key unit (mm)
@@ -17,12 +17,15 @@ PT      = 3.0     # Plate thickness
 WT      = 3.0     # Case wall / floor thickness
 CH      = 18.0    # Case interior height (wiring clearance)
 MG      = 8.0     # Margin: switch body edge → plate edge
-SCREW_D = 5.0     # M2 boss/via centre distance from plate edge
-POST_R  = 2.5     # Boss outer radius
-M2_R    = 1.2     # M2 clearance / tap hole radius
+SCREW_D = 5.0     # M2.5 boss/via centre distance from plate edge
+POST_R  = 3.2     # Boss outer radius (6.4 mm OD; 1.6 mm wall around M2.5 insert)
+M2_R    = 1.6     # M2.5 heat-set insert hole radius (3.2 mm Ø for M2.5 knurled insert)
 CHAMFER_CASE  = 1.5
 CHAMFER_PLATE = 1.0
 PITCH   = 5.0     # Forward tilt in degrees
+# Per-side clearance between plate and case cavity.
+# FDM (PLA/PETG): 0.2  — ABS: 0.3  — Resin (SLA/MSLA): 0.1
+FIT_TOL = 0.2
 
 # Raspberry Pi Pico board dimensions
 PICO_W = 21.0; PICO_L = 51.0
@@ -33,8 +36,11 @@ PICO_HOLES = [[2.0, 2.0], [2.0, 19.0], [49.0, 2.0], [49.0, 19.0]]
 M25_BOSS_R   = 3.5   # standoff outer radius (7 mm OD; 2.3 mm wall around insert)
 M25_BOSS_H   = 4.0   # standoff height = insert pocket depth (insert length: 4 mm)
 M25_INSERT_R = 1.6   # press-fit hole radius (3.2 mm Ø for M2.5 knurled insert)
-USB_W  =  8.0; USB_H  =  3.5
-ETH_W  = 16.0; ETH_H  = 14.0
+USB_W        =  8.0; USB_H    = 3.5   # USB Micro cutout (Pico built-in port)
+USBC_W       =  9.0; USBC_H   = 3.5   # USB-C connector opening (outer wall, 9 × 3.5 mm)
+USBC_BOARD_W = 12.0               # adapter board width
+USBC_BOARD_H =  4.2               # adapter board total height (PCB + connector)
+SLOT_TOL     =  0.15              # per-side slot clearance for snug sliding fit
 
 # Row Y-centres (Y-up: fn row at top = highest Y)
 R0 = 5.5 * U   # Fn row
@@ -75,7 +81,9 @@ end
 def build_case(pw, ph)
   wt = WT; ch = CH; sd = SCREW_D; pr = POST_R; m2r = M2_R
   outer  = box(pw+2.0*wt, ph+2.0*wt, ch+wt).chamfer(CHAMFER_CASE)
-  cshape = outer.cut(box(pw, ph, ch).translate(wt, wt, wt))
+  # Cavity is expanded by FIT_TOL on each side so the plate slides in without binding.
+  tol = FIT_TOL
+  cshape = outer.cut(box(pw + 2.0*tol, ph + 2.0*tol, ch).translate(wt - tol, wt - tol, wt))
   post_h = ch - PT - 0.5
   screw_pts(pw, ph, sd).each do |sx, sy|
     bx = wt+sx; by = wt+sy
@@ -110,6 +118,34 @@ def add_pillars(cshape, pts)
   pts.each do |sx, sy|
     cshape = cshape.fuse(cylinder(POST_R, post_h).translate(WT+sx, WT+sy, WT))
   end
+  cshape
+end
+
+# ── Wall slot for USB-C adapter board ────────────────────────
+# Cuts a counterbore slot in the back wall inner face so an adapter board
+# (USBC_BOARD_W × USBC_BOARD_H) can slide in from the top of the open case.
+# The board face registers on the 2 mm deep pocket; the connector protrudes
+# through the 9 × 3.5 mm outer opening.
+#
+# cx:     X centre of the slot in case coordinates
+# wall_y: Y coordinate of the back wall inner face (= WT + ph)
+def add_usbc_slot(cshape, cx, wall_y)
+  slot_cz = WT + CH / 2.0                  # vertical centre of the port
+  sw = USBC_BOARD_W + 2.0 * SLOT_TOL       # pocket width  (12.3 mm)
+  sh = USBC_BOARD_H + 2.0 * SLOT_TOL       # pocket height (4.5 mm)
+  sz = slot_cz - sh / 2.0                  # pocket floor Z
+
+  # Inner guide channel: board-width pocket, 2 mm deep into wall, open at top
+  # so the board can be dropped in before the plate is installed.
+  cshape = cshape.cut(
+    box(sw, 3.0, (WT + CH + 1.0) - sz)
+      .translate(cx - sw / 2.0, wall_y - 1.0, sz)
+  )
+  # Outer connector opening: 9 × 3.5 mm through the full wall thickness.
+  cshape = cshape.cut(
+    box(USBC_W, WT + 2.0, USBC_H)
+      .translate(cx - USBC_W / 2.0, wall_y - 1.0, slot_cz - USBC_H / 2.0)
+  )
   cshape
 end
 
@@ -157,11 +193,9 @@ lcase = lcase.cut(
   box(USB_W, WT+2.0, USB_H)
     .translate(WT + lpw/4.0 - USB_W/2.0, WT+lph-1.0, WT + M25_BOSS_H)
 )
-# RJ-45 — back wall at 3/4 width (inner/right side)
-lcase = lcase.cut(
-  box(ETH_W, WT+2.0, ETH_H)
-    .translate(WT + 3.0*lpw/4.0 - ETH_W/2.0, WT+lph-1.0, WT)
-)
+# USB-C interconnect slot — back wall at 3/4 width (inner/right side).
+# Adapter board slides in from the top; connector protrudes out the back.
+lcase = add_usbc_slot(lcase, WT + 3.0*lpw/4.0, WT + lph)
 # M2.5 heat-set insert standoffs for Pico (left side)
 # Pico rotated 90°: 21 mm along case X, USB end facing back wall (51 mm along case Y).
 # Board SWD-end corner placed at (lpico_x, lpico_y); USB end sits flush at back wall.
@@ -232,11 +266,10 @@ rk << [9.5*U,  R5]                                 # PgDn         ← nav col
 rplate, rpw, rph = build_plate(rk)
 rcase = build_case(rpw, rph)
 
-# RJ-45 — back wall at 1/4 width (mirrors left side's 3/4 position)
-rcase = rcase.cut(
-  box(ETH_W, WT+2.0, ETH_H)
-    .translate(WT + rpw/4.0 - ETH_W/2.0, WT+rph-1.0, WT)
-)
+# USB-C interconnect slot — back wall at 1/4 width (inner/left side, mirrors left half).
+rcase = add_usbc_slot(rcase, WT + rpw/4.0, WT + rph)
+# USB-C host slot — back wall at 3/4 width (outer/right side); right Pico → host computer.
+rcase = add_usbc_slot(rcase, WT + 3.0*rpw/4.0, WT + rph)
 # M2.5 heat-set insert standoffs for Pico (right side — Pico near inner/left edge)
 # Board corner origin in case coordinates: x = WT+6, y = WT+rph/2-PICO_W/2
 PICO_HOLES.each do |hx, hy|
@@ -277,12 +310,12 @@ left_plate_part.export("left_plate.step")
 right_case_part.export("right_case.step")
 right_plate_part.export("right_plate.step")
 
-# ── 2×2 preview layout (cases top row, plates bottom row) ────
-gap = 40.0
-col_x = lpw + 2.0*WT + gap
-row_y = lph + 2.0*WT + gap
-scene = left_case_part
-          .fuse(right_case_part.translate(col_x, 0, 0))
-          .fuse(left_plate_part.translate(0, row_y, 0))
-          .fuse(right_plate_part.translate(col_x, row_y, 0))
+# ── Assembled preview: plates seated in cases, both halves side by side ──
+# Plate bottom sits on screw post tops at Z = WT + (CH - PT - 0.5).
+plate_z = WT + CH - PT - 0.5
+left_assembled  = solid_tent(lcase.fuse(lplate.translate(WT, WT, plate_z)),
+                               lpw+2.0*WT, lph+2.0*WT, PITCH)
+right_assembled = solid_tent(rcase.fuse(rplate.translate(WT, WT, plate_z)),
+                               rpw+2.0*WT, rph+2.0*WT, PITCH)
+scene = left_assembled.fuse(right_assembled.translate(lpw + 2.0*WT + 20.0, 0, 0))
 preview scene
