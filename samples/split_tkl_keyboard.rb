@@ -41,6 +41,11 @@ USBC_W       =  9.0; USBC_H   = 3.5   # USB-C connector opening (outer wall, 9 �
 USBC_BOARD_W = 12.0               # adapter board width
 USBC_BOARD_H =  4.2               # adapter board total height (PCB + connector)
 SLOT_TOL     =  0.15              # per-side slot clearance for snug sliding fit
+# M2.5 button-head screw counterbore (head Ø4.5mm → r=2.4mm with 0.15mm clearance).
+# Depth 1.5mm leaves 1.5mm of plate below — head sits flush with plate surface.
+# Gap from counterbore edge to nearest switch cutout = 8-(5+2.4) = 0.6mm — printable.
+SCREW_CBR    =  2.4               # counterbore radius
+SCREW_CBH    =  1.5               # counterbore depth
 
 # Row Y-centres (Y-up: fn row at top = highest Y)
 R0 = 5.5 * U   # Fn row
@@ -65,15 +70,18 @@ def build_plate(key_centres)
   shifted = key_centres.map { |p| [p[0]+ox, p[1]+oy] }
   pw = xs.max - xs.min + sw + 2.0*mg
   ph = ys.max - ys.min + sw + 2.0*mg
-  plate = box(pw, ph, pt)
+  # Chamfer outer plate edges first, before switch/via cuts, so the chamfer
+  # does not conflict with the tight gap between counterbore rims and switch cutouts.
+  plate = box(pw, ph, pt).chamfer(CHAMFER_PLATE)
   shifted.each do |key|
     cx = key[0]; cy = key[1]
     plate = plate.cut(box(sw, sw, pt+2.0).translate(cx-sw/2.0, cy-sw/2.0, -1.0))
   end
   screw_pts(pw, ph, sd).each do |sx, sy|
     plate = plate.cut(cylinder(m2r, pt+2.0).translate(sx, sy, -1.0))
+    # Counterbore on top face: M2.5 button head sits flush with plate surface.
+    plate = plate.cut(cylinder(SCREW_CBR, SCREW_CBH).translate(sx, sy, pt - SCREW_CBH))
   end
-  plate = plate.chamfer(CHAMFER_PLATE)
   [plate, pw, ph]
 end
 
@@ -101,6 +109,7 @@ def add_mid_bosses(plate, cshape, pts)
   post_h = CH - PT - 0.5   # boss height: reaches just below plate underside
   pts.each do |sx, sy|
     plate  = plate.cut(cylinder(M2_R, PT+2.0).translate(sx, sy, -1.0))
+    plate  = plate.cut(cylinder(SCREW_CBR, SCREW_CBH).translate(sx, sy, PT - SCREW_CBH))
     cshape = cshape
                .fuse(cylinder(POST_R, post_h).translate(WT+sx, WT+sy, WT))
                .cut(cylinder(M2_R, post_h+2.0).translate(WT+sx, WT+sy, WT-1.0))
