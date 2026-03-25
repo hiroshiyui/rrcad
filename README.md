@@ -20,7 +20,7 @@ See [`samples/`](samples/) for more complete examples.
 > **3D preview:** open [`doc/bucket.stl`](doc/bucket.stl) or [`doc/split_tkl_keyboard.stl`](doc/split_tkl_keyboard.stl) in GitHub to view the models interactively in your browser.
 
 ![Three.js live preview of the bucket sample](doc/images/Screenshot%202026-03-22%20at%2014-39-04%20rrcad%20preview.png)
-![Three.js live preview of the split TKL keyboard assembly (cases + switch plates, 2×2 layout)](doc/images/Screenshot%202026-03-24%20at%2021-52-26%20rrcad%20preview.png)
+![Three.js live preview of the split TKL keyboard — fully assembled side-by-side view](doc/images/Screenshot%202026-03-25%20at%2010-52-45%20rrcad%20preview.png)
 
 ## Stack
 
