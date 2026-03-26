@@ -153,10 +153,15 @@ Tools: `cad_eval` (shape properties JSON), `cad_export` (file to `/tmp/rrcad_mcp
 `cad_preview` (Three.js live URL), `cad_validate` (BRepCheck result).
 Resources: `rrcad://api` (`doc/api.md`) and `rrcad://examples` (`samples/*.rb`).
 
-Security: 7 mitigations — restricted mRuby gembox (`mcp_safe.gembox`), runtime prelude
-strips `system`/`exec`/`fork`/etc., 30 s `tokio::time::timeout`, 512 MB `setrlimit`,
-export paths confined to `/tmp/rrcad_mcp/`, fresh VM per call, 64 KB input cap.
-Test coverage: 9 unit tests in `src/mcp/mod.rs`, 12 integration tests in `tests/mcp_tools.rs`.
+Security: 8 mitigations — restricted mRuby gembox (`mcp_safe.gembox`), runtime prelude
+strips `system`/`exec`/`fork`/etc., 30 s `tokio::time::timeout`, 2 GB `setrlimit`,
+export paths confined to `/tmp/rrcad_mcp/`, fresh VM per call, 64 KB input cap,
+`MRUBY_EVAL_LOCK` mutex serialises all mRuby/OCCT work across the tokio thread pool
+(prevents SIGSEGV from concurrent VMs when a timed-out call lingers on a pool thread).
+TOCTOU port race in `cad_preview` eliminated by keeping the `tokio::net::TcpListener`
+alive and passing it directly to `serve_with_listener()`.
+Test coverage: 10 unit tests in `src/mcp/mod.rs`, 13 integration tests in
+`tests/mcp_tools.rs`, 10 stress/concurrency tests in `tests/mcp_stress.rs`.
 
 ---
 

@@ -78,7 +78,7 @@ rrcad/
 │   │   └── viewer.html     # Three.js viewer (embedded via include_str!)
 │   └── mcp/                # MCP server over stdio (Phase 9)
 │       └── mod.rs          # cad_eval, cad_export, cad_preview, cad_validate tools;
-│                           #   rrcad://api + rrcad://examples resources; 7 security mitigations
+│                           #   rrcad://api + rrcad://examples resources; 8 security mitigations
 ├── samples/                # DSL example scripts
 │   ├── README.md
 │   ├── 01_hello_box.rb … 07_teapot.rb
@@ -411,6 +411,14 @@ cargo clippy                      # lints
 | `tests/phase7_tier1.rs` | Phase 7 Tier 1: asymmetric chamfer, `offset_2d`, `grid_pattern`, `fuse_all`, `cut_all`; 12 tests |
 | `tests/phase7_tier2.rs` | Phase 7 Tier 2: `shape_type`, `centroid`, `closed?`, `manifold?`, `validate`; 12 tests |
 | `tests/phase7_tier3.rs` | Phase 7 Tier 3: `ruled_surface`, `fill_surface`, `slice`; 10 tests |
+| `tests/sketch_profiles.rs` | `arc`, `polygon`, `ellipse` geometry (bounding box, shape type, volume after extrude); 16 tests |
+| `tests/phase8_tier1.rs` | Phase 8 Tier 1: `pad`, `pocket`, `fillet_wire`, `datum_plane`; 11 tests |
+| `tests/phase8_tier2.rs` | Phase 8 Tier 2: draft-angle extrude, `helix`, `thread`, `cbore`/`csink`; 13 tests |
+| `tests/phase8_tier3.rs` | Phase 8 Tier 3: `distance_to`, `inertia`, `min_thickness`; 10 tests |
+| `tests/phase8_tier4.rs` | Phase 8 Tier 4: SVG/DXF 2-D drawing export (HLR projection, 3 view directions); 11 tests |
+| `tests/phase8_tier5.rs` | Phase 8 Tier 5: `fragment`, `convex_hull`, `path_pattern`, guided `sweep`; 11 tests |
+| `tests/mcp_tools.rs` | Phase 9 MCP security + DSL-in-VM integration (input validation, timeout, safe_path, export); 13 tests |
+| `tests/mcp_stress.rs` | MCP stress/concurrency: sequential VM churn, error recovery, deep booleans, `MRUBY_EVAL_LOCK` proof; 10 tests |
 
 Output files are written to `std::env::temp_dir()` (typically `/tmp` on Linux).
 
