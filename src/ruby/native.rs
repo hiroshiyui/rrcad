@@ -429,10 +429,9 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
         }
     };
     let safe_str = safe.to_string_lossy();
-    let view_str = match unsafe { std::ffi::CStr::from_ptr(view) }.to_str() {
-        Ok(s) => s,
-        Err(_) => "top",
-    };
+    let view_str = unsafe { std::ffi::CStr::from_ptr(view) }
+        .to_str()
+        .unwrap_or("top");
     if let Err(e) = shape.export_svg(&safe_str, view_str) {
         unsafe { set_err(error_out, &e) };
     }
@@ -463,10 +462,9 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
         }
     };
     let safe_str = safe.to_string_lossy();
-    let view_str = match unsafe { std::ffi::CStr::from_ptr(view) }.to_str() {
-        Ok(s) => s,
-        Err(_) => "top",
-    };
+    let view_str = unsafe { std::ffi::CStr::from_ptr(view) }
+        .to_str()
+        .unwrap_or("top");
     if let Err(e) = shape.export_dxf(&safe_str, view_str) {
         unsafe { set_err(error_out, &e) };
     }

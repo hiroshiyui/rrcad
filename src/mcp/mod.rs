@@ -33,6 +33,7 @@
 //! | 5 | Export path confinement | CWD → `/tmp/rrcad_mcp/` (mode 0700) |
 //! | 6 | Per-call VM isolation | fresh `MrubyVm::new()` per tool call |
 //! | 7 | Input validation | length cap, null-byte check, format allowlist |
+//! | 8 | mRuby serialisation | `MRUBY_EVAL_LOCK` mutex prevents concurrent VMs (SIGSEGV) |
 
 use std::{
     path::PathBuf,
@@ -67,6 +68,40 @@ use tokio::{
 /// Maximum size of AI-supplied code strings (Mitigation 7a).
 /// Legitimate DSL scripts are never 64 KB; large inputs are likely DoS attempts.
 const MCP_MAX_CODE_BYTES: usize = 64 * 1024;
+
+// ---------------------------------------------------------------------------
+// mRuby serialisation lock
+// ---------------------------------------------------------------------------
+
+/// Global mutex that ensures at most one mRuby VM executes at a time.
+///
+/// # Why this is necessary
+///
+/// mRuby is not thread-safe: running two `mrb_state` instances concurrently
+/// (even completely independent ones) causes SIGSEGV.  `spawn_blocking` runs
+/// closures on a thread pool, so two concurrent tool calls would execute two
+/// VMs on two different threads simultaneously.
+///
+/// The 30-second `tokio::time::timeout` makes things worse: after the timeout
+/// fires the *async* side gives up, but the *blocking thread* keeps running
+/// until it finishes.  If a second call arrives before the first thread exits,
+/// the pool spawns a second thread and two VMs race.
+///
+/// Acquiring this lock inside every `spawn_blocking` closure serialises all
+/// mRuby/OCCT work regardless of how many concurrent tool calls arrive.
+/// Callers block on the pool thread, not on the async runtime thread, so
+/// tokio stays responsive.
+static MRUBY_EVAL_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Return a reference to the global mRuby serialisation mutex.
+///
+/// Exposed for stress tests that need to prove the lock works correctly when
+/// two threads race to create mRuby VMs.  Production callers should not use
+/// this directly — the lock is acquired automatically inside every
+/// `spawn_blocking` closure in the MCP tool handlers.
+pub fn mruby_eval_lock() -> &'static std::sync::Mutex<()> {
+    &MRUBY_EVAL_LOCK
+}
 
 /// Per-call evaluation time limit in seconds (Mitigation 3).
 const MCP_EVAL_TIMEOUT_SECS: u64 = 30;
@@ -296,6 +331,10 @@ async fn do_cad_eval(code: String) -> CallToolResult {
     let result = timeout(
         Duration::from_secs(MCP_EVAL_TIMEOUT_SECS),
         spawn_blocking(move || -> Result<Value, String> {
+            // Serialise all mRuby/OCCT work — see MRUBY_EVAL_LOCK comment.
+            let _lock = MRUBY_EVAL_LOCK
+                .lock()
+                .map_err(|_| "mRuby eval lock poisoned".to_string())?;
             // Mitigations 6, 2.  Mitigation 4 (memory limit) is applied once
             // at startup in start() — setrlimit is process-wide, not per-thread.
             let mut vm = create_mcp_vm()?;
@@ -378,6 +417,10 @@ async fn do_cad_export(code: String, format: String) -> CallToolResult {
     let result = timeout(
         Duration::from_secs(MCP_EVAL_TIMEOUT_SECS),
         spawn_blocking(move || -> Result<(), String> {
+            // Serialise all mRuby/OCCT work — see MRUBY_EVAL_LOCK comment.
+            let _lock = MRUBY_EVAL_LOCK
+                .lock()
+                .map_err(|_| "mRuby eval lock poisoned".to_string())?;
             let mut vm = create_mcp_vm()?;
             vm.eval(&format!("$__s = begin\n{code}\nend"))?;
             // Relative filename → resolves under CWD = /tmp/rrcad_mcp/.
@@ -411,10 +454,18 @@ async fn do_cad_preview(code: String) -> CallToolResult {
     let port = if let Some(&p) = MCP_PREVIEW_PORT.get() {
         p
     } else {
-        // Bind to port 0 so the OS assigns a free port.
-        let new_port = match std::net::TcpListener::bind("127.0.0.1:0") {
-            Ok(l) => l.local_addr().unwrap().port(),
-            Err(e) => return err_result(format!("Failed to find free port: {e}")),
+        // Bind to port 0 **and keep the listener alive** so that the OS-assigned
+        // port is guaranteed free when axum starts.  Passing the bound listener
+        // directly to axum eliminates the TOCTOU race that existed when we
+        // extracted the port number, dropped the listener, and then had axum try
+        // to rebind — a window where another process could steal the port.
+        let listener = match tokio::net::TcpListener::bind("127.0.0.1:0").await {
+            Ok(l) => l,
+            Err(e) => return err_result(format!("Failed to bind preview port: {e}")),
+        };
+        let new_port = match listener.local_addr() {
+            Ok(addr) => addr.port(),
+            Err(e) => return err_result(format!("Failed to get preview port address: {e}")),
         };
 
         // Wire up the preview state used by the existing axum route handlers.
@@ -427,11 +478,9 @@ async fn do_cad_preview(code: String) -> CallToolResult {
             reload_tx,
         });
 
-        // Spawn the axum server in the current (rmcp's) tokio runtime.
-        tokio::spawn(crate::preview::server::serve(new_port));
-
-        // Give the server a moment to bind before returning the URL.
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        // Spawn the axum server with the already-bound listener.  No sleep
+        // needed — the port is bound now; clients can connect immediately.
+        tokio::spawn(crate::preview::server::serve_with_listener(listener));
 
         let _ = MCP_PREVIEW_PORT.set(new_port);
         new_port
@@ -441,6 +490,10 @@ async fn do_cad_preview(code: String) -> CallToolResult {
     let result = timeout(
         Duration::from_secs(MCP_EVAL_TIMEOUT_SECS),
         spawn_blocking(move || -> Result<(), String> {
+            // Serialise all mRuby/OCCT work — see MRUBY_EVAL_LOCK comment.
+            let _lock = MRUBY_EVAL_LOCK
+                .lock()
+                .map_err(|_| "mRuby eval lock poisoned".to_string())?;
             let mut vm = create_mcp_vm()?;
             vm.eval(&format!("$__s = begin\n{code}\nend"))?;
             vm.eval("$__s.export(\"preview.glb\")")?;
@@ -476,15 +529,16 @@ async fn do_cad_validate(code: String) -> CallToolResult {
     let result = timeout(
         Duration::from_secs(MCP_EVAL_TIMEOUT_SECS),
         spawn_blocking(move || -> Result<Value, String> {
+            // Serialise all mRuby/OCCT work — see MRUBY_EVAL_LOCK comment.
+            let _lock = MRUBY_EVAL_LOCK
+                .lock()
+                .map_err(|_| "mRuby eval lock poisoned".to_string())?;
             let mut vm = create_mcp_vm()?;
 
             // Try to evaluate and assign the shape.
-            match vm.eval(&format!("$__s = begin\n{code}\nend")) {
-                Err(eval_err) => {
-                    // Syntax or runtime error in the DSL code.
-                    return Ok(json!({ "errors": [eval_err] }));
-                }
-                Ok(_) => {}
+            if let Err(eval_err) = vm.eval(&format!("$__s = begin\n{code}\nend")) {
+                // Syntax or runtime error in the DSL code.
+                return Ok(json!({ "errors": [eval_err] }));
             }
 
             // Run OCCT's BRepCheck_Analyzer for geometric validity.

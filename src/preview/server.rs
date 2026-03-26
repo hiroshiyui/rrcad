@@ -18,20 +18,28 @@ const VIEWER_HTML: &str = include_str!("viewer.html");
 const LOGO_PNG: &[u8] = include_bytes!("../../doc/images/rrcad-logo.png");
 
 pub async fn serve(port: u16) {
+    let addr = format!("127.0.0.1:{port}");
+    match tokio::net::TcpListener::bind(&addr).await {
+        Ok(listener) => serve_with_listener(listener).await,
+        Err(e) => eprintln!("rrcad preview: failed to bind {addr}: {e}"),
+    }
+}
+
+/// Start the axum preview server on a pre-bound listener.
+///
+/// Used by the MCP `cad_preview` tool to eliminate the TOCTOU race between
+/// port discovery and axum binding: the caller binds the port first (getting an
+/// OS-assigned free port), then passes the live listener here.
+pub async fn serve_with_listener(listener: tokio::net::TcpListener) {
     let app = Router::new()
         .route("/", get(handler_root))
         .route("/model.glb", get(handler_model))
         .route("/logo.png", get(handler_logo))
         .route("/ws", get(handler_ws));
 
-    let addr = format!("127.0.0.1:{port}");
-    let listener = tokio::net::TcpListener::bind(&addr)
-        .await
-        .unwrap_or_else(|e| panic!("failed to bind {addr}: {e}"));
-
-    axum::serve(listener, app)
-        .await
-        .expect("axum server error");
+    // Errors are swallowed — the server exits cleanly when the runtime shuts
+    // down or the listener is closed, both of which are normal shutdown paths.
+    axum::serve(listener, app).await.ok();
 }
 
 async fn handler_root() -> Html<&'static str> {
