@@ -235,9 +235,19 @@ lplate, lcase = add_mid_bosses(lplate, lcase, [
   [4.375*U  + _lox, SCREW_D      ],   # bottom edge, LAlt–Space gap
   [lpw - SCREW_D,   lph / 2.0    ],   # right edge, mid-height
 ])
-# Central pillar — no via hole; resists flex at plate midspan
+# Support pillars — screw-less columns that rise to 0.2 mm below the plate
+# underside, resisting deflection under keystroke loads without via holes.
+#
+# All positions are diagonal midpoints between 4 adjacent key centres, giving
+# ~13.5 mm clearance from every switch body edge (need > SW/2 + POST_R = 10.2 mm).
+# Coordinates use the same per-axis offset _lox = SW/2 + MG − 0.5·U = 5.475 mm.
+# Left Pico footprint in plate coords: X ≈ 26.8–47.8 mm, Y ≈ 74.3–125.3 mm —
+# no pillar falls inside that rectangle.
 lcase = add_pillars(lcase, [
-  [lpw / 2.0, lph / 2.0],
+  [1.4375*U + _lox, 3.0*U + _lox],  # mid R2–R3, left gap  (between CapsLock & Q cols)
+  [4.0*U    + _lox, 5.0*U + _lox],  # mid R0–R1, centre    (between F3–F4 / 3–4 cols)
+  [6.0*U    + _lox, 5.0*U + _lox],  # mid R0–R1, right     (between F5–F6 / 5–6 cols)
+  [6.25*U   + _lox, 1.0*U + _lox],  # mid R4–R5, lower-right (B–last shift col, open below)
 ])
 
 # ════════════════════════════════════════════════════════════
@@ -303,9 +313,17 @@ rplate, rcase = add_mid_bosses(rplate, rcase, [
   [2.5*U + _rox,   SCREW_D    ],   # bottom edge, Space–RAlt gap
   [rpw - SCREW_D,  rph / 2.0  ],   # right edge, mid-height
 ])
-# Central pillar — no via hole; resists flex at plate midspan
+# Support pillars (right plate ≈ 201 × 125 mm).
+#
+# All positions are diagonal midpoints between 4 adjacent key centres, giving
+# ~13.5 mm clearance from every switch body edge.
+# Right Pico footprint in plate coords: X ≈ 6–57 mm, Y ≈ 52–73 mm —
+# no pillar falls inside that rectangle.
 rcase = add_pillars(rcase, [
-  [rpw / 2.0, rph / 2.0],
+  [2.0*U  + _rox, 5.0*U + _rox],   # mid R0–R1, left    (between F8–F9 / 8–9 cols)
+  [5.0*U  + _rox, 5.0*U + _rox],   # mid R0–R1, centre  (between F11–F12 / 0–= cols)
+  [8.5*U  + _rox, 3.0*U + _rox],   # mid R2–R3, nav area (right of \, left of nav col)
+  [6.0*U  + _rox, 1.0*U + _rox],   # mid R4–R5, centre  (between RCtrl & Left-arrow cols)
 ])
 
 # ════════════════════════════════════════════════════════════
