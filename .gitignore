@@ -1,5 +1,6 @@
 /target
 /vendor/mruby/build
 *.step
+*.stl
 /.claude/worktrees/
 /.mcp.json
