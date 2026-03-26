@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Split TKL keyboard sample** (`samples/split_tkl_keyboard.rb`): replaced
+  fraction-based pillar positions with diagonal midpoints between 4 adjacent
+  key centres, giving ~13.5 mm clearance from every switch body edge
+  (previously the positions fell directly under Cherry MX switch bodies and
+  inside the Raspberry Pi Pico board footprints).  Both halves now have
+  4 pillars each.
+
 ---
 
 ## [0.1.5] - 2026-03-26
