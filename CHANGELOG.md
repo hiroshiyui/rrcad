@@ -23,9 +23,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Split TKL keyboard — flat-bottom case** (`samples/split_tkl_keyboard.rb`): removed
   the `solid_tent` wedge base entirely.  The case now has a flat bottom; users glue on
   custom-printed tenting feet at whatever angle they prefer.
+- **Split TKL keyboard — right bottom-row modifiers widened** (`samples/split_tkl_keyboard.rb`):
+  RAlt, Fn, and RCtrl widened from 1 U to 1.25 U each; Space repositioned to 1 U at the
+  left edge of the row (flush with the case wall) so all three modifiers pack tightly
+  against the spacebar.  Leaves a natural 1.25 U gap before the arrow cluster.
 
 ### Fixed
 
+- **Split TKL keyboard — RShift position corrected** (`samples/split_tkl_keyboard.rb`):
+  RShift switch centre moved from 5.5 U to 6.0 U so the 2 U keycap sits flush against
+  `/` on the left (both edges at 5.0 U) and flush against Up ↑ on the right (both edges
+  at 7.0 U).  The previous 5.5 U position caused the RShift keycap to overlap `/` by
+  0.5 U.
 - **Preview: zoom limits removed** (`src/preview/viewer.html`): `minDistance` and
   `maxDistance` constraints on `OrbitControls` were removed so the camera can orbit
   right up to the model surface for close-up detail inspection.

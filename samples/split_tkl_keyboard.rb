@@ -267,13 +267,14 @@ rk << [7.125*U, R3]                                # Enter (2.25 U)
 rk << [9.5*U,   R3]                                # Del          ← nav col
 
 (0..4).each { |i| rk << [(0.5+i)*U, R4] }        # N M , . /
-rk << [5.5*U,   R4]                                # RShift (2 U)
+rk << [6.0*U,   R4]                                # RShift (2 U): left edge flush with / right edge (5.0 U), right edge flush with Up left edge (7.0 U)
 rk << [7.5*U,   R4]                                # Up ↑         ← direction cluster
 rk << [9.5*U,   R4]                                # End          ← nav col
 
-rk << [1.5*U,  R5]                                 # Space (inner)
-rk << [3.5*U,  R5]; rk << [4.5*U,  R5]            # RAlt, Fn
-rk << [5.5*U,  R5]                                 # RCtrl
+rk << [0.5*U,   R5]                                # Space (1 U)
+rk << [1.625*U, R5]                                # RAlt  (1.25 U): left flush with Space right (1.0 U)
+rk << [2.875*U, R5]                                # Fn    (1.25 U)
+rk << [4.125*U, R5]                                # RCtrl (1.25 U): right edge 4.75 U; 1.25 U gap before Left←
 rk << [6.5*U,  R5]; rk << [7.5*U,  R5]            # Left ←, Down ↓  ← direction cluster
 rk << [8.5*U,  R5]                                 # Right →       ← direction cluster
 rk << [9.5*U,  R5]                                 # PgDn         ← nav col
