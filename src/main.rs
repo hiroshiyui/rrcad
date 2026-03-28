@@ -1,53 +1,4 @@
-use std::path::{Path, PathBuf};
-
 use rrcad::ruby::vm::MrubyVm;
-
-// ---------------------------------------------------------------------------
-// Path-traversal guard (CLI paths)
-// ---------------------------------------------------------------------------
-
-/// Resolve `raw` to a canonical absolute path and verify it is inside the
-/// current working directory.
-///
-/// Security rationale: the CLI accepts a script filename from the command
-/// line.  An attacker (or misconfigured invocation) could pass a path like
-/// `"../../secret.rb"`.  This helper rejects any path that resolves outside
-/// the process working directory, blocking directory-traversal attacks.
-///
-/// For files that do not yet exist (e.g. export targets inside a design-table
-/// script), the parent directory is canonicalized and the filename re-joined.
-fn safe_path(raw: &str) -> Result<PathBuf, String> {
-    let p = PathBuf::from(raw);
-    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    let canon_cwd = cwd
-        .canonicalize()
-        .map_err(|e| format!("cannot resolve cwd: {e}"))?;
-
-    let canonical = if p.exists() {
-        p.canonicalize()
-            .map_err(|e| format!("cannot resolve path '{raw}': {e}"))?
-    } else {
-        let parent = p.parent().unwrap_or(Path::new(""));
-        let canon_parent = if parent == Path::new("") {
-            canon_cwd.clone()
-        } else {
-            parent
-                .canonicalize()
-                .map_err(|e| format!("cannot resolve directory for '{raw}': {e}"))?
-        };
-        canon_parent.join(
-            p.file_name()
-                .ok_or_else(|| format!("invalid path (no filename component): '{raw}'"))?,
-        )
-    };
-
-    if !canonical.starts_with(&canon_cwd) {
-        return Err(format!(
-            "path '{raw}' is outside the working directory (path traversal rejected)"
-        ));
-    }
-    Ok(canonical)
-}
 use rustyline::{
     completion::{Completer, Pair},
     error::ReadlineError,
@@ -486,18 +437,12 @@ fn run_repl() {
 }
 
 fn run_script(path: &str, params: &[(String, String)]) {
-    // Reject script paths that escape the working directory.
-    let safe = match safe_path(path) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("error: {e}");
-            std::process::exit(1);
-        }
-    };
-    let code = match std::fs::read_to_string(&safe) {
+    // The CLI input script may live anywhere the user can read — no CWD restriction.
+    // Export paths produced *inside* the script are still guarded by safe_path in native.rs.
+    let code = match std::fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("error: could not read '{}': {e}", safe.display());
+            eprintln!("error: could not read '{path}': {e}");
             std::process::exit(1);
         }
     };
@@ -567,13 +512,11 @@ fn run_design_table(
     script_path: &str,
     base_params: &[(String, String)],
 ) -> Result<(), String> {
-    // Reject table and script paths that escape the working directory.
-    let safe_table = safe_path(table_path)?;
-    let safe_script = safe_path(script_path)?;
-
-    let table_src = std::fs::read_to_string(&safe_table)
+    // CLI input files may live anywhere the user can read — no CWD restriction.
+    // Export paths produced *inside* the script are still guarded by safe_path in native.rs.
+    let table_src = std::fs::read_to_string(table_path)
         .map_err(|e| format!("error: could not read '{table_path}': {e}"))?;
-    let code = std::fs::read_to_string(&safe_script)
+    let code = std::fs::read_to_string(script_path)
         .map_err(|e| format!("error: could not read '{script_path}': {e}"))?;
 
     let (headers, rows) = parse_csv(&table_src)?;
@@ -670,49 +613,6 @@ mod design_table_tests {
     }
 }
 
-// ---------------------------------------------------------------------------
-// safe_path security tests
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod safe_path_tests {
-    use super::safe_path;
-
-    #[test]
-    fn safe_path_accepts_simple_filename() {
-        // A bare filename resolves relative to cwd — always safe.
-        assert!(safe_path("output.step").is_ok());
-    }
-
-    #[test]
-    fn safe_path_accepts_subdirectory() {
-        // A path whose parent exists and is inside cwd is accepted.
-        // Use "src/dummy.rb" — src/ exists in every build tree.
-        assert!(safe_path("src/dummy.rb").is_ok());
-    }
-
-    #[test]
-    fn safe_path_rejects_dotdot_traversal() {
-        // ../../etc/passwd must be rejected: the resolved path escapes cwd.
-        let err = safe_path("../../etc/passwd");
-        assert!(err.is_err(), "path traversal via ../../ should be rejected");
-    }
-
-    #[test]
-    fn safe_path_rejects_single_dotdot() {
-        // ../escape.rb resolves one level above cwd — must be rejected.
-        let err = safe_path("../escape.rb");
-        assert!(err.is_err(), "path traversal via ../ should be rejected");
-    }
-
-    #[test]
-    fn safe_path_rejects_absolute_path_outside_cwd() {
-        // An absolute path pointing outside cwd must always be rejected.
-        let err = safe_path("/etc/passwd");
-        assert!(err.is_err(), "absolute path outside cwd should be rejected");
-    }
-}
-
 /// Generate a randomised path for the temporary preview GLB file.
 ///
 /// Security rationale: a hardcoded, predictable path like `/tmp/rrcad_preview.glb`
@@ -735,11 +635,8 @@ fn run_preview(script_path: &str, params: &[(String, String)]) {
     use notify::{RecursiveMode, Watcher};
     use rrcad::preview;
 
-    // Reject script paths that escape the working directory.
-    if let Err(e) = safe_path(script_path) {
-        eprintln!("error: {e}");
-        std::process::exit(1);
-    }
+    // The CLI input script may live anywhere the user can read — no CWD restriction.
+    // Export paths produced *inside* the script are still guarded by safe_path in native.rs.
 
     // Use a randomised temp-file name to prevent symlink attacks (Fix 3).
     let glb_path = make_preview_glb_path();
