@@ -23,7 +23,6 @@ M2_R    = 1.6     # M2.5 heat-set insert hole radius (3.2 mm Ø for M2.5 knurled
 CHAMFER_CASE  = 1.5
 CHAMFER_PLATE = 1.0   # outer plate edge chamfer (applied to blank box before cuts)
 CHAMFER_CUTS  = 0.5   # bottom-face lead-in step on switch cutouts (per-side overshoot, depth = same)
-PITCH   = 5.0     # Forward tilt in degrees
 # Per-side clearance between plate and case cavity.
 # FDM (PLA/PETG): 0.2  — ABS: 0.3  — Resin (SLA/MSLA): 0.1
 FIT_TOL = 0.2
@@ -167,18 +166,6 @@ def add_usbc_slot(cshape, cx, wall_y)
   cshape
 end
 
-# ── Solid wedge base for forward pitch tenting ────────────────
-# Fills the triangular gap under the tilted case so the bottom
-# is flat and the assembly sits flush on a table.
-def solid_tent(half, total_w, total_d, pitch)
-  rad    = pitch * Math::PI / 180.0
-  max_wh = total_d * Math.sin(rad) + 2.0
-  cutter = box(total_w+10, total_d+10, max_wh+50)
-             .translate(-5, -5, 0)
-             .rotate(1, 0, 0, pitch)
-  box(total_w, total_d, max_wh).cut(cutter).chamfer(CHAMFER_CASE)
-    .fuse(half.rotate(1, 0, 0, pitch))
-end
 
 # ════════════════════════════════════════════════════════════
 # LEFT SIDE — 36 keys
@@ -330,13 +317,13 @@ rcase = add_pillars(rcase, [
 # PRINTABLE PARTS (4 separate pieces)
 # ════════════════════════════════════════════════════════════
 
-# Left case: case shell with solid wedge base (5° pitch, flat bottom)
-left_case_part  = solid_tent(lcase, lpw+2.0*WT, lph+2.0*WT, PITCH)
+# Left case: flat-bottom shell (glue on custom tenting feet as preferred)
+left_case_part  = lcase
 # Left plate: flat 3 mm plate with switch cutouts + M2 via holes
 left_plate_part = lplate
 
-# Right case: case shell with solid wedge base
-right_case_part  = solid_tent(rcase, rpw+2.0*WT, rph+2.0*WT, PITCH)
+# Right case: flat-bottom shell
+right_case_part  = rcase
 # Right plate: flat 3 mm plate with switch cutouts + M2 via holes
 right_plate_part = rplate
 
@@ -349,9 +336,7 @@ right_plate_part.export("right_plate.step")
 # ── Assembled preview: plates seated in cases, both halves side by side ──
 # Plate bottom sits on screw post tops at Z = WT + (CH - PT - 0.5).
 plate_z = WT + CH - PT - 0.5
-left_assembled  = solid_tent(lcase.fuse(lplate.translate(WT, WT, plate_z)),
-                               lpw+2.0*WT, lph+2.0*WT, PITCH)
-right_assembled = solid_tent(rcase.fuse(rplate.translate(WT, WT, plate_z)),
-                               rpw+2.0*WT, rph+2.0*WT, PITCH)
+left_assembled  = lcase.fuse(lplate.translate(WT, WT, plate_z))
+right_assembled = rcase.fuse(rplate.translate(WT, WT, plate_z))
 scene = left_assembled.fuse(right_assembled.translate(lpw + 2.0*WT + 20.0, 0, 0))
 preview scene
