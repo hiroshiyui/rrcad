@@ -7,8 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Preview: studio photography look** (`src/preview/viewer.html`): transformed the
+  live viewer into a dark product-photography studio — vertical gradient background
+  (cool dark top → faintly warm bottom), a large polished studio floor plane that
+  catches shadows and shows faint model reflection, multi-light rig (key/fill/rim/bounce),
+  40° telephoto FOV (less distortion than 45°), CSS vignette overlay for cinematic
+  corners, per-model shadow frustum fitted to bounding box for crisp shadows, orbit
+  floor clamp so the camera cannot go below the studio floor, axes helper (press A to
+  toggle), and ACES filmic tone mapping at 1.2× exposure.
+- **Preview: tighter camera fit** (`src/preview/viewer.html`): `fitCamera` multipliers
+  reduced from 2.5 × 1.4 to 1.15 × 1.0, so the model fills the frame closely on every
+  load rather than sitting in a wide empty viewport.
+- **Split TKL keyboard — flat-bottom case** (`samples/split_tkl_keyboard.rb`): removed
+  the `solid_tent` wedge base entirely.  The case now has a flat bottom; users glue on
+  custom-printed tenting feet at whatever angle they prefer.
+
 ### Fixed
 
+- **Preview: zoom limits removed** (`src/preview/viewer.html`): `minDistance` and
+  `maxDistance` constraints on `OrbitControls` were removed so the camera can orbit
+  right up to the model surface for close-up detail inspection.
+- **CLI: script paths outside working directory** (`src/main.rs`): the `safe_path`
+  CWD restriction on the input script argument was overly strict for CLI use — users
+  should be able to run `rrcad --preview ../mykb/script.rb` or any absolute path.
+  Removed the guard from `run_script`, `run_preview`, and `run_table`; export paths
+  produced *inside* scripts remain confined by `safe_path` in `native.rs`.
 - **Split TKL keyboard sample** (`samples/split_tkl_keyboard.rb`): replaced
   fraction-based pillar positions with diagonal midpoints between 4 adjacent
   key centres, giving ~13.5 mm clearance from every switch body edge
