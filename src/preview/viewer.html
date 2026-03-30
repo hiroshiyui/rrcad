@@ -153,8 +153,26 @@ controls.maxPolarAngle  = Math.PI * 0.48;
 const axes = new THREE.AxesHelper(30);
 axes.visible = false;
 scene.add(axes);
+
+// Wireframe toggle state — persists across model reloads.
+let wireframeMode = false;
+
+function applyWireframe(model, enabled) {
+  if (!model) return;
+  model.traverse(node => {
+    if (node.isMesh) node.material.wireframe = enabled;
+  });
+}
+
 window.addEventListener('keydown', e => {
   if (e.key === 'a' || e.key === 'A') axes.visible = !axes.visible;
+  if (e.key === 'w' || e.key === 'W') {
+    wireframeMode = !wireframeMode;
+    applyWireframe(currentModel, wireframeMode);
+    status.textContent = wireframeMode
+      ? 'rrcad preview — wireframe'
+      : 'rrcad preview — live';
+  }
 });
 
 // ── GLTF loader ───────────────────────────────────────────────────────────
@@ -242,7 +260,10 @@ function loadModel() {
       scene.add(currentModel);
       currentModel.updateMatrixWorld(true);
       fitCamera(currentModel);
-      status.textContent = 'rrcad preview — live';
+      applyWireframe(currentModel, wireframeMode);
+      status.textContent = wireframeMode
+        ? 'rrcad preview — wireframe'
+        : 'rrcad preview — live';
     },
     undefined,
     () => { status.textContent = 'rrcad preview — waiting for model…'; }
