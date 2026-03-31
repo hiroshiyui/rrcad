@@ -379,6 +379,26 @@ part.export("part.step")
 
 Press Ctrl-C to stop the server.
 
+### Viewer controls
+
+The browser viewer has a hamburger menu (top-right corner) and keyboard shortcuts:
+
+| Control | Action |
+|---------|--------|
+| Left-drag | Orbit |
+| Right-drag / two-finger drag | Pan |
+| Scroll / pinch | Zoom |
+| **F** | Toggle flat-line view (white flat-shaded surfaces + gray edge lines) |
+| **A** | Toggle axes helper |
+
+The hamburger menu exposes the same toggles plus a **Scene** selector:
+
+| Menu section | Options |
+|-------------|---------|
+| View | Normal (PBR studio material) · Flat-line (technical illustration style) |
+| Scene | Showroom (dark studio, default) · White (bright neutral background) |
+| Show | Axes on/off |
+
 ---
 
 ## Parametric Design & Batch Export

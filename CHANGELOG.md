@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Preview: flat-line view** (`src/preview/viewer.html`): press `F` to toggle a
+  flat-line rendering mode — white flat-shaded surfaces (`MeshLambertMaterial`,
+  `flatShading: true`) with heavy-gray edge lines drawn at ≥15° creases via
+  `EdgesGeometry`.  View mode persists across live-reloads.
+- **Preview: hamburger menu** (`src/preview/viewer.html`): a menu button in the
+  top-right corner opens a panel with three sections — **View** (Normal / Flat-line
+  radio buttons), **Scene** (Showroom / White radio buttons), and **Show** (Axes
+  checkbox).  Keyboard shortcuts (`F`, `A`) remain functional and stay in sync with
+  the menu state.
+- **Preview: white scene** (`src/preview/viewer.html`): second scene preset — pure
+  white background, white studio floor, flat neutral lighting (bright hemisphere + soft
+  directional key only), vignette hidden.  The dark Showroom scene remains the default.
+  Status text and menu-button colours adapt automatically for readability on the bright
+  background.
+
 ---
 
 ## [0.1.6] - 2026-03-28
