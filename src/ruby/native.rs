@@ -123,6 +123,36 @@ unsafe fn shape_result_to_ptr(
     }
 }
 
+/// Default linear deflection for mesh tessellation (export_gltf, export_glb, export_obj).
+///
+/// Controls the maximum distance between the tessellated mesh and the exact BRep surface.
+/// Smaller values produce finer meshes; 0.1 mm is a good balance for CAD preview.
+const DEFAULT_LINEAR_DEFLECTION: f64 = 0.1;
+
+/// Decode the raw C `path` pointer and validate it with `safe_path`.
+///
+/// Returns the resolved `PathBuf` on success.  On any error, writes the error
+/// message into `*error_out` and returns `None` — the caller should return early.
+/// This eliminates the three-step boilerplate that was copy-pasted across every
+/// import/export entry point.
+unsafe fn resolve_path(path: *const c_char, error_out: *mut *const c_char) -> Option<PathBuf> {
+    // SAFETY: `path` is a valid null-terminated C string produced by glue.c.
+    let path_str = match unsafe { std::ffi::CStr::from_ptr(path) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "path is not valid UTF-8") };
+            return None;
+        }
+    };
+    match safe_path(path_str) {
+        Ok(p) => Some(p),
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            None
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Constructors
 // ---------------------------------------------------------------------------
@@ -211,21 +241,7 @@ pub unsafe extern "C" fn rrcad_import_step(
     error_out: *mut *const c_char,
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
-    let path_str = match unsafe { std::ffi::CStr::from_ptr(path) }.to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            unsafe { set_err(error_out, "path is not valid UTF-8") };
-            return std::ptr::null_mut();
-        }
-    };
-    // Guard against directory-traversal: reject paths outside cwd.
-    let safe = match safe_path(path_str) {
-        Ok(p) => p,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            return std::ptr::null_mut();
-        }
-    };
+    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else { return std::ptr::null_mut() };
     let safe_str = safe.to_string_lossy();
     unsafe { shape_result_to_ptr(Shape::import_step(&safe_str), error_out) }
 }
@@ -236,21 +252,7 @@ pub unsafe extern "C" fn rrcad_import_stl(
     error_out: *mut *const c_char,
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
-    let path_str = match unsafe { std::ffi::CStr::from_ptr(path) }.to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            unsafe { set_err(error_out, "path is not valid UTF-8") };
-            return std::ptr::null_mut();
-        }
-    };
-    // Guard against directory-traversal: reject paths outside cwd.
-    let safe = match safe_path(path_str) {
-        Ok(p) => p,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            return std::ptr::null_mut();
-        }
-    };
+    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else { return std::ptr::null_mut() };
     let safe_str = safe.to_string_lossy();
     unsafe { shape_result_to_ptr(Shape::import_stl(&safe_str), error_out) }
 }
@@ -267,21 +269,7 @@ pub unsafe extern "C" fn rrcad_shape_export_step(
 ) {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    let path_str = match unsafe { std::ffi::CStr::from_ptr(path) }.to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            unsafe { set_err(error_out, "path is not valid UTF-8") };
-            return;
-        }
-    };
-    // Guard against directory-traversal: reject export paths outside cwd.
-    let safe = match safe_path(path_str) {
-        Ok(p) => p,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            return;
-        }
-    };
+    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else { return };
     let safe_str = safe.to_string_lossy();
     if let Err(e) = shape.export_step(&safe_str) {
         unsafe { set_err(error_out, &e) };
@@ -296,21 +284,7 @@ pub unsafe extern "C" fn rrcad_shape_export_stl(
 ) {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    let path_str = match unsafe { std::ffi::CStr::from_ptr(path) }.to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            unsafe { set_err(error_out, "path is not valid UTF-8") };
-            return;
-        }
-    };
-    // Guard against directory-traversal: reject export paths outside cwd.
-    let safe = match safe_path(path_str) {
-        Ok(p) => p,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            return;
-        }
-    };
+    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else { return };
     let safe_str = safe.to_string_lossy();
     if let Err(e) = shape.export_stl(&safe_str) {
         unsafe { set_err(error_out, &e) };
@@ -325,23 +299,9 @@ pub unsafe extern "C" fn rrcad_shape_export_gltf(
 ) {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    let path_str = match unsafe { std::ffi::CStr::from_ptr(path) }.to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            unsafe { set_err(error_out, "path is not valid UTF-8") };
-            return;
-        }
-    };
-    // Guard against directory-traversal: reject export paths outside cwd.
-    let safe = match safe_path(path_str) {
-        Ok(p) => p,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            return;
-        }
-    };
+    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else { return };
     let safe_str = safe.to_string_lossy();
-    if let Err(e) = shape.export_gltf(&safe_str, 0.1) {
+    if let Err(e) = shape.export_gltf(&safe_str, DEFAULT_LINEAR_DEFLECTION) {
         unsafe { set_err(error_out, &e) };
     }
 }
@@ -354,23 +314,9 @@ pub unsafe extern "C" fn rrcad_shape_export_glb(
 ) {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    let path_str = match unsafe { std::ffi::CStr::from_ptr(path) }.to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            unsafe { set_err(error_out, "path is not valid UTF-8") };
-            return;
-        }
-    };
-    // Guard against directory-traversal: reject export paths outside cwd.
-    let safe = match safe_path(path_str) {
-        Ok(p) => p,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            return;
-        }
-    };
+    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else { return };
     let safe_str = safe.to_string_lossy();
-    if let Err(e) = shape.export_glb(&safe_str, 0.1) {
+    if let Err(e) = shape.export_glb(&safe_str, DEFAULT_LINEAR_DEFLECTION) {
         unsafe { set_err(error_out, &e) };
     }
 }
@@ -383,23 +329,9 @@ pub unsafe extern "C" fn rrcad_shape_export_obj(
 ) {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    let path_str = match unsafe { std::ffi::CStr::from_ptr(path) }.to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            unsafe { set_err(error_out, "path is not valid UTF-8") };
-            return;
-        }
-    };
-    // Guard against directory-traversal: reject export paths outside cwd.
-    let safe = match safe_path(path_str) {
-        Ok(p) => p,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            return;
-        }
-    };
+    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else { return };
     let safe_str = safe.to_string_lossy();
-    if let Err(e) = shape.export_obj(&safe_str, 0.1) {
+    if let Err(e) = shape.export_obj(&safe_str, DEFAULT_LINEAR_DEFLECTION) {
         unsafe { set_err(error_out, &e) };
     }
 }
@@ -413,21 +345,7 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
 ) {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    let path_str = match unsafe { std::ffi::CStr::from_ptr(path) }.to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            unsafe { set_err(error_out, "path is not valid UTF-8") };
-            return;
-        }
-    };
-    // Guard against directory-traversal: reject export paths outside cwd.
-    let safe = match safe_path(path_str) {
-        Ok(p) => p,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            return;
-        }
-    };
+    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else { return };
     let safe_str = safe.to_string_lossy();
     // SAFETY: `view` is always a valid, null-terminated C string literal
     // initialised to "top" in glue.c before this function is called.
@@ -448,21 +366,7 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
 ) {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    let path_str = match unsafe { std::ffi::CStr::from_ptr(path) }.to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            unsafe { set_err(error_out, "path is not valid UTF-8") };
-            return;
-        }
-    };
-    // Guard against directory-traversal: reject export paths outside cwd.
-    let safe = match safe_path(path_str) {
-        Ok(p) => p,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            return;
-        }
-    };
+    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else { return };
     let safe_str = safe.to_string_lossy();
     // SAFETY: `view` is always a valid, null-terminated C string literal
     // initialised to "top" in glue.c before this function is called.
@@ -1289,7 +1193,7 @@ pub unsafe extern "C" fn rrcad_preview_shape(
 
     let shape = unsafe { &*(ptr as *const Shape) };
     let path = state.glb_path.to_string_lossy();
-    if let Err(e) = shape.export_glb(&path, 0.1) {
+    if let Err(e) = shape.export_glb(&path, DEFAULT_LINEAR_DEFLECTION) {
         unsafe { set_err(error_out, &e) };
         return;
     }
@@ -1598,7 +1502,7 @@ pub unsafe extern "C" fn rrcad_shape_fillet_wire(
 }
 
 /// Construct a reference plane (Face) from 9 scalars: origin, normal, x_dir.
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // 9 params mirror OCCT's gp_Ax3(origin, normal, x_dir) exactly
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rrcad_datum_plane(
     ox: f64,

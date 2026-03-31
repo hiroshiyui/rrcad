@@ -106,6 +106,11 @@ pub fn mruby_eval_lock() -> &'static std::sync::Mutex<()> {
 /// Per-call evaluation time limit in seconds (Mitigation 3).
 const MCP_EVAL_TIMEOUT_SECS: u64 = 30;
 
+/// Export sandbox directory (Mitigation 5).  Created with mode 0700 at startup;
+/// CWD is changed here so bare filenames resolve inside this directory and pass
+/// `safe_path()` in the native layer.
+const MCP_SANDBOX_DIR: &str = "/tmp/rrcad_mcp";
+
 /// Address-space ceiling applied once at server startup (Mitigation 4).
 ///
 /// `setrlimit(RLIMIT_AS)` is **process-wide** on Linux — calling it from a
@@ -418,7 +423,7 @@ async fn do_cad_export(code: String, format: String) -> CallToolResult {
     // Generate a UUID filename that is unique per call.
     let uuid = uuid::Uuid::new_v4().simple().to_string();
     let filename = format!("{uuid}.{format}");
-    let abs_path = PathBuf::from("/tmp/rrcad_mcp").join(&filename);
+    let abs_path = PathBuf::from(MCP_SANDBOX_DIR).join(&filename);
 
     let result = timeout(
         Duration::from_secs(MCP_EVAL_TIMEOUT_SECS),
@@ -476,7 +481,7 @@ async fn do_cad_preview(code: String) -> CallToolResult {
 
         // Wire up the preview state used by the existing axum route handlers.
         let (reload_tx, _) = broadcast::channel::<()>(16);
-        let glb_path = PathBuf::from("/tmp/rrcad_mcp/preview.glb");
+        let glb_path = PathBuf::from(MCP_SANDBOX_DIR).join("preview.glb");
         // OnceLock::set returns Err(val) if already set; that is fine — another
         // concurrent call beat us here, just use whatever port was stored.
         let _ = crate::preview::PREVIEW.set(crate::preview::PreviewState {
@@ -799,7 +804,7 @@ pub fn start() -> Result<(), Box<dyn std::error::Error>> {
     // world-readable, even transiently — create_dir_all + set_permissions
     // has a TOCTOU window where another process could observe the directory
     // before the permissions are narrowed.
-    let sandbox = PathBuf::from("/tmp/rrcad_mcp");
+    let sandbox = PathBuf::from(MCP_SANDBOX_DIR);
     #[cfg(unix)]
     {
         use std::os::unix::fs::DirBuilderExt;

@@ -404,7 +404,10 @@ fn run_repl() {
         rustyline::Config::default(),
         rustyline::history::DefaultHistory::new(),
     )
-    .expect("failed to initialise readline");
+    .unwrap_or_else(|e| {
+        eprintln!("error: failed to initialise readline: {e}");
+        std::process::exit(1);
+    });
     rl.set_helper(Some(DslHelper));
 
     loop {
@@ -613,13 +616,15 @@ mod design_table_tests {
     }
 }
 
-/// Generate a randomised path for the temporary preview GLB file.
+/// Generate a hard-to-guess path for the temporary preview GLB file.
 ///
 /// Security rationale: a hardcoded, predictable path like `/tmp/rrcad_preview.glb`
 /// is vulnerable to symlink attacks — a local attacker can create the file (or a
 /// symlink pointing at a sensitive target) before the process does, causing rrcad
 /// to overwrite arbitrary files.  Mixing the process ID with a hash of the current
-/// time makes the filename hard to predict even if the attacker can observe the PID.
+/// time reduces the likelihood of a correct guess; note that `DefaultHasher` uses
+/// a fixed seed, so this is unpredictability-by-obscurity rather than a
+/// cryptographic guarantee.
 fn make_preview_glb_path() -> std::path::PathBuf {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
@@ -671,19 +676,28 @@ fn run_preview(script_path: &str, params: &[(String, String)]) {
     // directory, so we filter by the canonical script path.
     let canonical_script = std::fs::canonicalize(script_path)
         .unwrap_or_else(|_| std::path::PathBuf::from(script_path));
-    let watch_dir = canonical_script
-        .parent()
-        .expect("script path has no parent directory")
-        .to_path_buf();
+    let watch_dir = match canonical_script.parent() {
+        Some(d) => d.to_path_buf(),
+        None => {
+            eprintln!("error: script path '{script_path}' has no parent directory");
+            std::process::exit(1);
+        }
+    };
 
     let (tx, rx) = std::sync::mpsc::channel();
     let mut watcher = notify::recommended_watcher(move |res| {
         tx.send(res).ok();
     })
-    .expect("failed to create file watcher");
+    .unwrap_or_else(|e| {
+        eprintln!("error: failed to create file watcher: {e}");
+        std::process::exit(1);
+    });
     watcher
         .watch(&watch_dir, RecursiveMode::NonRecursive)
-        .expect("failed to watch script directory");
+        .unwrap_or_else(|e| {
+            eprintln!("error: failed to watch '{}': {e}", watch_dir.display());
+            std::process::exit(1);
+        });
 
     println!("Watching {script_path} for changes…");
 

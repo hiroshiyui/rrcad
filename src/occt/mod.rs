@@ -1,6 +1,6 @@
 #[cxx::bridge(namespace = "rrcad")]
 mod ffi {
-    #![allow(clippy::too_many_arguments)]
+    #![allow(clippy::too_many_arguments)] // OCCT bridge functions mirror C++ signatures with many scalar parameters
 
     unsafe extern "C++" {
         include!("bridge.h");
@@ -771,7 +771,7 @@ impl Shape {
 
     /// Construct a finite reference plane (Face) from origin, outward normal, and X direction.
     /// Returns a Face ±50 units wide, suitable for cross-sections and sketch placement.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)] // 9 params mirror OCCT's gp_Ax3(origin, normal, x_dir) exactly
     pub fn make_datum_plane(
         ox: f64,
         oy: f64,
@@ -914,6 +914,9 @@ impl Shape {
         if tools.is_empty() {
             return Err("cut_all: requires at least 1 tool".to_string());
         }
+        // Clone `self` via a no-op translate: Shape has no Clone impl because
+        // cxx UniquePtr<OcctShape> is not automatically cloneable.  A zero-vector
+        // BRepBuilderAPI_Transform is the lightest-weight way to get an owned copy.
         let mut acc = self.translate(0.0, 0.0, 0.0)?;
         for tool in tools {
             acc = acc.cut(tool)?;
