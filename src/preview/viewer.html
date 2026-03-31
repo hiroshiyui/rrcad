@@ -307,6 +307,10 @@ const flatMaterial = new THREE.MeshLambertMaterial({
   side:        THREE.DoubleSide,
 });
 
+// Shared edge-line material — one instance reused across all meshes so toggling
+// flat-line mode does not allocate a new LineBasicMaterial per mesh per enable.
+const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x555555 });
+
 // Apply (or clear) edge-line helpers attached to each mesh as children.
 function setEdgeLines(model, enabled) {
   if (!model) return;
@@ -316,14 +320,18 @@ function setEdgeLines(model, enabled) {
       // Only add once — guard against double application.
       if (node.getObjectByName('__edgeLines')) return;
       // 15° crease angle: shows sharp CAD edges, omits micro-facet triangulation noise.
-      const geo   = new THREE.EdgesGeometry(node.geometry, 15);
-      const lines = new THREE.LineSegments(geo,
-        new THREE.LineBasicMaterial({ color: 0x555555 }));
+      const lines = new THREE.LineSegments(
+        new THREE.EdgesGeometry(node.geometry, 15),
+        edgeMaterial,  // shared — do NOT dispose on removal
+      );
       lines.name = '__edgeLines';
       node.add(lines);
     } else {
       const lines = node.getObjectByName('__edgeLines');
-      if (lines) node.remove(lines);
+      if (lines) {
+        lines.geometry.dispose();  // per-mesh EdgesGeometry — free GPU memory
+        node.remove(lines);
+      }
     }
   });
 }
@@ -386,11 +394,19 @@ const menuBtn   = document.getElementById('menu-btn');
 const menuPanel = document.getElementById('menu-panel');
 
 function syncMenu() {
-  document.getElementById('mi-normal')  .classList.toggle('active', viewMode === 'normal');
-  document.getElementById('mi-flatline').classList.toggle('active', viewMode === 'flatline');
+  const normalActive   = (viewMode === 'normal');
+  const flatlineActive = (viewMode === 'flatline');
+  document.getElementById('mi-normal')  .classList.toggle('active', normalActive);
+  document.getElementById('mi-flatline').classList.toggle('active', flatlineActive);
   document.getElementById('mi-showroom').classList.toggle('active', sceneMode === 'showroom');
   document.getElementById('mi-white')   .classList.toggle('active', sceneMode === 'white');
   document.getElementById('mi-axes')    .classList.toggle('active', axes.visible);
+  // Show the F shortcut only on the *inactive* view item — the active one is already
+  // visually selected, and showing F on both is ambiguous.
+  const normalShortcut   = document.querySelector('#mi-normal .menu-shortcut');
+  const flatlineShortcut = document.querySelector('#mi-flatline .menu-shortcut');
+  if (normalShortcut)   normalShortcut.style.display   = flatlineActive ? '' : 'none';
+  if (flatlineShortcut) flatlineShortcut.style.display = normalActive   ? '' : 'none';
 }
 
 menuBtn.addEventListener('click', e => {
@@ -434,7 +450,16 @@ document.getElementById('mi-axes').addEventListener('click', () => {
   syncMenu();
 });
 
+// ── GLTF loader ───────────────────────────────────────────────────────────
+let currentModel = null;
+const loader = new GLTFLoader();
+const status = document.getElementById('status');
+
 window.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    menuPanel.classList.remove('open');
+    menuBtn.classList.remove('open');
+  }
   if (e.key === 'a' || e.key === 'A') { axes.visible = !axes.visible; syncMenu(); }
   if (e.key === 'f' || e.key === 'F') {
     viewMode = (viewMode === 'flatline') ? 'normal' : 'flatline';
@@ -443,11 +468,6 @@ window.addEventListener('keydown', e => {
     syncMenu();
   }
 });
-
-// ── GLTF loader ───────────────────────────────────────────────────────────
-let currentModel = null;
-const loader = new GLTFLoader();
-const status = document.getElementById('status');
 
 // Resize the key-light's shadow camera to tightly wrap the loaded model
 // so shadows are crisp rather than washed out by an over-large frustum.
@@ -494,7 +514,16 @@ function loadModel() {
   // Cache-bust so the browser always fetches the freshly written GLB.
   loader.load('/model.glb?' + Date.now(),
     gltf => {
-      if (currentModel) scene.remove(currentModel);
+      if (currentModel) {
+        // Free GPU memory for the outgoing model.  Materials (plastic / flatMaterial /
+        // edgeMaterial) are module-scoped shared instances and must NOT be disposed.
+        // EdgesGeometry children are per-mesh and are disposed here via setEdgeLines.
+        setEdgeLines(currentModel, false);  // dispose any attached EdgesGeometry
+        currentModel.traverse(node => {
+          if (node.isMesh) node.geometry.dispose();
+        });
+        scene.remove(currentModel);
+      }
       currentModel = gltf.scene;
 
       // OCCT exports in Z-up; glTF/Three.js is Y-up.
@@ -525,7 +554,10 @@ function loadModel() {
       status.textContent = statusText();
     },
     undefined,
-    () => { status.textContent = 'rrcad preview — waiting for model…'; }
+    err => {
+      console.error('rrcad: GLB load error', err);
+      status.textContent = 'rrcad preview — load error';
+    }
   );
 }
 
@@ -536,6 +568,7 @@ function connectWS() {
   const ws = new WebSocket('ws://' + location.host + '/ws');
   ws.onopen    = () => { status.textContent = statusText(); };
   ws.onmessage = e  => { if (e.data === 'reload') loadModel(); };
+  ws.onerror = e  => console.error('rrcad ws error', e);
   ws.onclose   = () => {
     status.textContent = 'rrcad preview — reconnecting…';
     setTimeout(connectWS, 1000);
