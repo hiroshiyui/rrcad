@@ -24,6 +24,105 @@
       opacity: 0.55;
       pointer-events: none;
     }
+
+    /* ── Hamburger menu ──────────────────────────────────────────────────── */
+    #menu-btn {
+      position: fixed; top: 8px; right: 8px;
+      width: 30px; height: 30px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 4px;
+      z-index: 20;
+      transition: background 0.15s;
+    }
+    #menu-btn:hover { background: rgba(255,255,255,0.10); }
+    #menu-btn span {
+      display: block;
+      width: 13px; height: 1.5px;
+      background: #6b7280;
+      border-radius: 1px;
+      transition: background 0.15s;
+    }
+    #menu-btn:hover span,
+    #menu-btn.open  span { background: #d1d5db; }
+
+    #menu-panel {
+      position: fixed; top: 44px; right: 8px;
+      background: rgba(10,12,18,0.92);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 6px;
+      padding: 5px 0;
+      min-width: 158px;
+      font: 12px/1.5 monospace;
+      color: #9ca3af;
+      backdrop-filter: blur(10px);
+      z-index: 20;
+      display: none;
+    }
+    #menu-panel.open { display: block; }
+
+    .menu-section + .menu-section {
+      border-top: 1px solid rgba(255,255,255,0.06);
+      margin-top: 3px;
+      padding-top: 3px;
+    }
+    .menu-label {
+      padding: 2px 11px 3px;
+      font-size: 10px;
+      color: #374151;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .menu-item {
+      display: flex; align-items: center;
+      padding: 4px 11px;
+      cursor: pointer;
+      gap: 8px;
+      transition: color 0.1s;
+    }
+    .menu-item:hover  { color: #e5e7eb; }
+    .menu-item.active { color: #f9fafb; }
+    /* Radio dot */
+    .menu-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      border: 1.5px solid currentColor;
+      flex-shrink: 0;
+    }
+    .menu-item.active .menu-dot { background: currentColor; }
+    /* Checkbox */
+    .menu-check {
+      width: 9px; height: 9px;
+      border: 1.5px solid currentColor;
+      border-radius: 2px;
+      flex-shrink: 0;
+      position: relative;
+    }
+    .menu-item.active .menu-check::after {
+      content: '';
+      position: absolute; inset: 1.5px;
+      background: currentColor;
+      border-radius: 1px;
+    }
+    .menu-shortcut {
+      margin-left: auto;
+      color: #374151;
+    }
+    .menu-item:hover .menu-shortcut { color: #6b7280; }
+
+    /* White scene overrides — keep UI readable on a bright background. */
+    body.scene-white #status { color: #9ca3af; }
+    body.scene-white #menu-btn {
+      background: rgba(0,0,0,0.06);
+      border-color: rgba(0,0,0,0.12);
+    }
+    body.scene-white #menu-btn span { background: #9ca3af; }
+    body.scene-white #menu-btn:hover span,
+    body.scene-white #menu-btn.open  span { background: #374151; }
   </style>
   <script type="importmap">
   {
@@ -38,6 +137,36 @@
 <div id="vignette"></div>
 <div id="status">rrcad preview — connecting…</div>
 <img id="logo" src="/logo.png" alt="rrcad">
+
+<button id="menu-btn" aria-label="View menu">
+  <span></span><span></span><span></span>
+</button>
+<div id="menu-panel">
+  <div class="menu-section">
+    <div class="menu-label">View</div>
+    <div class="menu-item" id="mi-normal">
+      <div class="menu-dot"></div>Normal<span class="menu-shortcut">F</span>
+    </div>
+    <div class="menu-item" id="mi-flatline">
+      <div class="menu-dot"></div>Flat-line<span class="menu-shortcut">F</span>
+    </div>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">Scene</div>
+    <div class="menu-item" id="mi-showroom">
+      <div class="menu-dot"></div>Showroom
+    </div>
+    <div class="menu-item" id="mi-white">
+      <div class="menu-dot"></div>White
+    </div>
+  </div>
+  <div class="menu-section">
+    <div class="menu-label">Show</div>
+    <div class="menu-item" id="mi-axes">
+      <div class="menu-check"></div>Axes<span class="menu-shortcut">A</span>
+    </div>
+  </div>
+</div>
 <script type="module">
 import * as THREE from 'three';
 import { GLTFLoader }      from 'three/addons/loaders/GLTFLoader.js';
@@ -61,7 +190,8 @@ const scene = new THREE.Scene();
 // Gradient background: vertical sweep from deep near-black at the top down to
 // a very faintly warm lift at the bottom — mimics the seamless paper sweep
 // used in professional product photography studios.
-{
+// bgTex is declared at module scope so applySceneMode() can restore it.
+const bgTex = (() => {
   const canvas = document.createElement('canvas');
   canvas.width = 2; canvas.height = 512;
   const ctx  = canvas.getContext('2d');
@@ -71,10 +201,11 @@ const scene = new THREE.Scene();
   grad.addColorStop(1.0, '#1c1f2a');  // bottom — very subtle warm lift
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, 2, 512);
-  const bgTex = new THREE.CanvasTexture(canvas);
-  bgTex.colorSpace = THREE.SRGBColorSpace;
-  scene.background = bgTex;
-}
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+})();
+scene.background = bgTex;
 
 // PBR ambient environment: IBL reflections on surfaces (quieter than default
 // so the explicit studio lights dominate and give directional character).
@@ -154,24 +285,162 @@ const axes = new THREE.AxesHelper(30);
 axes.visible = false;
 scene.add(axes);
 
-// Wireframe toggle state — persists across model reloads.
-let wireframeMode = false;
+// View mode — persists across model reloads.
+// 'normal' | 'flatline'
+let viewMode = 'normal';
 
-function applyWireframe(model, enabled) {
+// ABS plastic material — defined here so applyViewMode can restore it.
+const plastic = new THREE.MeshPhysicalMaterial({
+  color:              0x2b2d30,  // dark charcoal
+  roughness:          0.42,      // smooth but not mirror-like
+  metalness:          0.00,      // pure plastic
+  clearcoat:          0.50,      // thin glossy coat (mould sheen)
+  clearcoatRoughness: 0.20,
+  reflectivity:       0.35,
+  side:               THREE.DoubleSide,
+});
+
+// Flat-shaded material used in flat-line mode — white, no PBR gloss.
+const flatMaterial = new THREE.MeshLambertMaterial({
+  color:       0xffffff,
+  flatShading: true,
+  side:        THREE.DoubleSide,
+});
+
+// Apply (or clear) edge-line helpers attached to each mesh as children.
+function setEdgeLines(model, enabled) {
   if (!model) return;
   model.traverse(node => {
-    if (node.isMesh) node.material.wireframe = enabled;
+    if (!node.isMesh) return;
+    if (enabled) {
+      // Only add once — guard against double application.
+      if (node.getObjectByName('__edgeLines')) return;
+      // 15° crease angle: shows sharp CAD edges, omits micro-facet triangulation noise.
+      const geo   = new THREE.EdgesGeometry(node.geometry, 15);
+      const lines = new THREE.LineSegments(geo,
+        new THREE.LineBasicMaterial({ color: 0x555555 }));
+      lines.name = '__edgeLines';
+      node.add(lines);
+    } else {
+      const lines = node.getObjectByName('__edgeLines');
+      if (lines) node.remove(lines);
+    }
   });
 }
 
+function applyViewMode(model) {
+  if (!model) return;
+  const fl = (viewMode === 'flatline');
+  model.traverse(node => {
+    if (!node.isMesh) return;
+    node.material = fl ? flatMaterial : plastic;
+  });
+  setEdgeLines(model, fl);
+}
+
+function statusText() {
+  return viewMode === 'flatline' ? 'rrcad preview — flat-line'
+                                 : 'rrcad preview — live';
+}
+
+// ── Scene mode ────────────────────────────────────────────────────────────
+// 'showroom' — dark studio  |  'white' — pure white inspection scene
+let sceneMode = 'showroom';
+const vignette = document.getElementById('vignette');
+
+function applySceneMode() {
+  if (sceneMode === 'white') {
+    scene.background       = new THREE.Color(0xffffff);
+    scene.environmentIntensity = 0.25;
+    floor.material.color.set(0xffffff);
+    floor.material.roughness = 0.90;
+    floor.material.metalness = 0.00;
+    // Neutral bright lighting: flat hemisphere + soft overhead key only.
+    hemi.color.set(0xffffff); hemi.groundColor.set(0xffffff); hemi.intensity = 2.0;
+    key.color.set(0xffffff);  key.intensity  = 1.0;
+    fill.intensity   = 0.6;
+    rim.intensity    = 0.0;
+    bounce.intensity = 0.0;
+    vignette.style.display = 'none';
+    document.body.classList.add('scene-white');
+  } else {
+    scene.background       = bgTex;
+    scene.environmentIntensity = 0.55;
+    floor.material.color.set(0x10121a);
+    floor.material.roughness = 0.30;
+    floor.material.metalness = 0.10;
+    // Restore original showroom lights.
+    hemi.color.set(0xc8d8ff); hemi.groundColor.set(0x221a10); hemi.intensity = 0.55;
+    key.color.set(0xfff8f2);  key.intensity  = 2.4;
+    fill.intensity   = 0.55;
+    rim.intensity    = 1.2;
+    bounce.intensity = 0.12;
+    vignette.style.display = '';
+    document.body.classList.remove('scene-white');
+  }
+  floor.material.needsUpdate = true;
+}
+
+// ── Menu ─────────────────────────────────────────────────────────────────
+const menuBtn   = document.getElementById('menu-btn');
+const menuPanel = document.getElementById('menu-panel');
+
+function syncMenu() {
+  document.getElementById('mi-normal')  .classList.toggle('active', viewMode === 'normal');
+  document.getElementById('mi-flatline').classList.toggle('active', viewMode === 'flatline');
+  document.getElementById('mi-showroom').classList.toggle('active', sceneMode === 'showroom');
+  document.getElementById('mi-white')   .classList.toggle('active', sceneMode === 'white');
+  document.getElementById('mi-axes')    .classList.toggle('active', axes.visible);
+}
+
+menuBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  const open = menuPanel.classList.toggle('open');
+  menuBtn.classList.toggle('open', open);
+  if (open) syncMenu();
+});
+
+// Close when clicking outside the panel.
+document.addEventListener('click', () => {
+  menuPanel.classList.remove('open');
+  menuBtn.classList.remove('open');
+});
+menuPanel.addEventListener('click', e => e.stopPropagation());
+
+document.getElementById('mi-normal').addEventListener('click', () => {
+  viewMode = 'normal';
+  applyViewMode(currentModel);
+  status.textContent = statusText();
+  syncMenu();
+});
+document.getElementById('mi-flatline').addEventListener('click', () => {
+  viewMode = 'flatline';
+  applyViewMode(currentModel);
+  status.textContent = statusText();
+  syncMenu();
+});
+document.getElementById('mi-showroom').addEventListener('click', () => {
+  sceneMode = 'showroom';
+  applySceneMode();
+  syncMenu();
+});
+document.getElementById('mi-white').addEventListener('click', () => {
+  sceneMode = 'white';
+  applySceneMode();
+  syncMenu();
+});
+document.getElementById('mi-axes').addEventListener('click', () => {
+  axes.visible = !axes.visible;
+  syncMenu();
+});
+
 window.addEventListener('keydown', e => {
-  if (e.key === 'a' || e.key === 'A') axes.visible = !axes.visible;
-  if (e.key === 'w' || e.key === 'W') {
-    wireframeMode = !wireframeMode;
-    applyWireframe(currentModel, wireframeMode);
-    status.textContent = wireframeMode
-      ? 'rrcad preview — wireframe'
-      : 'rrcad preview — live';
+  if (e.key === 'a' || e.key === 'A') { axes.visible = !axes.visible; syncMenu(); }
+  if (e.key === 'f' || e.key === 'F') {
+    viewMode = (viewMode === 'flatline') ? 'normal' : 'flatline';
+    applyViewMode(currentModel);
+    status.textContent = statusText();
+    syncMenu();
   }
 });
 
@@ -239,16 +508,8 @@ function loadModel() {
       currentModel.position.y -= box0.min.y;
       currentModel.updateMatrixWorld(true);
 
-      // ABS plastic material: dark charcoal, injection-moulded clearcoat.
-      const plastic = new THREE.MeshPhysicalMaterial({
-        color:              0x2b2d30,  // dark charcoal
-        roughness:          0.42,      // smooth but not mirror-like
-        metalness:          0.00,      // pure plastic
-        clearcoat:          0.50,      // thin glossy coat (mould sheen)
-        clearcoatRoughness: 0.20,
-        reflectivity:       0.35,
-        side:               THREE.DoubleSide,
-      });
+      // Apply the base plastic material and shadow settings to all meshes.
+      // applyViewMode() will override material/edges to match the active view mode.
       currentModel.traverse(node => {
         if (node.isMesh) {
           node.material      = plastic;
@@ -260,10 +521,8 @@ function loadModel() {
       scene.add(currentModel);
       currentModel.updateMatrixWorld(true);
       fitCamera(currentModel);
-      applyWireframe(currentModel, wireframeMode);
-      status.textContent = wireframeMode
-        ? 'rrcad preview — wireframe'
-        : 'rrcad preview — live';
+      applyViewMode(currentModel);
+      status.textContent = statusText();
     },
     undefined,
     () => { status.textContent = 'rrcad preview — waiting for model…'; }
@@ -275,7 +534,7 @@ loadModel();
 // ── WebSocket live-reload ─────────────────────────────────────────────────
 function connectWS() {
   const ws = new WebSocket('ws://' + location.host + '/ws');
-  ws.onopen    = () => { status.textContent = 'rrcad preview — live'; };
+  ws.onopen    = () => { status.textContent = statusText(); };
   ws.onmessage = e  => { if (e.data === 'reload') loadModel(); };
   ws.onclose   = () => {
     status.textContent = 'rrcad preview — reconnecting…';
