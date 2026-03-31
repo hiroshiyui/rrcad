@@ -123,10 +123,16 @@ const MCP_MEMORY_LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 /// Undefs dangerous Kernel methods as a second line of defence after the
 /// compile-time gem restrictions (Mitigation 1). Works whether or not the
 /// binary was compiled with `mcp_safe.gembox`.
+///
+/// Includes file-access methods (`open`, `require`, `load`) even though
+/// Mitigation 1 removes `mruby-io` at compile time, so that development
+/// builds (which may include the default gembox) are equally restricted at
+/// runtime.
 const MCP_SECURITY_PRELUDE: &str = r#"
 [
   :system, :exec, :spawn, :fork, :exit, :exit!, :abort,
-  :`, :puts, :print, :p, :pp, :gets, :readline
+  :`, :puts, :print, :p, :pp, :gets, :readline,
+  :open, :require, :require_relative, :load
 ].each do |m|
   Kernel.send(:undef_method, m) rescue nil
 end
@@ -789,13 +795,18 @@ pub fn start() -> Result<(), Box<dyn std::error::Error>> {
     apply_memory_limit();
 
     // Mitigation 5: create export sandbox with restricted permissions.
+    // Use DirBuilder with an explicit mode so the directory is never
+    // world-readable, even transiently — create_dir_all + set_permissions
+    // has a TOCTOU window where another process could observe the directory
+    // before the permissions are narrowed.
     let sandbox = PathBuf::from("/tmp/rrcad_mcp");
-    std::fs::create_dir_all(&sandbox)?;
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&sandbox, std::fs::Permissions::from_mode(0o700))?;
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&sandbox)?;
     }
+    #[cfg(not(unix))]
+    std::fs::create_dir_all(&sandbox)?;
 
     // Change CWD → sandbox. Now bare filenames (e.g. "uuid.step") resolve to
     // /tmp/rrcad_mcp/uuid.step and pass safe_path() in the native layer.
@@ -898,6 +909,28 @@ mod tests {
             err.contains("uninitialized") || err.contains("constant") || err.contains("File"),
             "File.read should not be available in MCP VM: {err}"
         );
+    }
+
+    /// Verify that `open`, `require`, `require_relative`, and `load` are removed
+    /// by the runtime security prelude (Mitigation 2) regardless of which gembox
+    /// the binary was compiled with.  Unlike `test_mcp_vm_no_file_read` this test
+    /// never needs to be ignored — the prelude runs in every build.
+    #[test]
+    fn test_mcp_prelude_blocks_file_access_methods() {
+        let methods = [
+            ("open(\"/etc/passwd\")", "open"),
+            ("require \"json\"", "require"),
+            ("require_relative \"../etc/passwd\"", "require_relative"),
+            ("load \"/etc/passwd\"", "load"),
+        ];
+        for (code, label) in methods {
+            let mut vm = create_mcp_vm().expect("VM should initialise");
+            let err = vm.eval(code).unwrap_err();
+            assert!(
+                err.contains("undefined method") || err.contains("NoMethodError"),
+                "{label} should be undefined after security prelude, got: {err}"
+            );
+        }
     }
 
     // --- Basic DSL evaluation -----------------------------------------------

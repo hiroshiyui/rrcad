@@ -1,0 +1,6 @@
+[advisories]
+# RUSTSEC-2024-0436 — `paste` crate is unmaintained.
+# `paste` is a transitive dependency of `rmcp` used only for macro hygiene;
+# no exploit path is known.  Accepted pending an upstream rmcp update that
+# drops the dependency.
+ignore = ["RUSTSEC-2024-0436"]
