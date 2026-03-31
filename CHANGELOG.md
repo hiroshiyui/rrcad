@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [0.2.0] - 2026-03-31
+
 ### Added
 
 - **Preview: flat-line view** (`src/preview/viewer.html`): press `F` to toggle a
@@ -17,12 +21,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   top-right corner opens a panel with three sections — **View** (Normal / Flat-line
   radio buttons), **Scene** (Showroom / White radio buttons), and **Show** (Axes
   checkbox).  Keyboard shortcuts (`F`, `A`) remain functional and stay in sync with
-  the menu state.
+  the menu state.  Press `Escape` to close the menu.
 - **Preview: white scene** (`src/preview/viewer.html`): second scene preset — pure
   white background, white studio floor, flat neutral lighting (bright hemisphere + soft
   directional key only), vignette hidden.  The dark Showroom scene remains the default.
   Status text and menu-button colours adapt automatically for readability on the bright
   background.
+
+### Fixed
+
+- **Preview: GPU memory leaks** (`src/preview/viewer.html`): outgoing model's
+  `BufferGeometry` and `EdgesGeometry` instances are now disposed on each live-reload,
+  preventing unbounded GPU memory growth during long preview sessions.
+- **Preview: GLB load-error message** (`src/preview/viewer.html`): error callback now
+  sets status to `"rrcad preview — load error"` (previously showed "waiting for model")
+  and logs the error to the browser console.
+- **Preview: F shortcut ambiguity** (`src/preview/viewer.html`): the `F` shortcut label
+  is now shown only on the inactive view menu item; the active item is already visually
+  distinguished and does not need a shortcut hint.
+- **MCP server: sandbox directory permissions** (`src/mcp/mod.rs`): sandbox directory
+  is now created with mode `0o700` (user-only access) via `DirBuilder::mode`, eliminating
+  a TOCTOU window from the previous two-step create-then-chmod approach.
+- **MCP server: prelude blocks additional methods** (`src/mcp/mod.rs`): `open`,
+  `require`, `require_relative`, and `load` are now removed from `Kernel` in the security
+  prelude, preventing scripts from reading host files or loading arbitrary mRuby code.
+- **glue.c: malloc leak on mRuby raise** (`src/ruby/glue.c`): multi-shape operations
+  (`loft`, `sweep_sections`, `fuse_all`, `cut_all`, `sew`) now use
+  `mrb_data_check_get_ptr` (non-raising) with explicit NULL checks and free-before-raise
+  to avoid leaking the pointer array when an argument is an invalid type.
+- **bridge.cpp: std::exception escape from sewing_build** (`src/occt/bridge.cpp`): added
+  a second catch clause (`const std::exception&`) that re-throws, so non-OCCT C++
+  exceptions cannot silently cross the `cxx` boundary and abort the process.
+
+### Security
+
+- MCP prelude now blocks `open`, `require`, `require_relative`, and `load` in addition to
+  the previously blocked `system`, `exec`, `` ` ``, and `eval`.
+- Sandbox directory created with `0o700` permissions (was world-readable until chmod).
 
 ---
 
