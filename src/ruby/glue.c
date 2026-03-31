@@ -783,8 +783,13 @@ static mrb_value mrb_rrcad_loft(mrb_state* mrb, mrb_value self) {
 
     for (int i = 0; i < n; i++) {
         mrb_value elem = mrb_ary_ref(mrb, arr, i);
-        void* p = shape_ptr(mrb, elem); /* type-checks the element */
-        require_native_ptr(mrb, p);
+        /* mrb_data_check_get_ptr is non-raising: returns NULL for wrong type or
+         * stub shape.  Free before raising so the buffer is never leaked. */
+        void* p = mrb_data_check_get_ptr(mrb, elem, &shape_type);
+        if (!p) {
+            free(ptrs);
+            mrb_raisef(mrb, E_TYPE_ERROR, "loft: element %d is not a valid Shape", i);
+        }
         ptrs[i] = p;
     }
 
@@ -1045,8 +1050,12 @@ static mrb_value mrb_rrcad_sweep_sections(mrb_state* mrb, mrb_value self) {
 
     for (int i = 0; i < n; i++) {
         mrb_value elem = mrb_ary_ref(mrb, arr, i);
-        void* p = shape_ptr(mrb, elem);
-        require_native_ptr(mrb, p);
+        /* Non-raising check: free before raise to avoid leaking the buffer. */
+        void* p = mrb_data_check_get_ptr(mrb, elem, &shape_type);
+        if (!p) {
+            free(ptrs);
+            mrb_raisef(mrb, E_TYPE_ERROR, "sweep_sections: element %d is not a valid Shape", i);
+        }
         ptrs[i] = p;
     }
 
@@ -1423,8 +1432,12 @@ static mrb_value mrb_rrcad_fuse_all(mrb_state* mrb, mrb_value self) {
 
     for (int i = 0; i < n; i++) {
         mrb_value elem = mrb_ary_ref(mrb, arr, (mrb_int)i);
-        void* p = shape_ptr(mrb, elem);
-        require_native_ptr(mrb, p);
+        /* Non-raising check: free before raise to avoid leaking the buffer. */
+        void* p = mrb_data_check_get_ptr(mrb, elem, &shape_type);
+        if (!p) {
+            free(ptrs);
+            mrb_raisef(mrb, E_TYPE_ERROR, "fuse_all: element %d is not a valid Shape", i);
+        }
         ptrs[i] = p;
     }
 
@@ -1460,8 +1473,12 @@ static mrb_value mrb_rrcad_cut_all(mrb_state* mrb, mrb_value self) {
 
     for (int i = 0; i < n; i++) {
         mrb_value elem = mrb_ary_ref(mrb, arr, (mrb_int)i);
-        void* p = shape_ptr(mrb, elem);
-        require_native_ptr(mrb, p);
+        /* Non-raising check: free before raise to avoid leaking the buffer. */
+        void* p = mrb_data_check_get_ptr(mrb, elem, &shape_type);
+        if (!p) {
+            free(ptrs);
+            mrb_raisef(mrb, E_TYPE_ERROR, "cut_all: element %d is not a valid Shape", i);
+        }
         ptrs[i] = p;
     }
 
@@ -1553,8 +1570,12 @@ static mrb_value mrb_rrcad_sew(mrb_state* mrb, mrb_value self) {
 
     for (int i = 0; i < n; i++) {
         mrb_value elem = mrb_ary_ref(mrb, arr, i);
-        void* p = shape_ptr(mrb, elem);
-        require_native_ptr(mrb, p);
+        /* Non-raising check: free before raise to avoid leaking the buffer. */
+        void* p = mrb_data_check_get_ptr(mrb, elem, &shape_type);
+        if (!p) {
+            free(ptrs);
+            mrb_raisef(mrb, E_TYPE_ERROR, "sew: element %d is not a valid Shape", i);
+        }
         ptrs[i] = p;
     }
 

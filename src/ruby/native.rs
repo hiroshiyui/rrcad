@@ -429,6 +429,8 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
         }
     };
     let safe_str = safe.to_string_lossy();
+    // SAFETY: `view` is always a valid, null-terminated C string literal
+    // initialised to "top" in glue.c before this function is called.
     let view_str = unsafe { std::ffi::CStr::from_ptr(view) }
         .to_str()
         .unwrap_or("top");
@@ -462,6 +464,8 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
         }
     };
     let safe_str = safe.to_string_lossy();
+    // SAFETY: `view` is always a valid, null-terminated C string literal
+    // initialised to "top" in glue.c before this function is called.
     let view_str = unsafe { std::ffi::CStr::from_ptr(view) }
         .to_str()
         .unwrap_or("top");

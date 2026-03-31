@@ -896,8 +896,12 @@ impl Shape {
             return Err("fuse_all: requires at least 2 shapes".to_string());
         }
         let mut iter = shapes.iter();
-        let first = *iter.next().unwrap();
-        let second = *iter.next().unwrap();
+        let first = *iter
+            .next()
+            .expect("fuse_all: invariant: at least 2 shapes after len check");
+        let second = *iter
+            .next()
+            .expect("fuse_all: invariant: at least 2 shapes after len check");
         let mut acc = first.fuse(second)?;
         for s in iter {
             acc = acc.fuse(s)?;

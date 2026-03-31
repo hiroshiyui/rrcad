@@ -749,8 +749,13 @@ std::unique_ptr<OcctShape> sewing_build(SewingBuilder& builder) {
 
         // Fall back: return the sewn shape as-is (open shell or compound).
         return wrap(sewn);
-    } catch (Standard_Failure& e) {
+    } catch (const Standard_Failure& e) {
         throw std::runtime_error(std::string("sewing_build failed: ") + e.GetMessageString());
+    } catch (const std::exception&) {
+        // Re-throw std::exception subclasses (e.g. from BRepBuilderAPI_MakeSolid or
+        // BRepLib::OrientClosedSolid) so they cross the cxx bridge as Rust errors
+        // rather than terminating the process as unhandled exceptions.
+        throw;
     }
 }
 
