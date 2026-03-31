@@ -213,3 +213,25 @@ fn cut_all_requires_one_tool() {
         "unexpected error: {err}"
     );
 }
+
+/// `cut_all` internally clones the base via `translate(0,0,0)` because `Shape`
+/// has no `Clone` impl.  This test guards that workaround: the result must be
+/// geometrically identical to a direct `.cut`, i.e. the same volume.
+#[test]
+fn cut_all_result_matches_direct_cut() {
+    let mut vm = MrubyVm::new();
+    // Direct cut volume.
+    let direct = vm
+        .eval("(box(20,20,20).cut(cylinder(4, 25).translate(10, 10, -2))).volume")
+        .expect("direct cut failed");
+    // cut_all with a single tool — exercises the no-op-translate clone path.
+    let via_all = vm
+        .eval("cut_all(box(20,20,20), [cylinder(4, 25).translate(10, 10, -2)]).volume")
+        .expect("cut_all single tool failed");
+    let v_direct: f64 = direct.trim().parse().expect("direct volume not a number");
+    let v_all: f64 = via_all.trim().parse().expect("cut_all volume not a number");
+    assert!(
+        (v_direct - v_all).abs() < 1.0,
+        "cut_all volume {v_all:.3} differs from direct cut {v_direct:.3} by more than 1 mm³"
+    );
+}
