@@ -191,7 +191,7 @@ fn design_table_batch_export() {
                 "40".to_string(),
             ],
         ];
-        let headers = vec!["name", "w", "h", "d"];
+        let headers = ["name", "w", "h", "d"];
         let mut ok = 0usize;
         for row in &rows {
             let params: Vec<(String, String)> = headers

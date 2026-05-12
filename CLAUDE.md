@@ -45,8 +45,9 @@ OCCT geometry kernel        (src/occt/)
   • STEP / STL / glTF (text) / GLB (binary) export
       │
 Live preview               (src/preview/)
-  • export_glb → /tmp/rrcad_preview.glb
-  • axum HTTP: GET / (Three.js HTML), GET /model.glb, GET /ws (WebSocket)
+  • export_glb → <temp-dir>/rrcad_preview_<uuid>.glb (CLI --preview)
+                 or /tmp/rrcad_mcp/preview.glb (MCP cad_preview)
+  • axum HTTP: GET / (Three.js HTML), GET /model.glb, GET /logo.png, GET /ws (WebSocket)
   • notify watches .rb script → re-eval → GLB → WS "reload"
 ```
 

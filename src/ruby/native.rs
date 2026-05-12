@@ -63,9 +63,9 @@ fn safe_path(raw: &str) -> Result<PathBuf, String> {
             // No directory component — file lives in the current directory.
             canon_cwd.clone()
         } else {
-            parent.canonicalize().map_err(|e| {
-                format!("cannot resolve directory for '{raw}': {e}")
-            })?
+            parent
+                .canonicalize()
+                .map_err(|e| format!("cannot resolve directory for '{raw}': {e}"))?
         };
         canon_parent.join(
             p.file_name()
@@ -179,10 +179,7 @@ pub unsafe extern "C" fn rrcad_make_cylinder(
 }
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rrcad_make_sphere(
-    r: f64,
-    error_out: *mut *const c_char,
-) -> *mut c_void {
+pub unsafe extern "C" fn rrcad_make_sphere(r: f64, error_out: *mut *const c_char) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
     unsafe { shape_result_to_ptr(Shape::make_sphere(r), error_out) }
 }
@@ -241,7 +238,9 @@ pub unsafe extern "C" fn rrcad_import_step(
     error_out: *mut *const c_char,
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
-    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else { return std::ptr::null_mut() };
+    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
+        return std::ptr::null_mut();
+    };
     let safe_str = safe.to_string_lossy();
     unsafe { shape_result_to_ptr(Shape::import_step(&safe_str), error_out) }
 }
@@ -252,7 +251,9 @@ pub unsafe extern "C" fn rrcad_import_stl(
     error_out: *mut *const c_char,
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
-    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else { return std::ptr::null_mut() };
+    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
+        return std::ptr::null_mut();
+    };
     let safe_str = safe.to_string_lossy();
     unsafe { shape_result_to_ptr(Shape::import_stl(&safe_str), error_out) }
 }
@@ -269,7 +270,9 @@ pub unsafe extern "C" fn rrcad_shape_export_step(
 ) {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else { return };
+    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
+        return;
+    };
     let safe_str = safe.to_string_lossy();
     if let Err(e) = shape.export_step(&safe_str) {
         unsafe { set_err(error_out, &e) };
@@ -284,7 +287,9 @@ pub unsafe extern "C" fn rrcad_shape_export_stl(
 ) {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else { return };
+    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
+        return;
+    };
     let safe_str = safe.to_string_lossy();
     if let Err(e) = shape.export_stl(&safe_str) {
         unsafe { set_err(error_out, &e) };
@@ -299,7 +304,9 @@ pub unsafe extern "C" fn rrcad_shape_export_gltf(
 ) {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else { return };
+    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
+        return;
+    };
     let safe_str = safe.to_string_lossy();
     if let Err(e) = shape.export_gltf(&safe_str, DEFAULT_LINEAR_DEFLECTION) {
         unsafe { set_err(error_out, &e) };
@@ -314,7 +321,9 @@ pub unsafe extern "C" fn rrcad_shape_export_glb(
 ) {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else { return };
+    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
+        return;
+    };
     let safe_str = safe.to_string_lossy();
     if let Err(e) = shape.export_glb(&safe_str, DEFAULT_LINEAR_DEFLECTION) {
         unsafe { set_err(error_out, &e) };
@@ -329,7 +338,9 @@ pub unsafe extern "C" fn rrcad_shape_export_obj(
 ) {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else { return };
+    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
+        return;
+    };
     let safe_str = safe.to_string_lossy();
     if let Err(e) = shape.export_obj(&safe_str, DEFAULT_LINEAR_DEFLECTION) {
         unsafe { set_err(error_out, &e) };
@@ -345,7 +356,9 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
 ) {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else { return };
+    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
+        return;
+    };
     let safe_str = safe.to_string_lossy();
     // SAFETY: `view` is always a valid, null-terminated C string literal
     // initialised to "top" in glue.c before this function is called.
@@ -366,7 +379,9 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
 ) {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else { return };
+    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
+        return;
+    };
     let safe_str = safe.to_string_lossy();
     // SAFETY: `view` is always a valid, null-terminated C string literal
     // initialised to "top" in glue.c before this function is called.
@@ -917,7 +932,12 @@ pub unsafe extern "C" fn rrcad_make_spline_2d_tan(
     unsafe { *error_out = std::ptr::null() };
     let slice = unsafe { std::slice::from_raw_parts(pts, n_pts * 2) };
     let t = unsafe { std::slice::from_raw_parts(tangents, 4) };
-    unsafe { shape_result_to_ptr(Shape::make_spline_2d_tan(slice, t[0], t[1], t[2], t[3]), error_out) }
+    unsafe {
+        shape_result_to_ptr(
+            Shape::make_spline_2d_tan(slice, t[0], t[1], t[2], t[3]),
+            error_out,
+        )
+    }
 }
 
 /// Tangent-constrained 3D spline: explicit start/end tangent vectors.
@@ -1180,10 +1200,7 @@ pub unsafe extern "C" fn rrcad_shape_surface_area(
 /// Tessellate `ptr` to binary glTF (GLB) and notify the WebSocket clients.
 /// No-op (returns success) when not in `--preview` mode.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn rrcad_preview_shape(
-    ptr: *mut c_void,
-    error_out: *mut *const c_char,
-) {
+pub unsafe extern "C" fn rrcad_preview_shape(ptr: *mut c_void, error_out: *mut *const c_char) {
     unsafe { *error_out = std::ptr::null() };
 
     let Some(state) = crate::preview::PREVIEW.get() else {
@@ -1517,7 +1534,12 @@ pub unsafe extern "C" fn rrcad_datum_plane(
     error_out: *mut *const c_char,
 ) -> *mut c_void {
     unsafe { *error_out = std::ptr::null() };
-    unsafe { shape_result_to_ptr(Shape::make_datum_plane(ox, oy, oz, nx, ny, nz, xx, xy, xz), error_out) }
+    unsafe {
+        shape_result_to_ptr(
+            Shape::make_datum_plane(ox, oy, oz, nx, ny, nz, xx, xy, xz),
+            error_out,
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------

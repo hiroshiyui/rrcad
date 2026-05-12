@@ -26,14 +26,19 @@ pub static PREVIEW: OnceLock<PreviewState> = OnceLock::new();
 /// Tokio runtime, and open the browser.
 ///
 /// Returns the runtime so the caller can keep it alive for the process
-/// lifetime (drop it to shut down the server).
-pub fn start(glb_path: PathBuf, port: u16) -> tokio::runtime::Runtime {
+/// lifetime (drop it to shut down the server). Returns `Err` if the preview
+/// state was already initialised or the tokio runtime could not be created.
+pub fn start(glb_path: PathBuf, port: u16) -> Result<tokio::runtime::Runtime, String> {
     let (reload_tx, _) = broadcast::channel(16);
     PREVIEW
-        .set(PreviewState { glb_path, reload_tx })
-        .expect("preview::start called more than once");
+        .set(PreviewState {
+            glb_path,
+            reload_tx,
+        })
+        .map_err(|_| "preview::start called more than once".to_string())?;
 
-    let rt = tokio::runtime::Runtime::new().expect("failed to create tokio runtime");
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| format!("failed to create tokio runtime: {e}"))?;
     rt.spawn(server::serve(port));
 
     // Give the server a moment to bind before opening the browser.
@@ -43,5 +48,5 @@ pub fn start(glb_path: PathBuf, port: u16) -> tokio::runtime::Runtime {
     println!("Preview server: {url}  (Ctrl-C to quit)");
     open::that(&url).ok();
 
-    rt
+    Ok(rt)
 }

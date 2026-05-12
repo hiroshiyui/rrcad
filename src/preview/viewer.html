@@ -556,7 +556,10 @@ function loadModel() {
     undefined,
     err => {
       console.error('rrcad: GLB load error', err);
-      status.textContent = 'rrcad preview — load error';
+      // Surface the underlying message so users can self-diagnose; the OCCT
+      // error (if any) is also printed to the rrcad terminal stderr.
+      const detail = (err && (err.message || err.statusText)) || 'check terminal for OCCT error';
+      status.textContent = 'rrcad preview — load error: ' + detail;
     }
   );
 }
@@ -564,14 +567,29 @@ function loadModel() {
 loadModel();
 
 // ── WebSocket live-reload ─────────────────────────────────────────────────
+// Exponential backoff on reconnect: 1 s → 2 s → 4 s → 8 s (capped).  After
+// MAX_RECONNECT_ATTEMPTS the loop stops and the user is told the server is
+// gone.  Without this the browser would pound a dead port every second
+// forever once rrcad exits.
+const MAX_RECONNECT_ATTEMPTS = 8;
+let reconnectAttempt = 0;
 function connectWS() {
   const ws = new WebSocket('ws://' + location.host + '/ws');
-  ws.onopen    = () => { status.textContent = statusText(); };
+  ws.onopen    = () => {
+    reconnectAttempt = 0;          // reset backoff on successful connect
+    status.textContent = statusText();
+  };
   ws.onmessage = e  => { if (e.data === 'reload') loadModel(); };
   ws.onerror = e  => console.error('rrcad ws error', e);
   ws.onclose   = () => {
-    status.textContent = 'rrcad preview — reconnecting…';
-    setTimeout(connectWS, 1000);
+    if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
+      status.textContent = 'rrcad preview — server gone (reload page to retry)';
+      return;
+    }
+    const delayMs = Math.min(1000 * Math.pow(2, reconnectAttempt), 8000);
+    reconnectAttempt += 1;
+    status.textContent = 'rrcad preview — reconnecting (attempt ' + reconnectAttempt + ')…';
+    setTimeout(connectWS, delayMs);
   };
 }
 connectWS();

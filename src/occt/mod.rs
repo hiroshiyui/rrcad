@@ -131,7 +131,7 @@ mod ffi {
         // Phase 7 Tier 1: 2D profile offset (Wire or Face in its own plane).
         fn shape_offset_2d(shape: &OcctShape, distance: f64) -> Result<UniquePtr<OcctShape>>;
         fn shape_simplify(shape: &OcctShape, min_feature_size: f64)
-            -> Result<UniquePtr<OcctShape>>;
+        -> Result<UniquePtr<OcctShape>>;
         fn shape_extrude_ex(
             shape: &OcctShape,
             height: f64,
@@ -256,7 +256,7 @@ mod ffi {
         ) -> Result<UniquePtr<OcctShape>>;
         fn shape_fill_surface(boundary_wire: &OcctShape) -> Result<UniquePtr<OcctShape>>;
         fn shape_slice(shape: &OcctShape, plane: &str, offset: f64)
-            -> Result<UniquePtr<OcctShape>>;
+        -> Result<UniquePtr<OcctShape>>;
 
         // --- Export ---
         fn export_step(shape: &OcctShape, path: &str) -> Result<()>;

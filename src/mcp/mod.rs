@@ -35,16 +35,10 @@
 //! | 7 | Input validation | length cap, null-byte check, format allowlist |
 //! | 8 | mRuby serialisation | `MRUBY_EVAL_LOCK` mutex prevents concurrent VMs (SIGSEGV) |
 
-use std::{
-    path::PathBuf,
-    sync::{Arc, OnceLock},
-    time::Duration,
-};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use rmcp::{
-    RoleServer,
-    ServerHandler,
-    ServiceExt,
+    RoleServer, ServerHandler, ServiceExt,
     model::{
         CallToolRequestParam, CallToolResult, Content, ErrorData, ListResourcesResult,
         ListToolsResult, PaginatedRequestParam, ReadResourceRequestParam, ReadResourceResult,
@@ -53,7 +47,7 @@ use rmcp::{
     service::RequestContext,
 };
 use serde::Deserialize;
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 use tokio::{
     io::{stdin, stdout},
     sync::broadcast,
@@ -129,17 +123,28 @@ const MCP_MEMORY_LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 /// compile-time gem restrictions (Mitigation 1). Works whether or not the
 /// binary was compiled with `mcp_safe.gembox`.
 ///
-/// Includes file-access methods (`open`, `require`, `load`) even though
-/// Mitigation 1 removes `mruby-io` at compile time, so that development
-/// builds (which may include the default gembox) are equally restricted at
-/// runtime.
+/// Includes file-access methods (`open`, `require`, `load`) and metaprogramming
+/// methods (`eval`, `send`, `instance_eval`, `define_method`, `binding`, …) even
+/// though Mitigation 1's `mcp_safe.gembox` already excludes the gems that
+/// provide them.  This ensures development builds (which may include the
+/// default gembox) are equally restricted at runtime — otherwise a `send` or
+/// `eval` would let user code reach methods we just undef'd by name.
+///
+/// Uses `Kernel.module_eval` (a Module instance method, not a Kernel one) so
+/// that undef'ing `:send` / `:__send__` mid-loop does not break the loop
+/// itself — `module_eval` was already invoked once before any undef occurred.
 const MCP_SECURITY_PRELUDE: &str = r#"
-[
-  :system, :exec, :spawn, :fork, :exit, :exit!, :abort,
-  :`, :puts, :print, :p, :pp, :gets, :readline,
-  :open, :require, :require_relative, :load
-].each do |m|
-  Kernel.send(:undef_method, m) rescue nil
+Kernel.module_eval do
+  [
+    :system, :exec, :spawn, :fork, :exit, :exit!, :abort,
+    :`, :puts, :print, :p, :pp, :gets, :readline,
+    :open, :require, :require_relative, :load,
+    :eval, :instance_eval, :class_eval, :module_eval,
+    :send, :__send__, :public_send,
+    :method, :define_method, :define_singleton_method, :binding
+  ].each do |m|
+    undef_method(m) rescue nil
+  end
 end
 "#;
 
@@ -155,7 +160,12 @@ const API_DOC: &str = include_str!("../../doc/api.md");
 // ---------------------------------------------------------------------------
 
 /// Port the MCP preview axum server is listening on (set on first cad_preview).
-static MCP_PREVIEW_PORT: OnceLock<u16> = OnceLock::new();
+///
+/// `tokio::sync::OnceCell` (rather than `std::sync::OnceLock`) is used so the
+/// initialiser is awaited under a single mutex: concurrent first-time
+/// `cad_preview` calls cannot each bind their own listener and leak axum
+/// tasks — only one initialiser runs, the rest await its result.
+static MCP_PREVIEW_PORT: tokio::sync::OnceCell<u16> = tokio::sync::OnceCell::const_new();
 
 // ---------------------------------------------------------------------------
 // MCP server struct
@@ -372,7 +382,10 @@ async fn do_cad_eval(code: String) -> CallToolResult {
 
             // Symbols inspect as ":name"; strip the leading colon.
             // Strings inspect with surrounding quotes; trim them.
-            let shape_type = raw_type.trim_matches('"').trim_start_matches(':').to_string();
+            let shape_type = raw_type
+                .trim_matches('"')
+                .trim_start_matches(':')
+                .to_string();
             let bb_clean = bb_str.trim_matches('"');
             let bb: Vec<f64> = bb_clean
                 .split(',')
@@ -461,40 +474,46 @@ async fn do_cad_preview(code: String) -> CallToolResult {
         return err_result(e);
     }
 
-    // Lazily start the preview server on first call.
-    let port = if let Some(&p) = MCP_PREVIEW_PORT.get() {
-        p
-    } else {
-        // Bind to port 0 **and keep the listener alive** so that the OS-assigned
-        // port is guaranteed free when axum starts.  Passing the bound listener
-        // directly to axum eliminates the TOCTOU race that existed when we
-        // extracted the port number, dropped the listener, and then had axum try
-        // to rebind — a window where another process could steal the port.
-        let listener = match tokio::net::TcpListener::bind("127.0.0.1:0").await {
-            Ok(l) => l,
-            Err(e) => return err_result(format!("Failed to bind preview port: {e}")),
-        };
-        let new_port = match listener.local_addr() {
-            Ok(addr) => addr.port(),
-            Err(e) => return err_result(format!("Failed to get preview port address: {e}")),
-        };
+    // Lazily start the preview server on first call.  `OnceCell::get_or_try_init`
+    // serialises concurrent first-time callers: only one binds the listener and
+    // spawns axum; the rest await the same result.  This prevents the leak
+    // where two concurrent callers each bind a listener and only one wins the
+    // OnceLock::set, orphaning the loser's listener + axum task.
+    let port_result = MCP_PREVIEW_PORT
+        .get_or_try_init(|| async {
+            // Bind to port 0 **and keep the listener alive** so that the OS-assigned
+            // port is guaranteed free when axum starts.  Passing the bound listener
+            // directly to axum eliminates the TOCTOU race that existed when we
+            // extracted the port number, dropped the listener, and then had axum try
+            // to rebind — a window where another process could steal the port.
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                .await
+                .map_err(|e| format!("Failed to bind preview port: {e}"))?;
+            let new_port = listener
+                .local_addr()
+                .map_err(|e| format!("Failed to get preview port address: {e}"))?
+                .port();
 
-        // Wire up the preview state used by the existing axum route handlers.
-        let (reload_tx, _) = broadcast::channel::<()>(16);
-        let glb_path = PathBuf::from(MCP_SANDBOX_DIR).join("preview.glb");
-        // OnceLock::set returns Err(val) if already set; that is fine — another
-        // concurrent call beat us here, just use whatever port was stored.
-        let _ = crate::preview::PREVIEW.set(crate::preview::PreviewState {
-            glb_path,
-            reload_tx,
-        });
+            // Wire up the preview state used by the existing axum route handlers.
+            let (reload_tx, _) = broadcast::channel::<()>(16);
+            let glb_path = PathBuf::from(MCP_SANDBOX_DIR).join("preview.glb");
+            // OnceLock::set returns Err(val) if already set; that is fine —
+            // a previous CLI `--preview` startup may have already initialised it.
+            let _ = crate::preview::PREVIEW.set(crate::preview::PreviewState {
+                glb_path,
+                reload_tx,
+            });
 
-        // Spawn the axum server with the already-bound listener.  No sleep
-        // needed — the port is bound now; clients can connect immediately.
-        tokio::spawn(crate::preview::server::serve_with_listener(listener));
+            // Spawn the axum server with the already-bound listener.  No sleep
+            // needed — the port is bound now; clients can connect immediately.
+            tokio::spawn(crate::preview::server::serve_with_listener(listener));
 
-        let _ = MCP_PREVIEW_PORT.set(new_port);
-        new_port
+            Ok::<u16, String>(new_port)
+        })
+        .await;
+    let port = match port_result {
+        Ok(&p) => p,
+        Err(e) => return err_result(e),
     };
 
     // Export the shape to `preview.glb` (relative → /tmp/rrcad_mcp/preview.glb).
@@ -589,10 +608,7 @@ fn build_examples_content() -> String {
             "03_transforms.rb",
             include_str!("../../samples/03_transforms.rb"),
         ),
-        (
-            "04_bracket.rb",
-            include_str!("../../samples/04_bracket.rb"),
-        ),
+        ("04_bracket.rb", include_str!("../../samples/04_bracket.rb")),
         (
             "05_export_formats.rb",
             include_str!("../../samples/05_export_formats.rb"),
@@ -601,10 +617,7 @@ fn build_examples_content() -> String {
             "06_live_preview.rb",
             include_str!("../../samples/06_live_preview.rb"),
         ),
-        (
-            "07_teapot.rb",
-            include_str!("../../samples/07_teapot.rb"),
-        ),
+        ("07_teapot.rb", include_str!("../../samples/07_teapot.rb")),
         (
             "08_parametric_box.rb",
             include_str!("../../samples/08_parametric_box.rb"),
@@ -808,7 +821,10 @@ pub fn start() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::DirBuilderExt;
-        std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&sandbox)?;
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&sandbox)?;
     }
     #[cfg(not(unix))]
     std::fs::create_dir_all(&sandbox)?;
@@ -844,13 +860,19 @@ mod tests {
     fn test_code_length_limit() {
         let code = "a".repeat(MCP_MAX_CODE_BYTES + 1);
         let err = validate_code(&code).unwrap_err();
-        assert!(err.contains("64 KB"), "error should mention the limit: {err}");
+        assert!(
+            err.contains("64 KB"),
+            "error should mention the limit: {err}"
+        );
     }
 
     #[test]
     fn test_code_null_byte_rejected() {
         let err = validate_code("box(10, 20, 30)\0evil").unwrap_err();
-        assert!(err.contains("null"), "error should mention null bytes: {err}");
+        assert!(
+            err.contains("null"),
+            "error should mention null bytes: {err}"
+        );
     }
 
     #[test]
@@ -869,10 +891,7 @@ mod tests {
     fn test_format_allowlist_rejects_unknown() {
         for bad in &["exe", "rb", "../etc/passwd", "step;rm -rf /", ""] {
             let err = validate_format(bad).unwrap_err();
-            assert!(
-                err.contains("Unsupported"),
-                "should reject '{bad}': {err}"
-            );
+            assert!(err.contains("Unsupported"), "should reject '{bad}': {err}");
         }
     }
 

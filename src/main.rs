@@ -1,11 +1,11 @@
 use rrcad::ruby::vm::MrubyVm;
 use rustyline::{
+    Context, Editor, Helper,
     completion::{Completer, Pair},
     error::ReadlineError,
     highlight::Highlighter,
     hint::Hinter,
     validate::Validator,
-    Context, Editor, Helper,
 };
 
 // ---------------------------------------------------------------------------
@@ -218,12 +218,19 @@ const SHAPE_METHODS: &[&str] = &[
     "simplify",
     // Phase 7 Tier 1
     "chamfer_asym",
+    "fillet_var",
     // Phase 7 Tier 2 — validation & introspection
     "shape_type",
     "centroid",
     "closed?",
     "manifold?",
     "validate",
+    "bounding_box",
+    "volume",
+    "surface_area",
+    "distance_to",
+    "inertia",
+    "min_thickness",
     // Phase 7 Tier 3 — surface modeling
     "slice",
     // Phase 8 Tier 1 — Core Part Design
@@ -569,71 +576,16 @@ fn run_design_table(
     }
 }
 
-#[cfg(test)]
-mod design_table_tests {
-    use super::parse_csv;
-
-    #[test]
-    fn parse_csv_basic() {
-        let (headers, rows) = parse_csv("name,width,height\nsmall,50,20\nlarge,100,40").unwrap();
-        assert_eq!(headers, vec!["name", "width", "height"]);
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0], vec!["small", "50", "20"]);
-        assert_eq!(rows[1], vec!["large", "100", "40"]);
-    }
-
-    #[test]
-    fn parse_csv_skips_comments_and_blank_lines() {
-        let src = "# generated\nname,w\n\n# skip\npart_a,10\npart_b,20\n";
-        let (headers, rows) = parse_csv(src).unwrap();
-        assert_eq!(headers, vec!["name", "w"]);
-        assert_eq!(rows.len(), 2);
-    }
-
-    #[test]
-    fn parse_csv_trims_whitespace() {
-        let (headers, rows) = parse_csv(" name , w \n part_a , 10 ").unwrap();
-        assert_eq!(headers, vec!["name", "w"]);
-        assert_eq!(rows[0], vec!["part_a", "10"]);
-    }
-
-    #[test]
-    fn parse_tsv_auto_detected() {
-        let (headers, rows) = parse_csv("name\tw\npart_a\t10").unwrap();
-        assert_eq!(headers, vec!["name", "w"]);
-        assert_eq!(rows[0], vec!["part_a", "10"]);
-    }
-
-    #[test]
-    fn parse_csv_empty_returns_error() {
-        assert!(parse_csv("").is_err());
-        assert!(parse_csv("# only a comment\n").is_err());
-    }
-
-    #[test]
-    fn parse_csv_header_only_returns_error() {
-        assert!(parse_csv("name,width\n").is_err());
-    }
-}
-
 /// Generate a hard-to-guess path for the temporary preview GLB file.
 ///
 /// Security rationale: a hardcoded, predictable path like `/tmp/rrcad_preview.glb`
 /// is vulnerable to symlink attacks — a local attacker can create the file (or a
 /// symlink pointing at a sensitive target) before the process does, causing rrcad
-/// to overwrite arbitrary files.  Mixing the process ID with a hash of the current
-/// time reduces the likelihood of a correct guess; note that `DefaultHasher` uses
-/// a fixed seed, so this is unpredictability-by-obscurity rather than a
-/// cryptographic guarantee.
+/// to overwrite arbitrary files.  Uses a v4 UUID (122 bits of OS-CSPRNG entropy)
+/// so the filename cannot be predicted from PID + approximate launch time.
 fn make_preview_glb_path() -> std::path::PathBuf {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-
-    let mut h = DefaultHasher::new();
-    std::time::SystemTime::now().hash(&mut h);
-    std::process::id().hash(&mut h);
-    let token = h.finish();
-    std::env::temp_dir().join(format!("rrcad_preview_{token:016x}.glb"))
+    let token = uuid::Uuid::new_v4().simple().to_string();
+    std::env::temp_dir().join(format!("rrcad_preview_{token}.glb"))
 }
 
 fn run_preview(script_path: &str, params: &[(String, String)]) {
@@ -647,7 +599,13 @@ fn run_preview(script_path: &str, params: &[(String, String)]) {
     let glb_path = make_preview_glb_path();
     // Keep a copy so we can delete the file when the process exits.
     let glb_path_for_cleanup = glb_path.clone();
-    let _rt = preview::start(glb_path, 3000);
+    let _rt = match preview::start(glb_path, 3000) {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("error: failed to start preview server: {e}");
+            std::process::exit(1);
+        }
+    };
 
     // Helper: read and eval the script, reporting errors to stderr.
     // Each eval creates a fresh VM; params are re-injected every time so that
@@ -728,4 +686,51 @@ fn run_preview(script_path: &str, params: &[(String, String)]) {
     // Best-effort cleanup: remove the randomised temp GLB file so it does not
     // accumulate in /tmp across restarts.  Errors are silently ignored.
     std::fs::remove_file(&glb_path_for_cleanup).ok();
+}
+
+#[cfg(test)]
+mod design_table_tests {
+    use super::parse_csv;
+
+    #[test]
+    fn parse_csv_basic() {
+        let (headers, rows) = parse_csv("name,width,height\nsmall,50,20\nlarge,100,40").unwrap();
+        assert_eq!(headers, vec!["name", "width", "height"]);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0], vec!["small", "50", "20"]);
+        assert_eq!(rows[1], vec!["large", "100", "40"]);
+    }
+
+    #[test]
+    fn parse_csv_skips_comments_and_blank_lines() {
+        let src = "# generated\nname,w\n\n# skip\npart_a,10\npart_b,20\n";
+        let (headers, rows) = parse_csv(src).unwrap();
+        assert_eq!(headers, vec!["name", "w"]);
+        assert_eq!(rows.len(), 2);
+    }
+
+    #[test]
+    fn parse_csv_trims_whitespace() {
+        let (headers, rows) = parse_csv(" name , w \n part_a , 10 ").unwrap();
+        assert_eq!(headers, vec!["name", "w"]);
+        assert_eq!(rows[0], vec!["part_a", "10"]);
+    }
+
+    #[test]
+    fn parse_tsv_auto_detected() {
+        let (headers, rows) = parse_csv("name\tw\npart_a\t10").unwrap();
+        assert_eq!(headers, vec!["name", "w"]);
+        assert_eq!(rows[0], vec!["part_a", "10"]);
+    }
+
+    #[test]
+    fn parse_csv_empty_returns_error() {
+        assert!(parse_csv("").is_err());
+        assert!(parse_csv("# only a comment\n").is_err());
+    }
+
+    #[test]
+    fn parse_csv_header_only_returns_error() {
+        assert!(parse_csv("name,width\n").is_err());
+    }
 }

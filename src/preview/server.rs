@@ -3,6 +3,7 @@
 //! Routes:
 //!   GET /           — Three.js viewer HTML
 //!   GET /model.glb  — current tessellated shape (binary glTF)
+//!   GET /logo.png   — rrcad logo served from doc/images/
 //!   GET /ws         — WebSocket, pushes "reload" on model update
 
 use axum::{
@@ -53,11 +54,7 @@ async fn handler_model() -> Response {
     };
 
     match tokio::fs::read(&state.glb_path).await {
-        Ok(bytes) => (
-            [(header::CONTENT_TYPE, "model/gltf-binary")],
-            bytes,
-        )
-            .into_response(),
+        Ok(bytes) => ([(header::CONTENT_TYPE, "model/gltf-binary")], bytes).into_response(),
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
 }

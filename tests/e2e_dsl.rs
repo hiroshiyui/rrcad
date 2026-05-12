@@ -531,7 +531,7 @@ fn e2e_export_stl() {
         .expect("export .stl failed");
     assert!(out.exists());
     let content = std::fs::read_to_string(&out).unwrap();
-    assert!(content.contains("solid") || content.len() > 0);
+    assert!(content.contains("solid") || !content.is_empty());
 }
 
 #[test]
