@@ -9,6 +9,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.1] - 2026-05-12
+
+### Security
+
+- **MCP prelude: undef metaprogramming methods** (`src/mcp/mod.rs`): the runtime
+  security prelude now also strips `eval`, `instance_eval`, `class_eval`,
+  `module_eval`, `send`, `__send__`, `public_send`, `method`, `define_method`,
+  `define_singleton_method`, and `binding` from `Kernel`.  Production builds
+  with `mcp_safe.gembox` were already safe, but a development build using the
+  default gembox could previously reach undef'd methods via `send` or `eval`.
+  The loop now runs inside `Kernel.module_eval { … }` so undef'ing `:send`
+  mid-iteration cannot break the loop itself.
+- **CLI preview tempfile uses CSPRNG** (`src/main.rs`): the temporary GLB
+  filename is now derived from `uuid::Uuid::new_v4()` (122 bits of OS-CSPRNG
+  entropy) instead of `DefaultHasher(time, pid)`.  The previous path was
+  predictable from PID plus approximate launch time, weakening the symlink-
+  attack mitigation.
+
+### Fixed
+
+- **Preview server start now returns `Result`** (`src/preview/mod.rs`,
+  `src/main.rs`): `preview::start` no longer panics on double-init or tokio
+  runtime creation failure — the CLI prints a clear error and exits cleanly.
+- **MCP preview port-init race** (`src/mcp/mod.rs`): `MCP_PREVIEW_PORT`
+  switched from `std::sync::OnceLock` to `tokio::sync::OnceCell` with
+  `get_or_try_init`.  Two concurrent first-time `cad_preview` calls could
+  previously each bind a listener and spawn an axum task — only one won the
+  `OnceLock::set`, leaking the loser's listener and task.  The async OnceCell
+  serialises initialisation so only one initialiser runs.
+- **Preview WebSocket reconnect storm** (`src/preview/viewer.html`): the
+  browser previously retried every 1 s forever after rrcad exited, pounding a
+  dead port.  Reconnect now uses exponential backoff (1 → 2 → 4 → 8 s, capped
+  at 8 attempts) and ends with a clear `"server gone (reload page to retry)"`
+  status.
+- **Preview GLB-load error detail** (`src/preview/viewer.html`): the load-
+  error status line now includes the underlying error message instead of the
+  bare `"load error"` text, making failures self-diagnosable from the browser.
+- **Clippy lints**: `items_after_test_module` in `src/main.rs` (helpers moved
+  above the test module), `useless_vec` in `tests/phase5_params.rs`, and
+  `len_zero` in `tests/e2e_dsl.rs`.
+
+### Changed
+
+- **REPL tab-completion**: `SHAPE_METHODS` in `src/main.rs` extended with
+  `fillet_var`, `bounding_box`, `volume`, `surface_area`, `distance_to`,
+  `inertia`, and `min_thickness` so autocomplete matches the documented and
+  available native methods.
+- **Documentation**: `CLAUDE.md` updated to reflect the per-process randomised
+  CLI preview tempfile and the MCP `/tmp/rrcad_mcp/preview.glb` path, and to
+  list the `/logo.png` axum route.  `src/preview/server.rs` module doc lists
+  `/logo.png`.
+
+---
+
 ## [0.2.0] - 2026-03-31
 
 ### Added
