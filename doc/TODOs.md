@@ -177,8 +177,9 @@ closed polygon profiles from points and lines, with constraint propagation for
 `parallel`, `perpendicular`, `symmetric`, `mirror_x`, and `mirror_y`. It also
 supports named construction points via `point(:name, x, y)`,
 `construction_point(:name, x, y)`, `ref(:name)`, and `self[:name]`, plus
-`midpoint` construction points. The current MVP works with `.extrude`, `.pad`,
-and `.pocket`, and supports exact circle profiles via
+`midpoint` construction points and non-profile `construction_line(a, b)`
+references. The current MVP works with `.extrude`, `.pad`, and `.pocket`, and
+supports exact circle profiles via
 `circle_at(center, radius)` plus translated arc wires via
 `arc_at(center, radius, start_deg, end_deg)`. It also includes a constrained
 `rectangle(origin, width, height)` helper and `centered_rectangle(center, width,

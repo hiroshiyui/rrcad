@@ -191,6 +191,7 @@ same entry point.
 | `arc_at(center, radius, start_deg, end_deg)` | Build an arc wire at a resolved sketch point |
 | `slot_between(a, b, radius)` | Build an axis-aligned rounded slot between two resolved points |
 | `line(a, b)` | Add a line segment between two sketch points |
+| `construction_line(a, b)` | Reference line for constraints; does not add profile edges |
 | `rectangle(origin, width, height)` | Add a constrained rectangular line loop from an origin point |
 | `centered_rectangle(center, width, height)` | Add a constrained rectangle around a center point |
 | `fixed(point, x = point.x, y = point.y)` | Lock a point coordinate |

@@ -156,6 +156,11 @@ class SketchBuilder
     [a, b]
   end
 
+  def construction_line(a, b)
+    require_points!(a, b, "construction_line")
+    [a, b]
+  end
+
   def rectangle(origin, width, height)
     require_point!(origin, "rectangle")
     require_positive_number!(width, "rectangle width")

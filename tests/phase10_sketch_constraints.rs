@@ -628,6 +628,47 @@ fn construction_point_alias_can_be_referenced_with_brackets() {
 }
 
 #[test]
+fn construction_line_does_not_add_profile_edges() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               a = construction_point(:a, 0, 0)
+               b = construction_point(:b, 10, 0)
+               construction_line a, b
+               origin = point(0, 0)
+               rectangle origin, 4, 3
+             end
+             profile.edges(:all).length",
+        )
+        .unwrap();
+    assert_eq!(result, "4");
+}
+
+#[test]
+fn construction_line_can_drive_constraints_without_closing_loop() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               a = construction_point(:a, 0, 0)
+               b = construction_point(:b, 8, 0)
+               construction_line a, b
+               origin = point(nil, nil)
+               coincident origin, a
+               rectangle origin, 8, 2
+             end
+             profile.extrude(1).volume",
+        )
+        .unwrap();
+    let volume: f64 = result.trim().parse().expect("expected a volume");
+    assert!(
+        (volume - 16.0).abs() < 1.0,
+        "expected construction-guided rectangle volume near 16, got {volume}"
+    );
+}
+
+#[test]
 fn unknown_sketch_reference_reports_name() {
     let mut vm = MrubyVm::new();
     let err = vm
