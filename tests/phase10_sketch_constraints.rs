@@ -284,3 +284,68 @@ fn perpendicular_constraint_propagates_axis_orientation() {
         "expected 12x6x2 profile volume near 144, got {volume}"
     );
 }
+
+#[test]
+fn named_points_can_be_referenced_by_name() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               point :origin, 0, 0
+               point :right, 20, nil
+               point :top_right, nil, 10
+               point :top_left, 0, nil
+               horizontal ref(:origin), ref(:right)
+               vertical ref(:right), ref(:top_right)
+               horizontal ref(:top_right), ref(:top_left)
+               vertical ref(:top_left), ref(:origin)
+               line ref(:origin), ref(:right)
+               line ref(:right), ref(:top_right)
+               line ref(:top_right), ref(:top_left)
+               line ref(:top_left), ref(:origin)
+             end
+             profile.extrude(2).volume",
+        )
+        .unwrap();
+    let volume: f64 = result.trim().parse().expect("expected a volume");
+    assert!(
+        (volume - 400.0).abs() < 1.0,
+        "expected 20x10x2 profile volume near 400, got {volume}"
+    );
+}
+
+#[test]
+fn construction_point_alias_can_be_referenced_with_brackets() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "sketch do
+               construction_point :a, 0, 0
+               construction_point :b, 5, 0
+               construction_point :c, 5, 5
+               construction_point :d, 0, 5
+               line self[:a], self[:b]
+               line self[:b], self[:c]
+               line self[:c], self[:d]
+               line self[:d], self[:a]
+             end.shape_type",
+        )
+        .unwrap();
+    assert_eq!(result, ":face");
+}
+
+#[test]
+fn unknown_sketch_reference_reports_name() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval(
+            "sketch do
+               ref(:missing)
+             end",
+        )
+        .unwrap_err();
+    assert!(
+        err.contains("unknown sketch reference: missing"),
+        "expected unknown reference error, got: {err}"
+    );
+}

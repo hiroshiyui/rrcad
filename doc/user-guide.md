@@ -179,6 +179,9 @@ constraints. The current MVP returns a closed polygon face, so it works anywhere
 | Method | Description |
 |--------|-------------|
 | `point(x = nil, y = nil)` | Create a sketch point; coordinates may be left unknown |
+| `point(:name, x = nil, y = nil)` | Create and name a sketch point |
+| `construction_point(:name, x = nil, y = nil)` | Alias for a named reference point |
+| `ref(:name)` / `self[:name]` | Look up a named sketch point |
 | `line(a, b)` | Add a line segment between two sketch points |
 | `fixed(point, x = point.x, y = point.y)` | Lock a point coordinate |
 | `horizontal(a, b)` | Force two points to share Y |

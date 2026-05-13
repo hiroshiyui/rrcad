@@ -81,12 +81,32 @@ class SketchBuilder
     @points = []
     @lines = []
     @constraints = []
+    @named = {}
   end
 
-  def point(x = nil, y = nil)
-    p = SketchPoint.new(x, y)
+  def point(x_or_name = nil, y = nil, maybe_y = nil)
+    if x_or_name.is_a?(Symbol) || x_or_name.is_a?(String)
+      p = SketchPoint.new(y, maybe_y)
+      @named[x_or_name.to_s] = p
+    else
+      p = SketchPoint.new(x_or_name, y)
+    end
     @points << p
     p
+  end
+
+  def construction_point(name, x = nil, y = nil)
+    point(name, x, y)
+  end
+
+  def ref(name)
+    point = @named[name.to_s]
+    raise KeyError, "unknown sketch reference: #{name}" if point.nil?
+    point
+  end
+
+  def [](name)
+    ref(name)
   end
 
   def line(a, b)
