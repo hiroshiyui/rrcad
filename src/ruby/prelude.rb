@@ -121,6 +121,19 @@ class SketchBuilder
     [a, b]
   end
 
+  def dimension(a, b, length)
+    require_points!(a, b, "dimension")
+    @constraints << [:dimension, a, b, length]
+    [a, b]
+  end
+
+  def equal_length(a, b, c, d)
+    require_points!(a, b, "equal_length")
+    require_points!(c, d, "equal_length")
+    @constraints << [:equal_length, a, b, c, d]
+    [a, b, c, d]
+  end
+
   def to_profile
     raise RuntimeError, "sketch requires at least 3 line segments" if @lines.length < 3
     solve_constraints
@@ -177,9 +190,83 @@ class SketchBuilder
       _type, a, b = constraint
       changed = unify_coord(a, b, :x, "coincident")
       unify_coord(a, b, :y, "coincident") || changed
+    when :dimension
+      _type, a, b, length = constraint
+      apply_dimension(a, b, length)
+    when :equal_length
+      _type, a, b, c, d = constraint
+      apply_equal_length(a, b, c, d)
     else
       false
     end
+  end
+
+  def apply_dimension(a, b, length)
+    if same_known_coord?(a, b, :y)
+      constrain_axis_distance(a, b, :x, length, "dimension")
+    elsif same_known_coord?(a, b, :x)
+      constrain_axis_distance(a, b, :y, length, "dimension")
+    elsif a.resolved? && b.resolved?
+      actual = distance(a, b)
+      if (actual - length).abs > 1.0e-6
+        raise RuntimeError, "conflicting dimension constraint"
+      end
+      false
+    else
+      false
+    end
+  end
+
+  def apply_equal_length(a, b, c, d)
+    ab = segment_length(a, b)
+    cd = segment_length(c, d)
+
+    if ab && cd
+      raise RuntimeError, "conflicting equal_length constraint" if (ab - cd).abs > 1.0e-6
+      false
+    elsif ab
+      apply_dimension(c, d, ab)
+    elsif cd
+      apply_dimension(a, b, cd)
+    else
+      false
+    end
+  end
+
+  def same_known_coord?(a, b, attr)
+    av = coord_get(a, attr)
+    bv = coord_get(b, attr)
+    !av.nil? && !bv.nil? && (av - bv).abs <= 1.0e-9
+  end
+
+  def constrain_axis_distance(a, b, attr, length, name)
+    av = coord_get(a, attr)
+    bv = coord_get(b, attr)
+
+    if av.nil? && bv.nil?
+      false
+    elsif av.nil?
+      coord_set(a, attr, bv - length)
+      true
+    elsif bv.nil?
+      coord_set(b, attr, av + length)
+      true
+    elsif ((bv - av).abs - length).abs > 1.0e-6
+      raise RuntimeError, "conflicting #{name} constraint"
+    else
+      false
+    end
+  end
+
+  def segment_length(a, b)
+    return nil unless a.resolved? && b.resolved?
+    distance(a, b)
+  end
+
+  def distance(a, b)
+    dx = b.x - a.x
+    dy = b.y - a.y
+    Math.sqrt(dx * dx + dy * dy)
   end
 
   def assign_coord(point, attr, value, name)
