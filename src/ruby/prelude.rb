@@ -80,6 +80,7 @@ class SketchBuilder
   def initialize
     @points = []
     @lines = []
+    @constraints = []
   end
 
   def point(x = nil, y = nil)
@@ -96,8 +97,33 @@ class SketchBuilder
     [a, b]
   end
 
+  def fixed(point, x = point.x, y = point.y)
+    require_point!(point, "fixed")
+    @constraints << [:fixed, point, x, y]
+    point
+  end
+
+  def horizontal(a, b)
+    require_points!(a, b, "horizontal")
+    @constraints << [:horizontal, a, b]
+    [a, b]
+  end
+
+  def vertical(a, b)
+    require_points!(a, b, "vertical")
+    @constraints << [:vertical, a, b]
+    [a, b]
+  end
+
+  def coincident(a, b)
+    require_points!(a, b, "coincident")
+    @constraints << [:coincident, a, b]
+    [a, b]
+  end
+
   def to_profile
     raise RuntimeError, "sketch requires at least 3 line segments" if @lines.length < 3
+    solve_constraints
 
     pts = []
     @lines.each_with_index do |(a, b), i|
@@ -120,6 +146,93 @@ class SketchBuilder
   end
 
   private
+
+  def solve_constraints
+    32.times do
+      changed = false
+      @constraints.each do |constraint|
+        changed = apply_constraint(constraint) || changed
+      end
+      return unless changed
+    end
+
+    raise RuntimeError, "sketch constraints did not converge"
+  end
+
+  def apply_constraint(constraint)
+    type = constraint[0]
+    case type
+    when :fixed
+      _type, p, x, y = constraint
+      changed = assign_coord(p, :x, x, "fixed") if !x.nil?
+      changed = assign_coord(p, :y, y, "fixed") || changed if !y.nil?
+      changed
+    when :horizontal
+      _type, a, b = constraint
+      unify_coord(a, b, :y, "horizontal")
+    when :vertical
+      _type, a, b = constraint
+      unify_coord(a, b, :x, "vertical")
+    when :coincident
+      _type, a, b = constraint
+      changed = unify_coord(a, b, :x, "coincident")
+      unify_coord(a, b, :y, "coincident") || changed
+    else
+      false
+    end
+  end
+
+  def assign_coord(point, attr, value, name)
+    current = coord_get(point, attr)
+    if current.nil?
+      coord_set(point, attr, value)
+      true
+    elsif (current - value).abs > 1.0e-9
+      raise RuntimeError, "conflicting #{name} constraint"
+    else
+      false
+    end
+  end
+
+  def unify_coord(a, b, attr, name)
+    av = coord_get(a, attr)
+    bv = coord_get(b, attr)
+
+    if av.nil? && bv.nil?
+      false
+    elsif av.nil?
+      coord_set(a, attr, bv)
+      true
+    elsif bv.nil?
+      coord_set(b, attr, av)
+      true
+    elsif (av - bv).abs > 1.0e-9
+      raise RuntimeError, "conflicting #{name} constraint"
+    else
+      false
+    end
+  end
+
+  def coord_get(point, attr)
+    attr == :x ? point.x : point.y
+  end
+
+  def coord_set(point, attr, value)
+    if attr == :x
+      point.x = value
+    else
+      point.y = value
+    end
+  end
+
+  def require_point!(point, name)
+    raise TypeError, "#{name} constraint expects sketch points" unless point.is_a?(SketchPoint)
+  end
+
+  def require_points!(a, b, name)
+    require_point!(a, name)
+    require_point!(b, name)
+  end
 
   def same_point?(a, b)
     a.resolved? && b.resolved? && (a.x - b.x).abs < 1.0e-9 && (a.y - b.y).abs < 1.0e-9
