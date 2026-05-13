@@ -310,6 +310,8 @@ enum Mode {
     },
     /// MCP server mode: serve CAD tools over stdio to an AI client.
     Mcp,
+    /// Hidden helper used by MCP mode to run one killable tool operation.
+    McpWorker(String),
 }
 
 struct CliArgs {
@@ -357,6 +359,13 @@ fn parse_args() -> CliArgs {
     let mode = match rest.first().map(String::as_str) {
         None | Some("--repl") => Mode::Repl,
         Some("--mcp") => Mode::Mcp,
+        Some("--mcp-worker") => match rest.get(1) {
+            Some(kind) => Mode::McpWorker(kind.clone()),
+            None => {
+                eprintln!("usage: rrcad --mcp-worker <eval|export|preview|validate>");
+                std::process::exit(1);
+            }
+        },
         Some("--preview") => match rest.get(1) {
             Some(path) => Mode::Preview(path.clone()),
             None => {
@@ -399,6 +408,7 @@ fn main() {
                 std::process::exit(1);
             }
         }
+        Mode::McpWorker(kind) => std::process::exit(rrcad::mcp::run_worker(&kind)),
     }
 }
 
