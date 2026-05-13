@@ -216,6 +216,53 @@ fn socket_head_cbore_rejects_unknown_size() {
     );
 }
 
+#[test]
+fn flat_head_csink_returns_shape() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("flat_head_csink(:m3, depth: 10).shape_type")
+        .unwrap();
+    assert!(
+        result == ":solid" || result == ":compound",
+        "expected :solid or :compound, got {result}"
+    );
+}
+
+#[test]
+fn flat_head_csink_uses_standard_head_diameter() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("flat_head_csink(:m3, depth: 10).bounding_box[:dx]")
+        .unwrap();
+    let dx: f64 = result.trim().parse().expect("expected a float");
+    assert!((dx - 6.3).abs() < 0.4, "expected M3 flat head csink diameter near 6.3, got {dx}");
+}
+
+#[test]
+fn flat_head_csink_cut_reduces_volume() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "plate = box(30, 30, 8)
+             tool = flat_head_csink(:m3, depth: 10).translate(15, 15, -1)
+             plate.cut(tool).volume < plate.volume",
+        )
+        .unwrap();
+    assert_eq!(result, "true", "flat-head countersink should reduce plate volume");
+}
+
+#[test]
+fn flat_head_csink_rejects_unknown_size() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval("flat_head_csink(:m9, depth: 10)")
+        .unwrap_err();
+    assert!(
+        err.contains("unsupported size"),
+        "expected unsupported size error, got: {err}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Draft angle extrude
 // ---------------------------------------------------------------------------

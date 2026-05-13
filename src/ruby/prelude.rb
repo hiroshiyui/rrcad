@@ -1205,6 +1205,22 @@ module Kernel
     cbore(d: spec[0], cbore_d: spec[1], cbore_h: head_depth, depth: depth)
   end
 
+  # flat_head_csink(size, depth:, angle: 45.0) — countersink tool sized for
+  # common metric flat-head screws. +angle+ is the cone half-angle in degrees.
+  def flat_head_csink(size, depth:, angle: 45.0)
+    spec = hardware_spec(size, {
+      "m2" => [2.4, 4.4],
+      "m2_5" => [2.9, 5.5],
+      "m25" => [2.9, 5.5],
+      "m3" => [3.4, 6.3],
+      "m4" => [4.5, 9.4],
+      "m5" => [5.5, 10.4],
+    }, "flat_head_csink")
+    validate_positive_dimension(depth, "flat_head_csink depth")
+    validate_positive_dimension(angle, "flat_head_csink angle")
+    csink(d: spec[0], csink_d: spec[1], csink_angle: angle, depth: depth)
+  end
+
   def hardware_diameter(size, table, label)
     if size.is_a?(Numeric)
       validate_positive_dimension(size, "#{label} diameter")
