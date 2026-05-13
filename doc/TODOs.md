@@ -174,10 +174,10 @@ workflow.
 **Constraint-based sketching ◐ MVP STARTED:** `sketch do ... end` now builds
 closed polygon profiles from points and lines, with constraint propagation for
 `fixed`, `horizontal`, `vertical`, `coincident`, `dimension`, `equal_length`,
-`parallel`, and `perpendicular`. It also supports named construction points via
-`point(:name, x, y)`, `construction_point(:name, x, y)`, `ref(:name)`, and
-`self[:name]`, plus `midpoint` construction points. The current MVP works with
-`.extrude`, `.pad`, and `.pocket`, and supports exact circle profiles via
+`parallel`, `perpendicular`, and `symmetric`. It also supports named construction
+points via `point(:name, x, y)`, `construction_point(:name, x, y)`, `ref(:name)`,
+and `self[:name]`, plus `midpoint` construction points. The current MVP works
+with `.extrude`, `.pad`, and `.pocket`, and supports exact circle profiles via
 `circle_at(center, radius)` plus translated arc wires via
 `arc_at(center, radius, start_deg, end_deg)`. It also includes a constrained
 `rectangle(origin, width, height)` helper and `centered_rectangle(center, width,

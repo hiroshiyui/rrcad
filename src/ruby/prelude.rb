@@ -257,6 +257,13 @@ class SketchBuilder
     [a, b, c, d]
   end
 
+  def symmetric(a, b, center)
+    require_points!(a, b, "symmetric")
+    require_point!(center, "symmetric")
+    @constraints << [:symmetric, a, b, center]
+    [a, b, center]
+  end
+
   def to_profile
     if @profile
       solve_constraints
@@ -392,6 +399,32 @@ class SketchBuilder
     when :centered_dimension
       _type, center, a, b, attr, length = constraint
       apply_centered_dimension(center, a, b, attr, length)
+    when :symmetric
+      _type, a, b, center = constraint
+      apply_symmetric(a, b, center)
+    else
+      false
+    end
+  end
+
+  def apply_symmetric(a, b, center)
+    changed = apply_symmetric_axis(a, b, center, :x)
+    apply_symmetric_axis(a, b, center, :y) || changed
+  end
+
+  def apply_symmetric_axis(a, b, center, attr)
+    av = coord_get(a, attr)
+    bv = coord_get(b, attr)
+    cv = coord_get(center, attr)
+
+    if av && bv && cv.nil?
+      assign_coord(center, attr, (av + bv) / 2.0, "symmetric")
+    elsif av && cv && bv.nil?
+      assign_coord(b, attr, 2.0 * cv - av, "symmetric")
+    elsif bv && cv && av.nil?
+      assign_coord(a, attr, 2.0 * cv - bv, "symmetric")
+    elsif av && bv && cv && ((av + bv) / 2.0 - cv).abs > 1.0e-6
+      raise RuntimeError, "conflicting symmetric constraint"
     else
       false
     end

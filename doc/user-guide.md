@@ -201,6 +201,7 @@ same entry point.
 | `equal_length(a, b, c, d)` | Make two line segments the same length |
 | `parallel(a, b, c, d)` | Make two axis-aligned line segments share orientation |
 | `perpendicular(a, b, c, d)` | Make two axis-aligned line segments perpendicular |
+| `symmetric(a, b, center)` | Keep two points opposite each other around a center point |
 
 ```ruby
 profile = sketch do

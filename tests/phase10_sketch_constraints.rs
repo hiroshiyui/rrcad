@@ -720,3 +720,73 @@ fn midpoint_can_drive_symmetric_profile() {
         "expected 20x8x2 profile volume near 320, got {volume}"
     );
 }
+
+#[test]
+fn symmetric_constraint_resolves_opposite_point() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               center = point(:center, 0, 0)
+               bottom_left = point(-10, -4)
+               top_right = point(nil, nil)
+               bottom_right = point(nil, -4)
+               top_left = point(-10, nil)
+               symmetric bottom_left, top_right, center
+               vertical bottom_right, top_right
+               horizontal top_left, top_right
+               vertical bottom_left, top_left
+               horizontal bottom_left, bottom_right
+               line bottom_left, bottom_right
+               line bottom_right, top_right
+               line top_right, top_left
+               line top_left, bottom_left
+             end
+             profile.extrude(2).volume",
+        )
+        .unwrap();
+    let volume: f64 = result.trim().parse().expect("expected a volume");
+    assert!(
+        (volume - 320.0).abs() < 1.0,
+        "expected symmetric 20x8x2 rectangle volume near 320, got {volume}"
+    );
+}
+
+#[test]
+fn symmetric_constraint_can_resolve_center() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               left = point(-6, 0)
+               right = point(6, 0)
+               center = point(:center, nil, nil)
+               symmetric left, right, center
+               circle_at center, 2
+             end
+             profile.bounding_box",
+        )
+        .unwrap();
+    assert!(result.contains("x: -2"), "expected center-resolved circle xmin near -2, got {result}");
+    assert!(result.contains("y: -2"), "expected center-resolved circle ymin near -2, got {result}");
+}
+
+#[test]
+fn conflicting_symmetric_constraint_reports_error() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval(
+            "sketch do
+               left = point(-6, 0)
+               right = point(8, 0)
+               center = point(0, 0)
+               symmetric left, right, center
+               circle_at center, 1
+             end",
+        )
+        .unwrap_err();
+    assert!(
+        err.contains("conflicting symmetric constraint"),
+        "expected symmetric conflict, got: {err}"
+    );
+}
