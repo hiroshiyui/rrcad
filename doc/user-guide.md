@@ -182,6 +182,7 @@ constraints. The current MVP returns a closed polygon face, so it works anywhere
 | `point(:name, x = nil, y = nil)` | Create and name a sketch point |
 | `construction_point(:name, x = nil, y = nil)` | Alias for a named reference point |
 | `ref(:name)` / `self[:name]` | Look up a named sketch point |
+| `midpoint(a, b)` / `midpoint(:name, a, b)` | Create a construction point halfway between two points |
 | `line(a, b)` | Add a line segment between two sketch points |
 | `fixed(point, x = point.x, y = point.y)` | Lock a point coordinate |
 | `horizontal(a, b)` | Force two points to share Y |

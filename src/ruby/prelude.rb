@@ -109,6 +109,23 @@ class SketchBuilder
     ref(name)
   end
 
+  def midpoint(name_or_a, a_or_b, maybe_b = nil)
+    if name_or_a.is_a?(Symbol) || name_or_a.is_a?(String)
+      name = name_or_a
+      a = a_or_b
+      b = maybe_b
+      p = point(name, nil, nil)
+    else
+      a = name_or_a
+      b = a_or_b
+      p = point(nil, nil)
+    end
+
+    require_points!(a, b, "midpoint")
+    @constraints << [:midpoint, p, a, b]
+    p
+  end
+
   def line(a, b)
     unless a.is_a?(SketchPoint) && b.is_a?(SketchPoint)
       raise TypeError, "line endpoints must be sketch points"
@@ -236,6 +253,30 @@ class SketchBuilder
     when :perpendicular
       _type, a, b, c, d = constraint
       apply_perpendicular(a, b, c, d)
+    when :midpoint
+      _type, p, a, b = constraint
+      apply_midpoint(p, a, b)
+    else
+      false
+    end
+  end
+
+  def apply_midpoint(p, a, b)
+    changed = apply_midpoint_axis(p, a, b, :x)
+    apply_midpoint_axis(p, a, b, :y) || changed
+  end
+
+  def apply_midpoint_axis(p, a, b, attr)
+    pv = coord_get(p, attr)
+    av = coord_get(a, attr)
+    bv = coord_get(b, attr)
+
+    if av && bv
+      assign_coord(p, attr, (av + bv) / 2.0, "midpoint")
+    elsif pv && av
+      assign_coord(b, attr, 2.0 * pv - av, "midpoint")
+    elsif pv && bv
+      assign_coord(a, attr, 2.0 * pv - bv, "midpoint")
     else
       false
     end

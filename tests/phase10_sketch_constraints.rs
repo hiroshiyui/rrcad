@@ -349,3 +349,58 @@ fn unknown_sketch_reference_reports_name() {
         "expected unknown reference error, got: {err}"
     );
 }
+
+#[test]
+fn midpoint_construction_point_resolves_from_endpoints() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               left = point(nil, 0)
+               right = point(10, 0)
+               center = midpoint(:center, left, right)
+               fixed center, 0, 0
+               top = point(0, 5)
+               line left, right
+               line right, top
+               line top, left
+             end
+             profile.extrude(2).volume",
+        )
+        .unwrap();
+    let volume: f64 = result.trim().parse().expect("expected a volume");
+    assert!(
+        (volume - 100.0).abs() < 1.0,
+        "expected symmetric triangle volume near 100, got {volume}"
+    );
+}
+
+#[test]
+fn midpoint_can_drive_symmetric_profile() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               left = point(-10, 0)
+               right = point(10, 0)
+               center = midpoint(:center, left, right)
+               top_right = point(nil, 8)
+               top_left = point(nil, 8)
+               vertical right, top_right
+               vertical left, top_left
+               horizontal top_left, top_right
+               fixed center, 0, 0
+               line left, right
+               line right, top_right
+               line top_right, top_left
+               line top_left, left
+             end
+             profile.extrude(2).volume",
+        )
+        .unwrap();
+    let volume: f64 = result.trim().parse().expect("expected a volume");
+    assert!(
+        (volume - 320.0).abs() < 1.0,
+        "expected 20x8x2 profile volume near 320, got {volume}"
+    );
+}
