@@ -177,9 +177,10 @@ closed polygon profiles from points and lines, with constraint propagation for
 `parallel`, and `perpendicular`. It also supports named construction points via
 `point(:name, x, y)`, `construction_point(:name, x, y)`, `ref(:name)`, and
 `self[:name]`, plus `midpoint` construction points. The current MVP works with
-`.extrude`, `.pad`, and `.pocket`. Remaining work: tangent, arcs/circles,
-richer construction geometry, stronger solver diagnostics, and broader
-under/over-constrained sketch analysis.
+`.extrude`, `.pad`, and `.pocket`, and supports exact circle profiles via
+`circle_at(center, radius)`. Remaining work: tangent, arcs, richer construction
+geometry, stronger solver diagnostics, and broader under/over-constrained sketch
+analysis.
 
 **Feature history / parametric model tree:** Represent modeling operations as a
 regeneratable feature graph instead of only immutable shape results. This would

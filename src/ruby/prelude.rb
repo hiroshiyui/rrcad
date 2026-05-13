@@ -82,6 +82,7 @@ class SketchBuilder
     @lines = []
     @constraints = []
     @named = {}
+    @profile = nil
   end
 
   def point(x_or_name = nil, y = nil, maybe_y = nil)
@@ -124,6 +125,12 @@ class SketchBuilder
     require_points!(a, b, "midpoint")
     @constraints << [:midpoint, p, a, b]
     p
+  end
+
+  def circle_at(center, radius)
+    require_point!(center, "circle_at")
+    @profile = [:circle_at, center, radius]
+    nil
   end
 
   def line(a, b)
@@ -186,6 +193,11 @@ class SketchBuilder
   end
 
   def to_profile
+    if @profile
+      solve_constraints
+      return profile_shape
+    end
+
     raise RuntimeError, "sketch requires at least 3 line segments" if @lines.length < 3
     solve_constraints
 
@@ -211,6 +223,20 @@ class SketchBuilder
   end
 
   private
+
+  def profile_shape
+    type = @profile[0]
+    case type
+    when :circle_at
+      _type, center, radius = @profile
+      unless center.resolved?
+        raise RuntimeError, "sketch is under-constrained: #{point_label(center)} missing #{missing_coords(center)}"
+      end
+      circle(radius).translate(center.x, center.y, 0)
+    else
+      raise RuntimeError, "unknown sketch profile"
+    end
+  end
 
   def solve_constraints
     32.times do

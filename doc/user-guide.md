@@ -187,6 +187,7 @@ same entry point.
 | `construction_point(:name, x = nil, y = nil)` | Alias for a named reference point |
 | `ref(:name)` / `self[:name]` | Look up a named sketch point |
 | `midpoint(a, b)` / `midpoint(:name, a, b)` | Create a construction point halfway between two points |
+| `circle_at(center, radius)` | Build an exact circular profile at a resolved sketch point |
 | `line(a, b)` | Add a line segment between two sketch points |
 | `fixed(point, x = point.x, y = point.y)` | Lock a point coordinate |
 | `horizontal(a, b)` | Force two points to share Y |
@@ -221,6 +222,11 @@ end
 part = profile.extrude(5.mm)
 
 round_part = sketch { circle(8.mm) }.extrude(3.mm)
+
+boss = sketch do
+  c = point(:center, 20.mm, 10.mm)
+  circle_at c, 4.mm
+end.extrude(6.mm)
 ```
 
 ### Transforms

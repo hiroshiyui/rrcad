@@ -70,6 +70,40 @@ fn sketch_can_return_existing_profile_from_builder_block_arg() {
 }
 
 #[test]
+fn circle_at_builds_exact_profile_at_resolved_center() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "bb = sketch do
+               c = point(10, 5)
+               circle_at c, 3
+             end.bounding_box
+             [bb[:x], bb[:y], bb[:dx], bb[:dy]].inspect",
+        )
+        .unwrap();
+    assert!(result.contains("7"), "expected xmin near 7, got {result}");
+    assert!(result.contains("2"), "expected ymin near 2, got {result}");
+    assert!(result.contains("6"), "expected diameter near 6, got {result}");
+}
+
+#[test]
+fn circle_at_center_can_be_constraint_resolved() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               left = point(-5, 0)
+               right = point(5, 0)
+               center = midpoint(:center, left, right)
+               circle_at center, 2
+             end
+             profile.extrude(1).shape_type",
+        )
+        .unwrap();
+    assert_eq!(result, ":solid");
+}
+
+#[test]
 fn sketch_requires_closed_loop() {
     let mut vm = MrubyVm::new();
     let err = vm
