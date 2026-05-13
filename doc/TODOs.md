@@ -211,20 +211,16 @@ Ruby prelude: `1.6.mm`, `2.inch`, `1.cm`, `0.5.m`, `15.deg`, and
 `Math::PI.rad`. Future work can add richer unit-aware values if dimensional
 analysis becomes necessary.
 
-**Tolerance and manufacturing profiles ◐ STARTED:** `clearance_hole(size,
-depth:)` and `tap_drill(size, depth:)` support `:m2`, `:m2_5`, `:m3`, `:m4`,
-`:m5`, or a numeric diameter. `heat_set_insert(size, depth:)` supports `:m2`,
-`:m2_5`, `:m3`, or a numeric diameter. `socket_head_cbore(size, depth:,
-head_depth:)` adds metric socket-head counterbores. `flat_head_csink(size,
-depth:, angle:)` adds metric flat-head countersinks. `bearing_bore(size,
-depth:, fit:)` adds outer-diameter bores for common deep-groove ball bearings
-(`:b608`, `:b623`, `:b624`, `:b625`, `:b626`, `:b688`, `:b695`, `:b6000`,
-`:b6001`) with `:press` or `:slip` fit. `shaft(diameter, length:, fit:)`
-generates mating shaft cylinders with `:nominal`, `:press`, `:slip`, or
-`:running` fit adjustments. `screw(size, length:, style:)` generates
-solid fastener bodies (`:socket`, `:button`, `:flat`) for `:m2`–`:m5`
-sized to ISO 4762 / 7380 / 10642. Tolerance-and-manufacturing-profiles
-track is feature-complete for the initial scope.
+**Tolerance and manufacturing profiles ✓ COMPLETE (initial scope):**
+Hole tools: `clearance_hole`, `tap_drill`, `heat_set_insert`,
+`socket_head_cbore`, `flat_head_csink` (`:m2`–`:m5`). Bearing bores:
+`bearing_bore` for `:b608`/`:b623`/`:b624`/`:b625`/`:b626`/`:b688`/`:b695`/
+`:b6000`/`:b6001` with `:press`/`:slip` fit. Shaft fits: `shaft(diameter,
+length:, fit:)` with `:nominal`/`:press`/`:slip`/`:running`. Standard
+fasteners: `screw(size, length:, style:)` for `:m2`–`:m5` in `:socket`
+(ISO 4762), `:button` (ISO 7380), and `:flat` (ISO 10642) styles. Future
+work can extend to imperial sizes, washer/nut bodies, and richer
+dimensional unit-aware values if needed.
 
 **Preview inspection UX:** Upgrade the browser preview with face/edge hover IDs,
 click-to-print selectors, bounding box / volume / surface-area display, section

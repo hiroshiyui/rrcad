@@ -380,6 +380,9 @@ stud_grid  = grid_pattern(cylinder(2, 5), 4, 3, 10, 10)
 | `heat_set_insert(size, depth:)` | Heat-set insert pilot-hole tool; supports `:m2`, `:m2_5`, `:m3`, or a numeric diameter |
 | `socket_head_cbore(size, depth:, head_depth:)` | Counterbore tool for common metric socket-head screws |
 | `flat_head_csink(size, depth:, angle: 45)` | Countersink tool for common metric flat-head screws |
+| `bearing_bore(size, depth:, fit: :press)` | Outer-diameter bore for deep-groove ball bearings (`:b608`, `:b623`, `:b624`, `:b625`, `:b626`, `:b688`, `:b695`, `:b6000`, `:b6001`, or numeric OD); `fit:` is `:press` or `:slip` |
+| `shaft(diameter, length:, fit: :nominal)` | Solid mating shaft cylinder; `fit:` is `:nominal`, `:press`, `:slip`, or `:running` |
+| `screw(size, length:, style: :socket)` | Solid fastener body for `:m2`–`:m5`; `style:` is `:socket` (ISO 4762), `:button` (ISO 7380), or `:flat` (ISO 10642 90° conical head) |
 | `cbore(d:, cbore_d:, cbore_h:, depth:)` | Counterbore hole tool (use with `.cut`) |
 | `csink(d:, csink_d:, csink_angle:, depth:)` | Countersink hole tool (use with `.cut`) |
 

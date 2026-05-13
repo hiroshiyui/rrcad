@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Hardware helpers — hole tools** (`src/ruby/prelude.rb`,
+  `tests/phase8_tier2.rs`): added `clearance_hole(size, depth:)`,
+  `tap_drill(size, depth:)`, `heat_set_insert(size, depth:)`,
+  `socket_head_cbore(size, depth:, head_depth:)`, and
+  `flat_head_csink(size, depth:, angle:)` for `:m2`–`:m5` metric hardware,
+  each producing a cylinder/counterbore/countersink suitable for subtractive
+  modelling with `.cut`.
+- **Hardware helpers — bearing bores** (`src/ruby/prelude.rb`,
+  `tests/phase8_tier2.rs`): `bearing_bore(size, depth:, fit:)` produces an
+  outer-diameter bore for common deep-groove ball bearings (`:b608`, `:b623`,
+  `:b624`, `:b625`, `:b626`, `:b688`, `:b695`, `:b6000`, `:b6001`, or a numeric
+  OD), with `:press` (interference) or `:slip` (clearance) fit.
+- **Hardware helpers — shaft fits** (`src/ruby/prelude.rb`,
+  `tests/phase8_tier2.rs`): `shaft(diameter, length:, fit:)` generates a solid
+  mating shaft cylinder with `:nominal`, `:press`, `:slip`, or `:running` fit
+  adjustments relative to the nominal diameter.
+- **Hardware helpers — standard fasteners** (`src/ruby/prelude.rb`,
+  `tests/phase8_tier2.rs`): `screw(size, length:, style:)` generates solid
+  fastener bodies for `:m2`–`:m5` in `:socket` (ISO 4762), `:button`
+  (ISO 7380), and `:flat` (ISO 10642 90° conical head) styles.
+
 ---
 
 ## [0.2.2] - 2026-05-13

@@ -634,6 +634,14 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `thread(solid, face_sym, pitch:, depth:)` | Cut a helical groove into `solid`. `face_sym` is reserved (pass `:side`); geometry is inferred from the bounding box. Returns the threaded solid. Pure Ruby DSL — composes `helix` + `polygon` + `.sweep` + `.cut`. |
 | `cbore(d:, cbore_d:, cbore_h:, depth:)` | Counterbore 3-D hole tool. Subtract from a plate with `.cut`. All dimensions are diameters. Pure Ruby DSL. |
 | `csink(d:, csink_d:, csink_angle:, depth:)` | Countersink 3-D hole tool. `csink_angle` is the cone half-angle in degrees (45° = 90° included angle for flat-head screws). Subtract from a plate with `.cut`. Pure Ruby DSL. |
+| `clearance_hole(size, depth:)` | ISO close-clearance hole tool sized for `:m2`, `:m2_5`, `:m3`, `:m4`, `:m5`, or a numeric diameter. Pure Ruby DSL. |
+| `tap_drill(size, depth:)` | Metric coarse tap-drill hole tool for `:m2`–`:m5` or a numeric diameter. Pure Ruby DSL. |
+| `heat_set_insert(size, depth:)` | Pilot-hole tool sized for common heat-set inserts (`:m2`, `:m2_5`, `:m3`, or a numeric diameter). Pure Ruby DSL. |
+| `socket_head_cbore(size, depth:, head_depth:)` | Counterbore tool sized for metric socket-head cap screws (`:m2`–`:m5`). Pure Ruby DSL. |
+| `flat_head_csink(size, depth:, angle: 45)` | Countersink tool sized for metric flat-head screws (`:m2`–`:m5`). Pure Ruby DSL. |
+| `bearing_bore(size, depth:, fit: :press)` | Outer-diameter bore for common deep-groove ball bearings (`:b608`, `:b623`, `:b624`, `:b625`, `:b626`, `:b688`, `:b695`, `:b6000`, `:b6001`, or numeric OD). `fit:` is `:press` (−0.01 mm interference) or `:slip` (+0.05 mm clearance). Pure Ruby DSL. |
+| `shaft(diameter, length:, fit: :nominal)` | Solid mating shaft cylinder at the given nominal diameter with a fit adjustment (`:nominal`, `:press` +0.02, `:slip` −0.02, `:running` −0.05 mm). Pure Ruby DSL. |
+| `screw(size, length:, style: :socket)` | Solid fastener body for `:m2`–`:m5`. `style:` is `:socket` (ISO 4762 cylindrical socket-head cap screw), `:button` (ISO 7380 low dome head), or `:flat` (ISO 10642 90° conical head). Pure Ruby DSL. |
 | `param(:name, default: val)` | Declare a named parameter. Returns `val` unless a `--param name=x` CLI override was supplied; coerces string overrides to the default's type (Integer/Float/String). |
 | `param(:name, default: val, range: lo..hi)` | Same with range validation; raises `ArgumentError` if the value is outside the range. |
 | `solid { ... }` | Block returning its last expression |
