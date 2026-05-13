@@ -1159,6 +1159,22 @@ module Kernel
     cylinder(d / 2.0, depth)
   end
 
+  # tap_drill(size, depth:) — standard metric coarse tap-drill hole tool.
+  # +size+ may be a Symbol/String (`:m2`, `:m2_5`, `:m3`, `:m4`, `:m5`) or a
+  # numeric drill diameter in millimetres.
+  def tap_drill(size, depth:)
+    d = hardware_diameter(size, {
+      "m2" => 1.6,
+      "m2_5" => 2.05,
+      "m25" => 2.05,
+      "m3" => 2.5,
+      "m4" => 3.3,
+      "m5" => 4.2,
+    }, "tap_drill")
+    validate_positive_dimension(depth, "tap_drill depth")
+    cylinder(d / 2.0, depth)
+  end
+
   def hardware_diameter(size, table, label)
     if size.is_a?(Numeric)
       validate_positive_dimension(size, "#{label} diameter")

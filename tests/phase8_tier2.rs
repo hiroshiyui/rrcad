@@ -67,6 +67,56 @@ fn clearance_hole_rejects_unknown_size() {
     );
 }
 
+#[test]
+fn tap_drill_returns_solid() {
+    let mut vm = MrubyVm::new();
+    let result = vm.eval("tap_drill(:m3, depth: 8).shape_type").unwrap();
+    assert_eq!(result, ":solid");
+}
+
+#[test]
+fn tap_drill_uses_standard_size() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("tap_drill(:m3, depth: 8).bounding_box[:dx]")
+        .unwrap();
+    let dx: f64 = result.trim().parse().expect("expected a float");
+    assert!((dx - 2.5).abs() < 0.2, "expected M3 tap drill diameter near 2.5, got {dx}");
+}
+
+#[test]
+fn tap_drill_accepts_numeric_diameter() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("tap_drill(2.8, depth: 8).bounding_box[:dx]")
+        .unwrap();
+    let dx: f64 = result.trim().parse().expect("expected a float");
+    assert!((dx - 2.8).abs() < 0.2, "expected diameter near 2.8, got {dx}");
+}
+
+#[test]
+fn tap_drill_cut_reduces_volume() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "block = box(20, 20, 6)
+             tool = tap_drill(:m3, depth: 8).translate(10, 10, -1)
+             block.cut(tool).volume < block.volume",
+        )
+        .unwrap();
+    assert_eq!(result, "true", "tap drill should reduce block volume");
+}
+
+#[test]
+fn tap_drill_rejects_unknown_size() {
+    let mut vm = MrubyVm::new();
+    let err = vm.eval("tap_drill(:m9, depth: 10)").unwrap_err();
+    assert!(
+        err.contains("unsupported size"),
+        "expected unsupported size error, got: {err}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Draft angle extrude
 // ---------------------------------------------------------------------------
