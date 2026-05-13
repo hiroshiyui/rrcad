@@ -351,6 +351,29 @@ fn unknown_sketch_reference_reports_name() {
 }
 
 #[test]
+fn under_constrained_error_names_missing_coordinate() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval(
+            "sketch do
+               p1 = point(:origin, 0, 0)
+               p2 = point(:right, 20, nil)
+               p3 = point(:top, 0, 10)
+               line p1, p2
+               line p2, p3
+               line p3, p1
+             end",
+        )
+        .unwrap_err();
+    assert!(
+        err.contains("under-constrained")
+            && err.contains(":right")
+            && err.contains("missing y"),
+        "expected named under-constrained point error, got: {err}"
+    );
+}
+
+#[test]
 fn midpoint_construction_point_resolves_from_endpoints() {
     let mut vm = MrubyVm::new();
     let result = vm

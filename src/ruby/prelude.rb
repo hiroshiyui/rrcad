@@ -192,7 +192,8 @@ class SketchBuilder
     pts = []
     @lines.each_with_index do |(a, b), i|
       unless a.resolved? && b.resolved?
-        raise RuntimeError, "sketch is under-constrained"
+        point = a.resolved? ? b : a
+        raise RuntimeError, "sketch is under-constrained: #{point_label(point)} missing #{missing_coords(point)}"
       end
 
       if i > 0 && !same_point?(@lines[i - 1][1], a)
@@ -454,6 +455,22 @@ class SketchBuilder
 
   def same_point?(a, b)
     a.resolved? && b.resolved? && (a.x - b.x).abs < 1.0e-9 && (a.y - b.y).abs < 1.0e-9
+  end
+
+  def point_label(point)
+    @named.each do |name, candidate|
+      return ":#{name}" if candidate.equal?(point)
+    end
+
+    index = @points.index(point)
+    index.nil? ? "point" : "point #{index + 1}"
+  end
+
+  def missing_coords(point)
+    missing = []
+    missing << "x" if point.x.nil?
+    missing << "y" if point.y.nil?
+    missing.join("/")
   end
 end
 
