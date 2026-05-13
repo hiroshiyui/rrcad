@@ -13,23 +13,8 @@
 //! `.cargo/config.toml`); concurrent-thread tests are carefully serialised via
 //! the same `MRUBY_EVAL_LOCK` that the MCP tools use in production.
 
-use rrcad::ruby::vm::MrubyVm;
-
-/// The security prelude applied to every MCP VM (mirrors `mcp::create_mcp_vm`).
-const MCP_SECURITY_PRELUDE: &str = r#"
-[
-  :system, :exec, :spawn, :fork, :exit, :exit!, :abort,
-  :`, :puts, :print, :p, :pp, :gets, :readline
-].each do |m|
-  Kernel.send(:undef_method, m) rescue nil
-end
-"#;
-
-fn make_mcp_vm() -> MrubyVm {
-    let mut vm = MrubyVm::new();
-    vm.eval(MCP_SECURITY_PRELUDE)
-        .expect("security prelude should load");
-    vm
+fn make_mcp_vm() -> rrcad::ruby::vm::MrubyVm {
+    rrcad::mcp::create_mcp_vm().expect("MCP VM should initialise")
 }
 
 // ---------------------------------------------------------------------------
@@ -225,7 +210,7 @@ fn stress_mruby_eval_lock_serialises_threads() {
         let _lock = rrcad::mcp::mruby_eval_lock()
             .lock()
             .expect("lock should not be poisoned");
-        let mut vm = MrubyVm::new();
+        let mut vm = rrcad::ruby::vm::MrubyVm::new();
         vm.eval("box(1, 2, 3).volume")
             .expect("VM eval in thread 1 should succeed")
             .parse::<f64>()
@@ -238,7 +223,7 @@ fn stress_mruby_eval_lock_serialises_threads() {
         let _lock = rrcad::mcp::mruby_eval_lock()
             .lock()
             .expect("lock should not be poisoned");
-        let mut vm = MrubyVm::new();
+        let mut vm = rrcad::ruby::vm::MrubyVm::new();
         vm.eval("sphere(3).volume")
             .expect("VM eval in thread 2 should succeed")
             .parse::<f64>()

@@ -125,6 +125,15 @@ const MCP_MEMORY_LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 /// that undef'ing `:send` / `:__send__` mid-loop does not break the loop
 /// itself — `module_eval` was already invoked once before any undef occurred.
 const MCP_SECURITY_PRELUDE: &str = r#"
+BasicObject.module_eval do
+  [
+    :instance_eval, :instance_exec,
+    :send, :__send__
+  ].each do |m|
+    undef_method(m) rescue nil
+  end
+end
+
 Kernel.module_eval do
   [
     :system, :exec, :spawn, :fork, :exit, :exit!, :abort,
@@ -133,6 +142,31 @@ Kernel.module_eval do
     :eval, :instance_eval, :class_eval, :module_eval,
     :send, :__send__, :public_send,
     :method, :define_method, :define_singleton_method, :binding
+  ].each do |m|
+    undef_method(m) rescue nil
+  end
+end
+
+Object.module_eval do
+  [
+    :define_method, :define_singleton_method
+  ].each do |m|
+    undef_method(m) rescue nil
+  end
+end
+
+class << self
+  [
+    :define_method, :define_singleton_method
+  ].each do |m|
+    undef_method(m) rescue nil
+  end
+end
+
+Module.module_eval do
+  [
+    :define_method, :define_singleton_method,
+    :module_eval, :class_eval
   ].each do |m|
     undef_method(m) rescue nil
   end
@@ -259,7 +293,7 @@ fn apply_memory_limit() {
 /// Each tool call gets its own interpreter so no state leaks between calls.
 /// The MCP security prelude is evaluated immediately after startup to strip
 /// dangerous Kernel methods before user code runs.
-fn create_mcp_vm() -> Result<crate::ruby::vm::MrubyVm, String> {
+pub fn create_mcp_vm() -> Result<crate::ruby::vm::MrubyVm, String> {
     let mut vm = crate::ruby::vm::MrubyVm::new();
     vm.eval(MCP_SECURITY_PRELUDE)?;
     Ok(vm)

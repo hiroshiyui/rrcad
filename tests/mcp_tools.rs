@@ -13,29 +13,22 @@
 //! 3. Sandbox directory creation — `mcp::start()` is NOT called here (it
 //!    blocks on stdio), but we verify the sandbox path logic.
 
-use rrcad::ruby::vm::MrubyVm;
-
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// The security prelude applied to every MCP VM (Mitigation 2).
-/// Duplicated from `src/mcp/mod.rs` constants to make it testable here.
-const MCP_SECURITY_PRELUDE: &str = r#"
-[
-  :system, :exec, :spawn, :fork, :exit, :exit!, :abort,
-  :`, :puts, :print, :p, :pp, :gets, :readline
-].each do |m|
-  Kernel.send(:undef_method, m) rescue nil
-end
-"#;
+/// Create the same hardened VM that production MCP tool calls use.
+fn make_mcp_vm() -> rrcad::ruby::vm::MrubyVm {
+    rrcad::mcp::create_mcp_vm().expect("MCP VM should initialise")
+}
 
-/// Create a VM that mirrors what `mcp::create_mcp_vm()` produces.
-fn make_mcp_vm() -> MrubyVm {
-    let mut vm = MrubyVm::new();
-    vm.eval(MCP_SECURITY_PRELUDE)
-        .expect("security prelude should load");
-    vm
+fn assert_undefined_error(err: &str, label: &str) {
+    assert!(
+        err.to_lowercase().contains("undefined")
+            || err.to_lowercase().contains("nomethod")
+            || err.to_lowercase().contains("method"),
+        "unexpected error for {label}: {err}"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -48,12 +41,7 @@ fn mcp_vm_system_undefined() {
     let err = vm
         .eval("system('id')")
         .expect_err("system() should be undefined");
-    assert!(
-        err.to_lowercase().contains("undefined")
-            || err.to_lowercase().contains("nomethod")
-            || err.to_lowercase().contains("method"),
-        "unexpected error for system(): {err}"
-    );
+    assert_undefined_error(&err, "system()");
 }
 
 #[test]
@@ -62,12 +50,7 @@ fn mcp_vm_exec_undefined() {
     let err = vm
         .eval("exec('id')")
         .expect_err("exec() should be undefined");
-    assert!(
-        err.to_lowercase().contains("undefined")
-            || err.to_lowercase().contains("nomethod")
-            || err.to_lowercase().contains("method"),
-        "unexpected error for exec(): {err}"
-    );
+    assert_undefined_error(&err, "exec()");
 }
 
 #[test]
@@ -88,24 +71,55 @@ fn mcp_vm_puts_undefined() {
     let err = vm
         .eval("puts 'hello'")
         .expect_err("puts should be undefined");
-    assert!(
-        err.to_lowercase().contains("undefined")
-            || err.to_lowercase().contains("nomethod")
-            || err.to_lowercase().contains("method"),
-        "unexpected error for puts: {err}"
-    );
+    assert_undefined_error(&err, "puts");
 }
 
 #[test]
 fn mcp_vm_exit_undefined() {
     let mut vm = make_mcp_vm();
     let err = vm.eval("exit(0)").expect_err("exit() should be undefined");
-    assert!(
-        err.to_lowercase().contains("undefined")
-            || err.to_lowercase().contains("nomethod")
-            || err.to_lowercase().contains("method"),
-        "unexpected error for exit(): {err}"
-    );
+    assert_undefined_error(&err, "exit()");
+}
+
+#[test]
+fn mcp_vm_metaprogramming_methods_undefined() {
+    let methods = [
+        ("eval('1 + 1')", "eval"),
+        ("send(:system, 'id')", "send"),
+        ("__send__(:system, 'id')", "__send__"),
+        ("public_send(:system, 'id')", "public_send"),
+        ("module_eval { 1 }", "module_eval"),
+        ("define_method(:x) { 1 }", "define_method"),
+        ("binding", "binding"),
+    ];
+
+    for (code, label) in methods {
+        let mut vm = make_mcp_vm();
+        let err = match vm.eval(code) {
+            Ok(value) => panic!("{label} should be undefined, got {value}"),
+            Err(err) => err,
+        };
+        assert_undefined_error(&err, label);
+    }
+}
+
+#[test]
+fn mcp_vm_file_access_methods_undefined() {
+    let methods = [
+        ("open('/etc/passwd')", "open"),
+        ("require 'json'", "require"),
+        ("require_relative '../etc/passwd'", "require_relative"),
+        ("load '/etc/passwd'", "load"),
+    ];
+
+    for (code, label) in methods {
+        let mut vm = make_mcp_vm();
+        let err = match vm.eval(code) {
+            Ok(value) => panic!("{label} should be undefined, got {value}"),
+            Err(err) => err,
+        };
+        assert_undefined_error(&err, label);
+    }
 }
 
 // ---------------------------------------------------------------------------
