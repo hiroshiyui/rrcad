@@ -186,6 +186,8 @@ constraints. The current MVP returns a closed polygon face, so it works anywhere
 | `coincident(a, b)` | Force two points to share X and Y |
 | `dimension(a, b, length)` | Set or validate an axis-aligned segment length |
 | `equal_length(a, b, c, d)` | Make two line segments the same length |
+| `parallel(a, b, c, d)` | Make two axis-aligned line segments share orientation |
+| `perpendicular(a, b, c, d)` | Make two axis-aligned line segments perpendicular |
 
 ```ruby
 profile = sketch do

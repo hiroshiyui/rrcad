@@ -173,10 +173,11 @@ workflow.
 
 **Constraint-based sketching ◐ MVP STARTED:** `sketch do ... end` now builds
 closed polygon profiles from points and lines, with constraint propagation for
-`fixed`, `horizontal`, `vertical`, `coincident`, `dimension`, and `equal_length`.
-The current MVP works with `.extrude`, `.pad`, and `.pocket`. Remaining work:
-tangent, parallel, perpendicular, arcs/circles, named construction geometry,
-stronger solver diagnostics, and broader under/over-constrained sketch analysis.
+`fixed`, `horizontal`, `vertical`, `coincident`, `dimension`, `equal_length`,
+`parallel`, and `perpendicular`. The current MVP works with `.extrude`, `.pad`,
+and `.pocket`. Remaining work: tangent, arcs/circles, named construction
+geometry, stronger solver diagnostics, and broader under/over-constrained
+sketch analysis.
 
 **Feature history / parametric model tree:** Represent modeling operations as a
 regeneratable feature graph instead of only immutable shape results. This would
