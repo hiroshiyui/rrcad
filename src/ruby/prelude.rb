@@ -1221,6 +1221,34 @@ module Kernel
     csink(d: spec[0], csink_d: spec[1], csink_angle: angle, depth: depth)
   end
 
+  # bearing_bore(size, depth:, fit: :press) — bore tool sized for the outer
+  # diameter of common deep-groove ball bearings. +size+ may be a Symbol/String
+  # naming a bearing (`:b608`, `:b623`, `:b624`, `:b625`, `:b626`, `:b688`,
+  # `:b695`, `:b6000`, `:b6001`) or a numeric outer diameter in millimetres.
+  # +fit+ is `:press` (slight interference, default) or `:slip` (light
+  # clearance). Returns a cylindrical solid suitable for `.cut`.
+  def bearing_bore(size, depth:, fit: :press)
+    d = hardware_diameter(size, {
+      "b608" => 22.0,
+      "b623" => 10.0,
+      "b624" => 13.0,
+      "b625" => 16.0,
+      "b626" => 19.0,
+      "b688" => 16.0,
+      "b695" => 13.0,
+      "b6000" => 26.0,
+      "b6001" => 28.0,
+    }, "bearing_bore")
+    validate_positive_dimension(depth, "bearing_bore depth")
+    adjust = case fit
+             when :press then -0.01
+             when :slip  then  0.05
+             else
+               raise ArgumentError, "bearing_bore: unsupported fit #{fit.inspect}"
+             end
+    cylinder((d + adjust) / 2.0, depth)
+  end
+
   def hardware_diameter(size, table, label)
     if size.is_a?(Numeric)
       validate_positive_dimension(size, "#{label} diameter")

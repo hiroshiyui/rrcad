@@ -29,7 +29,10 @@ fn clearance_hole_uses_standard_size() {
         .eval("clearance_hole(:m3, depth: 10).bounding_box[:dx]")
         .unwrap();
     let dx: f64 = result.trim().parse().expect("expected a float");
-    assert!((dx - 3.4).abs() < 0.2, "expected M3 clearance diameter near 3.4, got {dx}");
+    assert!(
+        (dx - 3.4).abs() < 0.2,
+        "expected M3 clearance diameter near 3.4, got {dx}"
+    );
 }
 
 #[test]
@@ -39,7 +42,10 @@ fn clearance_hole_accepts_numeric_diameter() {
         .eval("clearance_hole(6.2, depth: 10).bounding_box[:dx]")
         .unwrap();
     let dx: f64 = result.trim().parse().expect("expected a float");
-    assert!((dx - 6.2).abs() < 0.2, "expected diameter near 6.2, got {dx}");
+    assert!(
+        (dx - 6.2).abs() < 0.2,
+        "expected diameter near 6.2, got {dx}"
+    );
 }
 
 #[test]
@@ -58,9 +64,7 @@ fn clearance_hole_cut_reduces_volume() {
 #[test]
 fn clearance_hole_rejects_unknown_size() {
     let mut vm = MrubyVm::new();
-    let err = vm
-        .eval("clearance_hole(:m9, depth: 10)")
-        .unwrap_err();
+    let err = vm.eval("clearance_hole(:m9, depth: 10)").unwrap_err();
     assert!(
         err.contains("unsupported size"),
         "expected unsupported size error, got: {err}"
@@ -81,7 +85,10 @@ fn tap_drill_uses_standard_size() {
         .eval("tap_drill(:m3, depth: 8).bounding_box[:dx]")
         .unwrap();
     let dx: f64 = result.trim().parse().expect("expected a float");
-    assert!((dx - 2.5).abs() < 0.2, "expected M3 tap drill diameter near 2.5, got {dx}");
+    assert!(
+        (dx - 2.5).abs() < 0.2,
+        "expected M3 tap drill diameter near 2.5, got {dx}"
+    );
 }
 
 #[test]
@@ -91,7 +98,10 @@ fn tap_drill_accepts_numeric_diameter() {
         .eval("tap_drill(2.8, depth: 8).bounding_box[:dx]")
         .unwrap();
     let dx: f64 = result.trim().parse().expect("expected a float");
-    assert!((dx - 2.8).abs() < 0.2, "expected diameter near 2.8, got {dx}");
+    assert!(
+        (dx - 2.8).abs() < 0.2,
+        "expected diameter near 2.8, got {dx}"
+    );
 }
 
 #[test]
@@ -133,7 +143,10 @@ fn heat_set_insert_uses_standard_size() {
         .eval("heat_set_insert(:m3, depth: 5).bounding_box[:dx]")
         .unwrap();
     let dx: f64 = result.trim().parse().expect("expected a float");
-    assert!((dx - 4.6).abs() < 0.2, "expected M3 insert pilot diameter near 4.6, got {dx}");
+    assert!(
+        (dx - 4.6).abs() < 0.2,
+        "expected M3 insert pilot diameter near 4.6, got {dx}"
+    );
 }
 
 #[test]
@@ -143,7 +156,10 @@ fn heat_set_insert_accepts_numeric_diameter() {
         .eval("heat_set_insert(5.1, depth: 5).bounding_box[:dx]")
         .unwrap();
     let dx: f64 = result.trim().parse().expect("expected a float");
-    assert!((dx - 5.1).abs() < 0.2, "expected diameter near 5.1, got {dx}");
+    assert!(
+        (dx - 5.1).abs() < 0.2,
+        "expected diameter near 5.1, got {dx}"
+    );
 }
 
 #[test]
@@ -188,7 +204,10 @@ fn socket_head_cbore_uses_standard_head_diameter() {
         .eval("socket_head_cbore(:m3, depth: 10, head_depth: 3).bounding_box[:dx]")
         .unwrap();
     let dx: f64 = result.trim().parse().expect("expected a float");
-    assert!((dx - 6.0).abs() < 0.3, "expected M3 socket head cbore diameter near 6.0, got {dx}");
+    assert!(
+        (dx - 6.0).abs() < 0.3,
+        "expected M3 socket head cbore diameter near 6.0, got {dx}"
+    );
 }
 
 #[test]
@@ -201,7 +220,10 @@ fn socket_head_cbore_cut_reduces_volume() {
              plate.cut(tool).volume < plate.volume",
         )
         .unwrap();
-    assert_eq!(result, "true", "socket-head counterbore should reduce plate volume");
+    assert_eq!(
+        result, "true",
+        "socket-head counterbore should reduce plate volume"
+    );
 }
 
 #[test]
@@ -235,7 +257,10 @@ fn flat_head_csink_uses_standard_head_diameter() {
         .eval("flat_head_csink(:m3, depth: 10).bounding_box[:dx]")
         .unwrap();
     let dx: f64 = result.trim().parse().expect("expected a float");
-    assert!((dx - 6.3).abs() < 0.4, "expected M3 flat head csink diameter near 6.3, got {dx}");
+    assert!(
+        (dx - 6.3).abs() < 0.4,
+        "expected M3 flat head csink diameter near 6.3, got {dx}"
+    );
 }
 
 #[test]
@@ -248,18 +273,102 @@ fn flat_head_csink_cut_reduces_volume() {
              plate.cut(tool).volume < plate.volume",
         )
         .unwrap();
-    assert_eq!(result, "true", "flat-head countersink should reduce plate volume");
+    assert_eq!(
+        result, "true",
+        "flat-head countersink should reduce plate volume"
+    );
 }
 
 #[test]
 fn flat_head_csink_rejects_unknown_size() {
     let mut vm = MrubyVm::new();
-    let err = vm
-        .eval("flat_head_csink(:m9, depth: 10)")
-        .unwrap_err();
+    let err = vm.eval("flat_head_csink(:m9, depth: 10)").unwrap_err();
     assert!(
         err.contains("unsupported size"),
         "expected unsupported size error, got: {err}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Bearing bore
+// ---------------------------------------------------------------------------
+
+#[test]
+fn bearing_bore_returns_solid() {
+    let mut vm = MrubyVm::new();
+    let result = vm.eval("bearing_bore(:b608, depth: 7).shape_type").unwrap();
+    assert_eq!(result, ":solid");
+}
+
+#[test]
+fn bearing_bore_uses_standard_od() {
+    let mut vm = MrubyVm::new();
+    // 608 outer diameter is 22 mm; default :press fit shrinks by 0.01 mm.
+    let result = vm
+        .eval("bearing_bore(:b608, depth: 7).bounding_box[:dx]")
+        .unwrap();
+    let dx: f64 = result.trim().parse().expect("expected a float");
+    assert!(
+        (dx - 22.0).abs() < 0.1,
+        "expected 608 bearing bore near 22 mm, got {dx}"
+    );
+}
+
+#[test]
+fn bearing_bore_slip_fit_is_larger_than_press_fit() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "press = bearing_bore(:b608, depth: 7, fit: :press).bounding_box[:dx]
+             slip  = bearing_bore(:b608, depth: 7, fit: :slip).bounding_box[:dx]
+             slip > press",
+        )
+        .unwrap();
+    assert_eq!(result, "true");
+}
+
+#[test]
+fn bearing_bore_accepts_numeric_diameter() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("bearing_bore(20.0, depth: 5).bounding_box[:dx]")
+        .unwrap();
+    let dx: f64 = result.trim().parse().expect("expected a float");
+    assert!((dx - 20.0).abs() < 0.1, "expected ~20 mm, got {dx}");
+}
+
+#[test]
+fn bearing_bore_cut_reduces_volume() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "plate = box(40, 40, 10)
+             tool = bearing_bore(:b608, depth: 12).translate(20, 20, -1)
+             plate.cut(tool).volume < plate.volume",
+        )
+        .unwrap();
+    assert_eq!(result, "true", "bearing bore should reduce plate volume");
+}
+
+#[test]
+fn bearing_bore_rejects_unknown_size() {
+    let mut vm = MrubyVm::new();
+    let err = vm.eval("bearing_bore(:b999, depth: 5)").unwrap_err();
+    assert!(
+        err.contains("unsupported size"),
+        "expected unsupported size error, got: {err}"
+    );
+}
+
+#[test]
+fn bearing_bore_rejects_unknown_fit() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval("bearing_bore(:b608, depth: 5, fit: :tight)")
+        .unwrap_err();
+    assert!(
+        err.contains("unsupported fit"),
+        "expected unsupported fit error, got: {err}"
     );
 }
 

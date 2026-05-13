@@ -216,8 +216,11 @@ depth:)` and `tap_drill(size, depth:)` support `:m2`, `:m2_5`, `:m3`, `:m4`,
 `:m5`, or a numeric diameter. `heat_set_insert(size, depth:)` supports `:m2`,
 `:m2_5`, `:m3`, or a numeric diameter. `socket_head_cbore(size, depth:,
 head_depth:)` adds metric socket-head counterbores. `flat_head_csink(size,
-depth:, angle:)` adds metric flat-head countersinks. Remaining work: bearing
-bores, shaft fits, and standard fasteners.
+depth:, angle:)` adds metric flat-head countersinks. `bearing_bore(size,
+depth:, fit:)` adds outer-diameter bores for common deep-groove ball bearings
+(`:b608`, `:b623`, `:b624`, `:b625`, `:b626`, `:b688`, `:b695`, `:b6000`,
+`:b6001`) with `:press` or `:slip` fit. Remaining work: shaft fits and
+standard fasteners.
 
 **Preview inspection UX:** Upgrade the browser preview with face/edge hover IDs,
 click-to-print selectors, bounding box / volume / surface-area display, section
