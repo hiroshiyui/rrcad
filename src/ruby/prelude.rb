@@ -134,6 +134,20 @@ class SketchBuilder
     [a, b, c, d]
   end
 
+  def parallel(a, b, c, d)
+    require_points!(a, b, "parallel")
+    require_points!(c, d, "parallel")
+    @constraints << [:parallel, a, b, c, d]
+    [a, b, c, d]
+  end
+
+  def perpendicular(a, b, c, d)
+    require_points!(a, b, "perpendicular")
+    require_points!(c, d, "perpendicular")
+    @constraints << [:perpendicular, a, b, c, d]
+    [a, b, c, d]
+  end
+
   def to_profile
     raise RuntimeError, "sketch requires at least 3 line segments" if @lines.length < 3
     solve_constraints
@@ -196,8 +210,64 @@ class SketchBuilder
     when :equal_length
       _type, a, b, c, d = constraint
       apply_equal_length(a, b, c, d)
+    when :parallel
+      _type, a, b, c, d = constraint
+      apply_parallel(a, b, c, d)
+    when :perpendicular
+      _type, a, b, c, d = constraint
+      apply_perpendicular(a, b, c, d)
     else
       false
+    end
+  end
+
+  def apply_parallel(a, b, c, d)
+    first = axis_orientation(a, b)
+    second = axis_orientation(c, d)
+
+    if first && second
+      raise RuntimeError, "conflicting parallel constraint" unless first == second
+      false
+    elsif first == :horizontal
+      unify_coord(c, d, :y, "parallel")
+    elsif first == :vertical
+      unify_coord(c, d, :x, "parallel")
+    elsif second == :horizontal
+      unify_coord(a, b, :y, "parallel")
+    elsif second == :vertical
+      unify_coord(a, b, :x, "parallel")
+    else
+      false
+    end
+  end
+
+  def apply_perpendicular(a, b, c, d)
+    first = axis_orientation(a, b)
+    second = axis_orientation(c, d)
+
+    if first && second
+      raise RuntimeError, "conflicting perpendicular constraint" if first == second
+      false
+    elsif first == :horizontal
+      unify_coord(c, d, :x, "perpendicular")
+    elsif first == :vertical
+      unify_coord(c, d, :y, "perpendicular")
+    elsif second == :horizontal
+      unify_coord(a, b, :x, "perpendicular")
+    elsif second == :vertical
+      unify_coord(a, b, :y, "perpendicular")
+    else
+      false
+    end
+  end
+
+  def axis_orientation(a, b)
+    if same_known_coord?(a, b, :y)
+      :horizontal
+    elsif same_known_coord?(a, b, :x)
+      :vertical
+    else
+      nil
     end
   end
 

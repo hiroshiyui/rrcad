@@ -229,3 +229,58 @@ fn conflicting_dimension_constraint_reports_error() {
         "expected dimension conflict, got: {err}"
     );
 }
+
+#[test]
+fn parallel_constraint_propagates_axis_orientation() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               p1 = point(0, 0)
+               p2 = point(15, 0)
+               p3 = point(15, 8)
+               p4 = point(0, nil)
+               parallel p1, p2, p3, p4
+               vertical p4, p1
+               line p1, p2
+               line p2, p3
+               line p3, p4
+               line p4, p1
+             end
+             profile.extrude(2).volume",
+        )
+        .unwrap();
+    let volume: f64 = result.trim().parse().expect("expected a volume");
+    assert!(
+        (volume - 240.0).abs() < 1.0,
+        "expected 15x8x2 profile volume near 240, got {volume}"
+    );
+}
+
+#[test]
+fn perpendicular_constraint_propagates_axis_orientation() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               p1 = point(0, 0)
+               p2 = point(12, 0)
+               p3 = point(12, nil)
+               p4 = point(0, 6)
+               perpendicular p1, p2, p2, p3
+               horizontal p3, p4
+               vertical p4, p1
+               line p1, p2
+               line p2, p3
+               line p3, p4
+               line p4, p1
+             end
+             profile.extrude(2).volume",
+        )
+        .unwrap();
+    let volume: f64 = result.trim().parse().expect("expected a volume");
+    assert!(
+        (volume - 144.0).abs() < 1.0,
+        "expected 12x6x2 profile volume near 144, got {volume}"
+    );
+}
