@@ -8,6 +8,54 @@
 # Native methods shadow the Ruby stubs below.
 
 # ---------------------------------------------------------------------------
+# Units — all model length values are millimetres, and all angular APIs use
+# degrees.  These helpers are plain numeric conversions so they work anywhere a
+# number is accepted: primitives, transforms, params, sketches, and patterns.
+# ---------------------------------------------------------------------------
+class Numeric
+  def mm
+    self
+  end
+
+  alias millimeter mm
+  alias millimeters mm
+
+  def cm
+    self * 10.0
+  end
+
+  alias centimeter cm
+  alias centimeters cm
+
+  def m
+    self * 1000.0
+  end
+
+  alias meter m
+  alias meters m
+
+  def inch
+    self * 25.4
+  end
+
+  alias inches inch
+
+  def deg
+    self
+  end
+
+  alias degree deg
+  alias degrees deg
+
+  def rad
+    self * 180.0 / Math::PI
+  end
+
+  alias radian rad
+  alias radians rad
+end
+
+# ---------------------------------------------------------------------------
 # Shape — backing class for all solid geometry objects.
 #
 # Native instances (created via box/cylinder/sphere/rect/circle) are mRuby

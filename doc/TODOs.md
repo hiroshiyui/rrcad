@@ -165,6 +165,61 @@ Test coverage: 10 unit tests in `src/mcp/mod.rs`, 13 integration tests in
 
 ---
 
+## Phase 10 — Usability and Robust Parametric CAD
+
+These are forward-looking CAD enhancements intended to move `rrcad` from a
+powerful scripted geometry engine toward a more complete, inspectable CAD
+workflow.
+
+**Constraint-based sketching:** Add a real sketch constraint layer with
+horizontal/vertical, coincident, tangent, equal length, parallel, perpendicular,
+dimension, and named construction geometry constraints. This should make
+`rect`, `circle`, `polygon`, `spline_2d`, `.pad`, and `.pocket` more useful for
+production-style parametric modeling.
+
+**Feature history / parametric model tree:** Represent modeling operations as a
+regeneratable feature graph instead of only immutable shape results. This would
+enable dependency tracking, clearer regeneration failures, better debug output,
+and eventually GUI editing.
+
+**Named faces, edges, and datums:** Add persistent names for selected topology
+and reference geometry, so scripts can target `:mounting_face` or
+`:front_boss_axis` instead of relying only on broad selectors such as `:top`,
+`:vertical`, or `">Z"`.
+
+**Better diagnostics:** Improve failures from booleans, fillets, chamfers,
+shells, sweeps, imports, and exports with operation names, input shape types,
+validation context, suggested fixes, and optional debug exports of intermediate
+geometry.
+
+**Assembly constraints beyond `mate`:** Extend assemblies with concentric,
+coincident-plane, distance-offset, angle, axis-alignment, and rotation-lock
+constraints for practical mechanical assemblies.
+
+**Units system ✓ COMPLETE:** Initial `Numeric` helpers are implemented in the
+Ruby prelude: `1.6.mm`, `2.inch`, `1.cm`, `0.5.m`, `15.deg`, and
+`Math::PI.rad`. Future work can add richer unit-aware values if dimensional
+analysis becomes necessary.
+
+**Tolerance and manufacturing profiles:** Add reusable DSL helpers for common
+mechanical details such as clearance holes, heat-set inserts, countersinks,
+counterbores, bearing bores, shaft fits, and standard fasteners.
+
+**Preview inspection UX:** Upgrade the browser preview with face/edge hover IDs,
+click-to-print selectors, bounding box / volume / surface-area display, section
+plane controls, exploded assembly view, measurement tools, and debug overlays
+for failed operations.
+
+**2-D drawing improvements:** Extend SVG/DXF output with dimensions, centre
+marks, hidden-line styles, multiple views on a sheet, title-block metadata, and
+explicit drawing scale selection.
+
+**CAM / 3-D printing checks:** Add manufacturability reports for overhangs,
+minimum wall thickness, unsupported islands, hole orientation, draft analysis,
+bounding boxes, and rough material estimates.
+
+---
+
 ## Architecture Notes
 
 See `CLAUDE.md` and `doc/development.md` for the full architecture and

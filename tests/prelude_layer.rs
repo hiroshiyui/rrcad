@@ -52,6 +52,45 @@ fn box_available_without_require() {
 }
 
 // ---------------------------------------------------------------------------
+// Units — pure Ruby Numeric helpers
+// ---------------------------------------------------------------------------
+
+#[test]
+fn numeric_length_units_convert_to_millimetres() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("[2.inch, 1.cm, 0.5.m, 3.mm].inspect")
+        .expect("unit conversion should succeed");
+    assert!(result.contains("50.8"), "expected 2.inch = 50.8, got {result}");
+    assert!(result.contains("10.0"), "expected 1.cm = 10.0, got {result}");
+    assert!(result.contains("500.0"), "expected 0.5.m = 500.0, got {result}");
+    assert!(result.contains("3"), "expected 3.mm = 3, got {result}");
+}
+
+#[test]
+fn numeric_angle_units_convert_to_degrees() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("[(90.deg - 90).abs < 0.001, (Math::PI.rad - 180).abs < 0.001].inspect")
+        .expect("angle unit conversion should succeed");
+    assert!(
+        result.contains("[true, true]"),
+        "expected degree/radian conversions to be true, got {result}"
+    );
+}
+
+#[test]
+fn unit_helpers_work_in_shape_operations() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("bb = box(1.inch, 2.cm, 3.mm).rotate(0, 0, 1, 90.deg).bounding_box; [bb[:dx], bb[:dy], bb[:dz]].inspect")
+        .expect("units should work in native shape operations");
+    assert!(result.contains("20"), "expected rotated dx near 20 mm, got {result}");
+    assert!(result.contains("25.4"), "expected rotated dy near 25.4 mm, got {result}");
+    assert!(result.contains("3"), "expected dz near 3 mm, got {result}");
+}
+
+// ---------------------------------------------------------------------------
 // Shape class identity
 // ---------------------------------------------------------------------------
 

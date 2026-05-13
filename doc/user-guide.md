@@ -10,6 +10,7 @@ rrcad is a Ruby DSL for 3D parametric CAD. You write `.rb` scripts; an embedded 
 2. [Quick Start](#quick-start)
 3. [CLI Modes](#cli-modes)
 4. [DSL Reference](#dsl-reference)
+   - [Units](#units)
    - [Primitives](#primitives-3d-solids)
    - [2D Sketch Faces](#2d-sketch-faces)
    - [Transforms](#transforms)
@@ -103,6 +104,27 @@ cargo run -- --mcp                            # MCP server (stdio JSON-RPC)
 ---
 
 ## DSL Reference
+
+### Units
+
+Model lengths are millimetres by default, and angular APIs use degrees. Numeric
+unit helpers convert values before they are passed into constructors, sketches,
+transforms, params, and patterns.
+
+| Helper | Meaning |
+|--------|---------|
+| `.mm`, `.millimeter`, `.millimeters` | Millimetres; identity conversion |
+| `.cm`, `.centimeter`, `.centimeters` | Centimetres to millimetres |
+| `.m`, `.meter`, `.meters` | Metres to millimetres |
+| `.inch`, `.inches` | Inches to millimetres |
+| `.deg`, `.degree`, `.degrees` | Degrees; identity conversion |
+| `.rad`, `.radian`, `.radians` | Radians to degrees |
+
+```ruby
+plate = box(2.inch, 30.mm, 0.25.inch)
+hole  = cylinder(3.mm, 10.mm).translate(25.4.mm, 15.mm, -1.mm)
+part  = plate.cut(hole).rotate(0, 0, 1, Math::PI.rad)
+```
 
 ### Primitives (3D Solids)
 
