@@ -790,3 +790,78 @@ fn conflicting_symmetric_constraint_reports_error() {
         "expected symmetric conflict, got: {err}"
     );
 }
+
+#[test]
+fn mirror_x_reflects_point_across_horizontal_axis() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               top_left = point(0, 5)
+               bottom_left = point(nil, nil)
+               top_right = point(10, 5)
+               bottom_right = point(10, nil)
+               mirror_x top_left, bottom_left, 0
+               mirror_x top_right, bottom_right, 0
+               line bottom_left, bottom_right
+               line bottom_right, top_right
+               line top_right, top_left
+               line top_left, bottom_left
+             end
+             profile.extrude(2).volume",
+        )
+        .unwrap();
+    let volume: f64 = result.trim().parse().expect("expected a volume");
+    assert!(
+        (volume - 200.0).abs() < 1.0,
+        "expected mirrored 10x10x2 profile volume near 200, got {volume}"
+    );
+}
+
+#[test]
+fn mirror_y_reflects_point_across_vertical_axis() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               left_bottom = point(-6, 0)
+               right_bottom = point(nil, nil)
+               left_top = point(-6, 4)
+               right_top = point(nil, 4)
+               mirror_y left_bottom, right_bottom, 0
+               mirror_y left_top, right_top, 0
+               line left_bottom, right_bottom
+               line right_bottom, right_top
+               line right_top, left_top
+               line left_top, left_bottom
+             end
+             profile.extrude(2).volume",
+        )
+        .unwrap();
+    let volume: f64 = result.trim().parse().expect("expected a volume");
+    assert!(
+        (volume - 96.0).abs() < 1.0,
+        "expected mirrored 12x4x2 profile volume near 96, got {volume}"
+    );
+}
+
+#[test]
+fn conflicting_mirror_constraint_reports_error() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval(
+            "sketch do
+               a = point(0, 5)
+               b = point(0, -6)
+               mirror_x a, b, 0
+               line a, b
+               line b, point(1, -6)
+               line point(1, -6), a
+             end",
+        )
+        .unwrap_err();
+    assert!(
+        err.contains("conflicting mirror_x constraint"),
+        "expected mirror conflict, got: {err}"
+    );
+}

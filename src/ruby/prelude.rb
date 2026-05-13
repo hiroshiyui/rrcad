@@ -264,6 +264,18 @@ class SketchBuilder
     [a, b, center]
   end
 
+  def mirror_x(source, target, axis_y = 0.0)
+    require_points!(source, target, "mirror_x")
+    @constraints << [:mirror_x, source, target, axis_y]
+    [source, target]
+  end
+
+  def mirror_y(source, target, axis_x = 0.0)
+    require_points!(source, target, "mirror_y")
+    @constraints << [:mirror_y, source, target, axis_x]
+    [source, target]
+  end
+
   def to_profile
     if @profile
       solve_constraints
@@ -402,6 +414,39 @@ class SketchBuilder
     when :symmetric
       _type, a, b, center = constraint
       apply_symmetric(a, b, center)
+    when :mirror_x
+      _type, source, target, axis_y = constraint
+      apply_mirror_x(source, target, axis_y)
+    when :mirror_y
+      _type, source, target, axis_x = constraint
+      apply_mirror_y(source, target, axis_x)
+    else
+      false
+    end
+  end
+
+  def apply_mirror_x(source, target, axis_y)
+    changed = unify_coord(source, target, :x, "mirror_x")
+    apply_mirror_axis(source, target, :y, axis_y, "mirror_x") || changed
+  end
+
+  def apply_mirror_y(source, target, axis_x)
+    changed = unify_coord(source, target, :y, "mirror_y")
+    apply_mirror_axis(source, target, :x, axis_x, "mirror_y") || changed
+  end
+
+  def apply_mirror_axis(source, target, attr, axis_value, name)
+    sv = coord_get(source, attr)
+    tv = coord_get(target, attr)
+
+    if sv && tv.nil?
+      coord_set(target, attr, 2.0 * axis_value - sv)
+      true
+    elsif tv && sv.nil?
+      coord_set(source, attr, 2.0 * axis_value - tv)
+      true
+    elsif sv && tv && ((sv + tv) / 2.0 - axis_value).abs > 1.0e-6
+      raise RuntimeError, "conflicting #{name} constraint"
     else
       false
     end

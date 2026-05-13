@@ -202,6 +202,8 @@ same entry point.
 | `parallel(a, b, c, d)` | Make two axis-aligned line segments share orientation |
 | `perpendicular(a, b, c, d)` | Make two axis-aligned line segments perpendicular |
 | `symmetric(a, b, center)` | Keep two points opposite each other around a center point |
+| `mirror_x(source, target, axis_y = 0)` | Mirror a point across a horizontal axis |
+| `mirror_y(source, target, axis_x = 0)` | Mirror a point across a vertical axis |
 
 ```ruby
 profile = sketch do
