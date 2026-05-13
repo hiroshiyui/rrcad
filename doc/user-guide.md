@@ -190,6 +190,7 @@ same entry point.
 | `circle_at(center, radius)` | Build an exact circular profile at a resolved sketch point |
 | `arc_at(center, radius, start_deg, end_deg)` | Build an arc wire at a resolved sketch point |
 | `line(a, b)` | Add a line segment between two sketch points |
+| `rectangle(origin, width, height)` | Add a constrained rectangular line loop from an origin point |
 | `fixed(point, x = point.x, y = point.y)` | Lock a point coordinate |
 | `horizontal(a, b)` | Force two points to share Y |
 | `vertical(a, b)` | Force two points to share X |
@@ -221,6 +222,11 @@ profile = sketch do
 end
 
 part = profile.extrude(5.mm)
+
+plate = sketch do
+  origin = point(:origin, 0, 0)
+  rectangle origin, 40.mm, 20.mm
+end.extrude(4.mm)
 
 round_part = sketch { circle(8.mm) }.extrude(3.mm)
 

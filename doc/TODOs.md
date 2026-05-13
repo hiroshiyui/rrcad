@@ -179,7 +179,8 @@ closed polygon profiles from points and lines, with constraint propagation for
 `self[:name]`, plus `midpoint` construction points. The current MVP works with
 `.extrude`, `.pad`, and `.pocket`, and supports exact circle profiles via
 `circle_at(center, radius)` plus translated arc wires via
-`arc_at(center, radius, start_deg, end_deg)`. Remaining work: tangent, richer
+`arc_at(center, radius, start_deg, end_deg)`. It also includes a constrained
+`rectangle(origin, width, height)` helper. Remaining work: tangent, richer
 construction geometry, stronger solver diagnostics, and broader
 under/over-constrained sketch analysis.
 

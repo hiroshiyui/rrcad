@@ -48,6 +48,46 @@ fn sketch_profile_can_extrude() {
 }
 
 #[test]
+fn rectangle_helper_builds_constrained_profile() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               origin = point(:origin, 0, 0)
+               rectangle origin, 24, 7
+             end
+             profile.extrude(3).volume",
+        )
+        .unwrap();
+    let volume: f64 = result.trim().parse().expect("expected a volume");
+    assert!(
+        (volume - 504.0).abs() < 1.0,
+        "expected 24x7x3 rectangle volume near 504, got {volume}"
+    );
+}
+
+#[test]
+fn rectangle_helper_origin_can_be_constraint_resolved() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               anchor = point(0, 0)
+               origin = point(:origin, nil, nil)
+               coincident origin, anchor
+               rectangle origin, 10, 5
+             end
+             profile.extrude(2).volume",
+        )
+        .unwrap();
+    let volume: f64 = result.trim().parse().expect("expected a volume");
+    assert!(
+        (volume - 100.0).abs() < 1.0,
+        "expected 10x5x2 rectangle volume near 100, got {volume}"
+    );
+}
+
+#[test]
 fn sketch_can_return_existing_exact_profile() {
     let mut vm = MrubyVm::new();
     let result = vm

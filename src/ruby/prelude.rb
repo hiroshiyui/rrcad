@@ -147,6 +147,28 @@ class SketchBuilder
     [a, b]
   end
 
+  def rectangle(origin, width, height)
+    require_point!(origin, "rectangle")
+
+    right = point(nil, nil)
+    top_right = point(nil, nil)
+    top_left = point(nil, nil)
+
+    horizontal origin, right
+    vertical right, top_right
+    horizontal top_right, top_left
+    vertical top_left, origin
+    dimension origin, right, width
+    dimension right, top_right, height
+
+    line origin, right
+    line right, top_right
+    line top_right, top_left
+    line top_left, origin
+
+    [origin, right, top_right, top_left]
+  end
+
   def fixed(point, x = point.x, y = point.y)
     require_point!(point, "fixed")
     @constraints << [:fixed, point, x, y]
