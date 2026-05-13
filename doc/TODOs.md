@@ -171,11 +171,12 @@ These are forward-looking CAD enhancements intended to move `rrcad` from a
 powerful scripted geometry engine toward a more complete, inspectable CAD
 workflow.
 
-**Constraint-based sketching:** Add a real sketch constraint layer with
-horizontal/vertical, coincident, tangent, equal length, parallel, perpendicular,
-dimension, and named construction geometry constraints. This should make
-`rect`, `circle`, `polygon`, `spline_2d`, `.pad`, and `.pocket` more useful for
-production-style parametric modeling.
+**Constraint-based sketching ◐ MVP STARTED:** `sketch do ... end` now builds
+closed polygon profiles from points and lines, with constraint propagation for
+`fixed`, `horizontal`, `vertical`, `coincident`, `dimension`, and `equal_length`.
+The current MVP works with `.extrude`, `.pad`, and `.pocket`. Remaining work:
+tangent, parallel, perpendicular, arcs/circles, named construction geometry,
+stronger solver diagnostics, and broader under/over-constrained sketch analysis.
 
 **Feature history / parametric model tree:** Represent modeling operations as a
 regeneratable feature graph instead of only immutable shape results. This would

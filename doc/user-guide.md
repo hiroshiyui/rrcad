@@ -13,6 +13,7 @@ rrcad is a Ruby DSL for 3D parametric CAD. You write `.rb` scripts; an embedded 
    - [Units](#units)
    - [Primitives](#primitives-3d-solids)
    - [2D Sketch Faces](#2d-sketch-faces)
+   - [Constraint Sketches](#constraint-sketches)
    - [Transforms](#transforms)
    - [Boolean Operations](#boolean-operations)
    - [Modifiers](#modifiers)
@@ -166,6 +167,48 @@ solid = face.extrude(20)
 
 profile = spline_2d([[0, 0], [5, 3], [8, 5]], tangents: [[1, 0], [1, 0]])
 body = profile.revolve(360)
+```
+
+### Constraint Sketches
+
+`sketch do ... end` builds a 2-D profile from points, line segments, and simple
+constraints. The current MVP returns a closed polygon face, so it works anywhere
+`polygon`, `rect`, or `circle` profiles work, including `.extrude`, `.pad`, and
+`.pocket`.
+
+| Method | Description |
+|--------|-------------|
+| `point(x = nil, y = nil)` | Create a sketch point; coordinates may be left unknown |
+| `line(a, b)` | Add a line segment between two sketch points |
+| `fixed(point, x = point.x, y = point.y)` | Lock a point coordinate |
+| `horizontal(a, b)` | Force two points to share Y |
+| `vertical(a, b)` | Force two points to share X |
+| `coincident(a, b)` | Force two points to share X and Y |
+| `dimension(a, b, length)` | Set or validate an axis-aligned segment length |
+| `equal_length(a, b, c, d)` | Make two line segments the same length |
+
+```ruby
+profile = sketch do
+  p1 = point(0, 0)
+  p2 = point(nil, nil)
+  p3 = point(nil, nil)
+  p4 = point(nil, nil)
+
+  horizontal p1, p2
+  vertical   p2, p3
+  horizontal p3, p4
+  vertical   p4, p1
+
+  dimension p1, p2, 40.mm
+  dimension p2, p3, 20.mm
+
+  line p1, p2
+  line p2, p3
+  line p3, p4
+  line p4, p1
+end
+
+part = profile.extrude(5.mm)
 ```
 
 ### Transforms
