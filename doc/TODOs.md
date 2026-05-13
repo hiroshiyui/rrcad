@@ -213,9 +213,10 @@ analysis becomes necessary.
 
 **Tolerance and manufacturing profiles ◐ STARTED:** `clearance_hole(size,
 depth:)` and `tap_drill(size, depth:)` support `:m2`, `:m2_5`, `:m3`, `:m4`,
-`:m5`, or a numeric diameter. Remaining work: heat-set inserts,
-countersinks/counterbores by standard fastener size, bearing bores, shaft fits,
-and standard fasteners.
+`:m5`, or a numeric diameter. `heat_set_insert(size, depth:)` supports `:m2`,
+`:m2_5`, `:m3`, or a numeric diameter. Remaining work: countersinks/
+counterbores by standard fastener size, bearing bores, shaft fits, and standard
+fasteners.
 
 **Preview inspection UX:** Upgrade the browser preview with face/edge hover IDs,
 click-to-print selectors, bounding box / volume / surface-area display, section

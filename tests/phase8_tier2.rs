@@ -117,6 +117,58 @@ fn tap_drill_rejects_unknown_size() {
     );
 }
 
+#[test]
+fn heat_set_insert_returns_solid() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("heat_set_insert(:m3, depth: 5).shape_type")
+        .unwrap();
+    assert_eq!(result, ":solid");
+}
+
+#[test]
+fn heat_set_insert_uses_standard_size() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("heat_set_insert(:m3, depth: 5).bounding_box[:dx]")
+        .unwrap();
+    let dx: f64 = result.trim().parse().expect("expected a float");
+    assert!((dx - 4.6).abs() < 0.2, "expected M3 insert pilot diameter near 4.6, got {dx}");
+}
+
+#[test]
+fn heat_set_insert_accepts_numeric_diameter() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("heat_set_insert(5.1, depth: 5).bounding_box[:dx]")
+        .unwrap();
+    let dx: f64 = result.trim().parse().expect("expected a float");
+    assert!((dx - 5.1).abs() < 0.2, "expected diameter near 5.1, got {dx}");
+}
+
+#[test]
+fn heat_set_insert_cut_reduces_volume() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "boss = cylinder(5, 8)
+             tool = heat_set_insert(:m3, depth: 6).translate(0, 0, 1)
+             boss.cut(tool).volume < boss.volume",
+        )
+        .unwrap();
+    assert_eq!(result, "true", "insert pilot should reduce boss volume");
+}
+
+#[test]
+fn heat_set_insert_rejects_unknown_size() {
+    let mut vm = MrubyVm::new();
+    let err = vm.eval("heat_set_insert(:m5, depth: 5)").unwrap_err();
+    assert!(
+        err.contains("unsupported size"),
+        "expected unsupported size error, got: {err}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Draft angle extrude
 // ---------------------------------------------------------------------------

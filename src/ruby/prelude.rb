@@ -1175,6 +1175,20 @@ module Kernel
     cylinder(d / 2.0, depth)
   end
 
+  # heat_set_insert(size, depth:) — pilot-hole tool for common heat-set inserts.
+  # Diameters are conservative starter values and can be overridden by passing
+  # a numeric diameter in millimetres.
+  def heat_set_insert(size, depth:)
+    d = hardware_diameter(size, {
+      "m2" => 3.2,
+      "m2_5" => 3.8,
+      "m25" => 3.8,
+      "m3" => 4.6,
+    }, "heat_set_insert")
+    validate_positive_dimension(depth, "heat_set_insert depth")
+    cylinder(d / 2.0, depth)
+  end
+
   def hardware_diameter(size, table, label)
     if size.is_a?(Numeric)
       validate_positive_dimension(size, "#{label} diameter")
