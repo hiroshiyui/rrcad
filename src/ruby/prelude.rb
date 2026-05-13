@@ -1142,6 +1142,41 @@ module Kernel
     solid.cut(thread_tool)
   end
 
+  # clearance_hole(size, depth:) — standard ISO close-clearance hole tool.
+  # +size+ may be a Symbol/String (`:m2`, `:m2_5`, `:m3`, `:m4`, `:m5`) or a
+  # numeric diameter in millimetres. Returns a cylindrical solid suitable for
+  # subtracting with `.cut`.
+  def clearance_hole(size, depth:)
+    d = hardware_diameter(size, {
+      "m2" => 2.4,
+      "m2_5" => 2.9,
+      "m25" => 2.9,
+      "m3" => 3.4,
+      "m4" => 4.5,
+      "m5" => 5.5,
+    }, "clearance_hole")
+    validate_positive_dimension(depth, "clearance_hole depth")
+    cylinder(d / 2.0, depth)
+  end
+
+  def hardware_diameter(size, table, label)
+    if size.is_a?(Numeric)
+      validate_positive_dimension(size, "#{label} diameter")
+      size
+    else
+      key = size.to_s.downcase.gsub("-", "_")
+      d = table[key]
+      raise ArgumentError, "#{label}: unsupported size #{size.inspect}" if d.nil?
+      d
+    end
+  end
+
+  def validate_positive_dimension(value, label)
+    unless value.is_a?(Numeric) && value > 0
+      raise ArgumentError, "#{label} must be > 0"
+    end
+  end
+
   # cbore(d:, cbore_d:, cbore_h:, depth:) — Phase 8 Tier 2 counterbore tool.
   # Returns a 3-D solid hole tool.  Subtract it from a plate with `.cut` to
   # leave a stepped counterbore hole: a large-diameter shallow bore over a

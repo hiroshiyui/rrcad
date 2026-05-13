@@ -211,9 +211,10 @@ Ruby prelude: `1.6.mm`, `2.inch`, `1.cm`, `0.5.m`, `15.deg`, and
 `Math::PI.rad`. Future work can add richer unit-aware values if dimensional
 analysis becomes necessary.
 
-**Tolerance and manufacturing profiles:** Add reusable DSL helpers for common
-mechanical details such as clearance holes, heat-set inserts, countersinks,
-counterbores, bearing bores, shaft fits, and standard fasteners.
+**Tolerance and manufacturing profiles ◐ STARTED:** `clearance_hole(size,
+depth:)` supports `:m2`, `:m2_5`, `:m3`, `:m4`, `:m5`, or a numeric diameter.
+Remaining work: tap drills, heat-set inserts, countersinks/counterbores by
+standard fastener size, bearing bores, shaft fits, and standard fasteners.
 
 **Preview inspection UX:** Upgrade the browser preview with face/edge hover IDs,
 click-to-print selectors, bounding box / volume / surface-area display, section

@@ -10,6 +10,64 @@
 use rrcad::ruby::vm::MrubyVm;
 
 // ---------------------------------------------------------------------------
+// standard hardware helpers
+// ---------------------------------------------------------------------------
+
+#[test]
+fn clearance_hole_returns_solid() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("clearance_hole(:m3, depth: 10).shape_type")
+        .unwrap();
+    assert_eq!(result, ":solid");
+}
+
+#[test]
+fn clearance_hole_uses_standard_size() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("clearance_hole(:m3, depth: 10).bounding_box[:dx]")
+        .unwrap();
+    let dx: f64 = result.trim().parse().expect("expected a float");
+    assert!((dx - 3.4).abs() < 0.2, "expected M3 clearance diameter near 3.4, got {dx}");
+}
+
+#[test]
+fn clearance_hole_accepts_numeric_diameter() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("clearance_hole(6.2, depth: 10).bounding_box[:dx]")
+        .unwrap();
+    let dx: f64 = result.trim().parse().expect("expected a float");
+    assert!((dx - 6.2).abs() < 0.2, "expected diameter near 6.2, got {dx}");
+}
+
+#[test]
+fn clearance_hole_cut_reduces_volume() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "plate = box(20, 20, 4)
+             hole = clearance_hole(:m3, depth: 6).translate(10, 10, -1)
+             plate.cut(hole).volume < plate.volume",
+        )
+        .unwrap();
+    assert_eq!(result, "true", "clearance hole should reduce plate volume");
+}
+
+#[test]
+fn clearance_hole_rejects_unknown_size() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval("clearance_hole(:m9, depth: 10)")
+        .unwrap_err();
+    assert!(
+        err.contains("unsupported size"),
+        "expected unsupported size error, got: {err}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Draft angle extrude
 // ---------------------------------------------------------------------------
 
