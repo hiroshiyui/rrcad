@@ -1268,6 +1268,45 @@ module Kernel
     cylinder((diameter + adjust) / 2.0, length)
   end
 
+  # screw(size, length:, style: :socket) — solid fastener body for assemblies.
+  # +size+ may be `:m2`, `:m2_5`, `:m3`, `:m4`, or `:m5`. +length+ is the shank
+  # length below the head, in millimetres. +style+ may be `:socket` (ISO 4762
+  # cylindrical socket-head cap screw), `:button` (ISO 7380 low dome head), or
+  # `:flat` (ISO 10642 90° countersunk flat head).
+  #
+  # Geometry: shank along +Z from z=0 to z=length; head sits above z=length.
+  # For `:flat` the head is a conical frustum widening from shank_d at z=length
+  # to head_d at z=length+head_h, suitable for sitting flush in a 90°
+  # countersink.
+  def screw(size, length:, style: :socket)
+    spec = hardware_spec(size, {
+      # [shaft_d, shcs_head_d, shcs_head_h, bhcs_head_d, bhcs_head_h, fhcs_head_d]
+      "m2"   => [2.0, 3.8, 2.0, 3.5, 1.3, 3.8],
+      "m2_5" => [2.5, 4.5, 2.5, 4.7, 1.5, 4.7],
+      "m25"  => [2.5, 4.5, 2.5, 4.7, 1.5, 4.7],
+      "m3"   => [3.0, 5.5, 3.0, 5.7, 1.65, 6.0],
+      "m4"   => [4.0, 7.0, 4.0, 7.6, 2.2, 8.0],
+      "m5"   => [5.0, 8.5, 5.0, 9.5, 2.75, 10.0],
+    }, "screw")
+    shaft_d, shcs_d, shcs_h, bhcs_d, bhcs_h, fhcs_d = spec
+    validate_positive_dimension(length, "screw length")
+
+    shank = cylinder(shaft_d / 2.0, length)
+    head = case style
+           when :socket
+             cylinder(shcs_d / 2.0, shcs_h).translate(0, 0, length)
+           when :button
+             cylinder(bhcs_d / 2.0, bhcs_h).translate(0, 0, length)
+           when :flat
+             # 90° included angle ⇒ head_h = (head_d − shaft_d) / 2.
+             head_h = (fhcs_d - shaft_d) / 2.0
+             cone(shaft_d / 2.0, fhcs_d / 2.0, head_h).translate(0, 0, length)
+           else
+             raise ArgumentError, "screw: unsupported style #{style.inspect}"
+           end
+    shank.fuse(head)
+  end
+
   def hardware_diameter(size, table, label)
     if size.is_a?(Numeric)
       validate_positive_dimension(size, "#{label} diameter")

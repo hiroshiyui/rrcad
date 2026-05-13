@@ -221,7 +221,10 @@ depth:, fit:)` adds outer-diameter bores for common deep-groove ball bearings
 (`:b608`, `:b623`, `:b624`, `:b625`, `:b626`, `:b688`, `:b695`, `:b6000`,
 `:b6001`) with `:press` or `:slip` fit. `shaft(diameter, length:, fit:)`
 generates mating shaft cylinders with `:nominal`, `:press`, `:slip`, or
-`:running` fit adjustments. Remaining work: standard fasteners.
+`:running` fit adjustments. `screw(size, length:, style:)` generates
+solid fastener bodies (`:socket`, `:button`, `:flat`) for `:m2`–`:m5`
+sized to ISO 4762 / 7380 / 10642. Tolerance-and-manufacturing-profiles
+track is feature-complete for the initial scope.
 
 **Preview inspection UX:** Upgrade the browser preview with face/edge hover IDs,
 click-to-print selectors, bounding box / volume / surface-area display, section

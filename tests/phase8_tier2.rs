@@ -441,6 +441,89 @@ fn shaft_rejects_non_positive_diameter() {
 }
 
 // ---------------------------------------------------------------------------
+// Standard fasteners (screw bodies)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn screw_socket_returns_solid() {
+    let mut vm = MrubyVm::new();
+    let result = vm.eval("screw(:m3, length: 12).shape_type").unwrap();
+    assert!(
+        result == ":solid" || result == ":compound",
+        "expected :solid or :compound, got {result}"
+    );
+}
+
+#[test]
+fn screw_socket_head_widens_shank() {
+    let mut vm = MrubyVm::new();
+    // M3 SHCS head OD is 5.5 mm, shank is 3 mm — overall bbox should match the head.
+    let result = vm
+        .eval("screw(:m3, length: 12, style: :socket).bounding_box[:dx]")
+        .unwrap();
+    let dx: f64 = result.trim().parse().expect("expected a float");
+    assert!(
+        (dx - 5.5).abs() < 0.1,
+        "expected ~5.5 mm M3 SHCS head, got {dx}"
+    );
+}
+
+#[test]
+fn screw_socket_total_height_is_length_plus_head() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("screw(:m3, length: 12, style: :socket).bounding_box[:dz]")
+        .unwrap();
+    let dz: f64 = result.trim().parse().expect("expected a float");
+    // M3 SHCS head height ≈ 3.0 mm, shank 12 mm.
+    assert!((dz - 15.0).abs() < 0.1, "expected ~15 mm, got {dz}");
+}
+
+#[test]
+fn screw_flat_head_is_wider_than_button_head() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "screw(:m3, length: 12, style: :flat).bounding_box[:dx] > \
+             screw(:m3, length: 12, style: :button).bounding_box[:dx]",
+        )
+        .unwrap();
+    assert_eq!(result, "true");
+}
+
+#[test]
+fn screw_button_head_is_shorter_than_socket_head() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "screw(:m3, length: 12, style: :button).bounding_box[:dz] < \
+             screw(:m3, length: 12, style: :socket).bounding_box[:dz]",
+        )
+        .unwrap();
+    assert_eq!(result, "true");
+}
+
+#[test]
+fn screw_rejects_unknown_size() {
+    let mut vm = MrubyVm::new();
+    let err = vm.eval("screw(:m9, length: 12)").unwrap_err();
+    assert!(
+        err.contains("unsupported size"),
+        "expected unsupported size error, got: {err}"
+    );
+}
+
+#[test]
+fn screw_rejects_unknown_style() {
+    let mut vm = MrubyVm::new();
+    let err = vm.eval("screw(:m3, length: 12, style: :pan)").unwrap_err();
+    assert!(
+        err.contains("unsupported style"),
+        "expected unsupported style error, got: {err}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Draft angle extrude
 // ---------------------------------------------------------------------------
 
