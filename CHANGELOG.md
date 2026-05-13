@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.2] - 2026-05-13
+
+### Security
+
+- **MCP timeouts are now process-enforced** (`src/mcp/mod.rs`, `src/main.rs`):
+  MCP tool evaluations run in one-shot worker processes that are killed when
+  the 30 s timeout expires.  A runaway Ruby loop or long OCCT operation can no
+  longer keep running on a blocking thread after the client receives a timeout.
+- **MCP prelude hardening extended** (`src/mcp/mod.rs`): the production
+  security prelude now removes additional metaprogramming entry points from
+  `BasicObject`, `Object`, `Kernel`, and `Module`, including top-level
+  `define_method`, closing a dev-build escape path caught by the expanded
+  integration tests.
+
+### Changed
+
+- **MCP tests use production hardening** (`tests/mcp_tools.rs`,
+  `tests/mcp_stress.rs`): integration and stress tests now construct MCP VMs
+  through the real production helper instead of carrying a stale copied prelude,
+  and cover blocked file-access and metaprogramming methods.
+- **Dependency audit rationale documented** (`audit.toml`): accepted the
+  transitive `rand` advisory (`RUSTSEC-2026-0097`) with the project-specific
+  rationale pending an upstream axum/tungstenite update.
+- **Agent repository guidance added** (`AGENTS.md`): documented project layout,
+  build/test commands, coding style, testing expectations, and agent-specific
+  instructions for future automation.
+
+---
+
 ## [0.2.1] - 2026-05-12
 
 ### Security
