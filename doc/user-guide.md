@@ -188,6 +188,7 @@ same entry point.
 | `ref(:name)` / `self[:name]` | Look up a named sketch point |
 | `midpoint(a, b)` / `midpoint(:name, a, b)` | Create a construction point halfway between two points |
 | `circle_at(center, radius)` | Build an exact circular profile at a resolved sketch point |
+| `arc_at(center, radius, start_deg, end_deg)` | Build an arc wire at a resolved sketch point |
 | `line(a, b)` | Add a line segment between two sketch points |
 | `fixed(point, x = point.x, y = point.y)` | Lock a point coordinate |
 | `horizontal(a, b)` | Force two points to share Y |
@@ -227,6 +228,11 @@ boss = sketch do
   c = point(:center, 20.mm, 10.mm)
   circle_at c, 4.mm
 end.extrude(6.mm)
+
+path = sketch do
+  c = point(0, 0)
+  arc_at c, 12.mm, 0.deg, 180.deg
+end
 ```
 
 ### Transforms

@@ -133,6 +133,12 @@ class SketchBuilder
     nil
   end
 
+  def arc_at(center, radius, start_deg, end_deg)
+    require_point!(center, "arc_at")
+    @profile = [:arc_at, center, radius, start_deg, end_deg]
+    nil
+  end
+
   def line(a, b)
     unless a.is_a?(SketchPoint) && b.is_a?(SketchPoint)
       raise TypeError, "line endpoints must be sketch points"
@@ -233,6 +239,12 @@ class SketchBuilder
         raise RuntimeError, "sketch is under-constrained: #{point_label(center)} missing #{missing_coords(center)}"
       end
       circle(radius).translate(center.x, center.y, 0)
+    when :arc_at
+      _type, center, radius, start_deg, end_deg = @profile
+      unless center.resolved?
+        raise RuntimeError, "sketch is under-constrained: #{point_label(center)} missing #{missing_coords(center)}"
+      end
+      arc(radius, start_deg, end_deg).translate(center.x, center.y, 0)
     else
       raise RuntimeError, "unknown sketch profile"
     end

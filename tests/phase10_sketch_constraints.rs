@@ -104,6 +104,40 @@ fn circle_at_center_can_be_constraint_resolved() {
 }
 
 #[test]
+fn arc_at_builds_translated_wire() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "bb = sketch do
+               c = point(10, 5)
+               arc_at c, 3, 0.deg, 180.deg
+             end.bounding_box
+             [bb[:x], bb[:y], bb[:dx], bb[:dy]].inspect",
+        )
+        .unwrap();
+    assert!(result.contains("7"), "expected xmin near 7, got {result}");
+    assert!(result.contains("5"), "expected ymin near 5, got {result}");
+    assert!(result.contains("6"), "expected dx near 6, got {result}");
+    assert!(result.contains("3"), "expected dy near 3, got {result}");
+}
+
+#[test]
+fn arc_at_center_can_be_constraint_resolved() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "sketch do
+               left = point(-5, 0)
+               right = point(5, 0)
+               center = midpoint(:center, left, right)
+               arc_at center, 2, 0, 90
+             end.shape_type",
+        )
+        .unwrap();
+    assert_eq!(result, ":wire");
+}
+
+#[test]
 fn sketch_requires_closed_loop() {
     let mut vm = MrubyVm::new();
     let err = vm
