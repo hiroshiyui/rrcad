@@ -48,6 +48,28 @@ fn sketch_profile_can_extrude() {
 }
 
 #[test]
+fn sketch_can_return_existing_exact_profile() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("sketch { circle(5) }.extrude(2).shape_type")
+        .unwrap();
+    assert_eq!(result, ":solid");
+}
+
+#[test]
+fn sketch_can_return_existing_profile_from_builder_block_arg() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("sketch { |s| rect(10, 5) }.extrude(2).volume")
+        .unwrap();
+    let volume: f64 = result.trim().parse().expect("expected a volume");
+    assert!(
+        (volume - 100.0).abs() < 1.0,
+        "expected returned rect profile volume near 100, got {volume}"
+    );
+}
+
+#[test]
 fn sketch_requires_closed_loop() {
     let mut vm = MrubyVm::new();
     let err = vm

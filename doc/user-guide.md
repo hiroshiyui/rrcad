@@ -176,6 +176,10 @@ constraints. The current MVP returns a closed polygon face, so it works anywhere
 `polygon`, `rect`, or `circle` profiles work, including `.extrude`, `.pad`, and
 `.pocket`.
 
+If the block returns an existing `Shape` profile, `sketch` returns that shape
+directly. This keeps exact profiles such as `circle(5)` available through the
+same entry point.
+
 | Method | Description |
 |--------|-------------|
 | `point(x = nil, y = nil)` | Create a sketch point; coordinates may be left unknown |
@@ -215,6 +219,8 @@ profile = sketch do
 end
 
 part = profile.extrude(5.mm)
+
+round_part = sketch { circle(8.mm) }.extrude(3.mm)
 ```
 
 ### Transforms

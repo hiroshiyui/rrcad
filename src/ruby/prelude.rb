@@ -966,11 +966,12 @@ module Kernel
   # added incrementally on SketchBuilder.
   def sketch(&block)
     builder = SketchBuilder.new
-    if block.arity == 1
+    result = if block.arity == 1
       block.call(builder)
     else
       builder.instance_eval(&block)
     end
+    return result if result.is_a?(Shape)
     builder.to_profile
   end
 
