@@ -169,6 +169,53 @@ fn heat_set_insert_rejects_unknown_size() {
     );
 }
 
+#[test]
+fn socket_head_cbore_returns_shape() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("socket_head_cbore(:m3, depth: 10, head_depth: 3).shape_type")
+        .unwrap();
+    assert!(
+        result == ":solid" || result == ":compound",
+        "expected :solid or :compound, got {result}"
+    );
+}
+
+#[test]
+fn socket_head_cbore_uses_standard_head_diameter() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("socket_head_cbore(:m3, depth: 10, head_depth: 3).bounding_box[:dx]")
+        .unwrap();
+    let dx: f64 = result.trim().parse().expect("expected a float");
+    assert!((dx - 6.0).abs() < 0.3, "expected M3 socket head cbore diameter near 6.0, got {dx}");
+}
+
+#[test]
+fn socket_head_cbore_cut_reduces_volume() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "plate = box(30, 30, 8)
+             tool = socket_head_cbore(:m3, depth: 10, head_depth: 3).translate(15, 15, -1)
+             plate.cut(tool).volume < plate.volume",
+        )
+        .unwrap();
+    assert_eq!(result, "true", "socket-head counterbore should reduce plate volume");
+}
+
+#[test]
+fn socket_head_cbore_rejects_unknown_size() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval("socket_head_cbore(:m9, depth: 10, head_depth: 3)")
+        .unwrap_err();
+    assert!(
+        err.contains("unsupported size"),
+        "expected unsupported size error, got: {err}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Draft angle extrude
 // ---------------------------------------------------------------------------

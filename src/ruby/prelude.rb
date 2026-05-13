@@ -1189,6 +1189,22 @@ module Kernel
     cylinder(d / 2.0, depth)
   end
 
+  # socket_head_cbore(size, depth:, head_depth:) — counterbore tool sized for
+  # common metric socket-head screws. Use `.cut` after positioning the tool.
+  def socket_head_cbore(size, depth:, head_depth:)
+    spec = hardware_spec(size, {
+      "m2" => [2.4, 4.0],
+      "m2_5" => [2.9, 5.0],
+      "m25" => [2.9, 5.0],
+      "m3" => [3.4, 6.0],
+      "m4" => [4.5, 8.0],
+      "m5" => [5.5, 10.0],
+    }, "socket_head_cbore")
+    validate_positive_dimension(depth, "socket_head_cbore depth")
+    validate_positive_dimension(head_depth, "socket_head_cbore head_depth")
+    cbore(d: spec[0], cbore_d: spec[1], cbore_h: head_depth, depth: depth)
+  end
+
   def hardware_diameter(size, table, label)
     if size.is_a?(Numeric)
       validate_positive_dimension(size, "#{label} diameter")
@@ -1199,6 +1215,13 @@ module Kernel
       raise ArgumentError, "#{label}: unsupported size #{size.inspect}" if d.nil?
       d
     end
+  end
+
+  def hardware_spec(size, table, label)
+    key = size.to_s.downcase.gsub("-", "_")
+    spec = table[key]
+    raise ArgumentError, "#{label}: unsupported size #{size.inspect}" if spec.nil?
+    spec
   end
 
   def validate_positive_dimension(value, label)

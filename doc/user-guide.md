@@ -378,6 +378,7 @@ stud_grid  = grid_pattern(cylinder(2, 5), 4, 3, 10, 10)
 | `clearance_hole(size, depth:)` | Standard clearance-hole tool; supports `:m2`, `:m2_5`, `:m3`, `:m4`, `:m5`, or a numeric diameter |
 | `tap_drill(size, depth:)` | Metric coarse tap-drill hole tool; supports `:m2`, `:m2_5`, `:m3`, `:m4`, `:m5`, or a numeric diameter |
 | `heat_set_insert(size, depth:)` | Heat-set insert pilot-hole tool; supports `:m2`, `:m2_5`, `:m3`, or a numeric diameter |
+| `socket_head_cbore(size, depth:, head_depth:)` | Counterbore tool for common metric socket-head screws |
 | `cbore(d:, cbore_d:, cbore_h:, depth:)` | Counterbore hole tool (use with `.cut`) |
 | `csink(d:, csink_d:, csink_angle:, depth:)` | Countersink hole tool (use with `.cut`) |
 
