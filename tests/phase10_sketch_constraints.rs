@@ -88,6 +88,23 @@ fn rectangle_helper_origin_can_be_constraint_resolved() {
 }
 
 #[test]
+fn rectangle_rejects_non_positive_size() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval(
+            "sketch do
+               origin = point(0, 0)
+               rectangle origin, -10, 5
+             end",
+        )
+        .unwrap_err();
+    assert!(
+        err.contains("rectangle width must be > 0"),
+        "expected rectangle width error, got: {err}"
+    );
+}
+
+#[test]
 fn centered_rectangle_helper_builds_profile_around_center() {
     let mut vm = MrubyVm::new();
     let result = vm
@@ -183,6 +200,23 @@ fn circle_at_center_can_be_constraint_resolved() {
 }
 
 #[test]
+fn circle_at_rejects_non_positive_radius() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval(
+            "sketch do
+               c = point(0, 0)
+               circle_at c, 0
+             end",
+        )
+        .unwrap_err();
+    assert!(
+        err.contains("circle_at radius must be > 0"),
+        "expected circle radius error, got: {err}"
+    );
+}
+
+#[test]
 fn arc_at_builds_translated_wire() {
     let mut vm = MrubyVm::new();
     let result = vm
@@ -267,6 +301,24 @@ fn slot_between_requires_axis_aligned_points() {
     assert!(
         err.contains("horizontal or vertical"),
         "expected axis-aligned slot error, got: {err}"
+    );
+}
+
+#[test]
+fn slot_between_rejects_non_positive_radius() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval(
+            "sketch do
+               a = point(0, 0)
+               b = point(20, 0)
+               slot_between a, b, -1
+             end",
+        )
+        .unwrap_err();
+    assert!(
+        err.contains("slot_between radius must be > 0"),
+        "expected slot radius error, got: {err}"
     );
 }
 
@@ -450,6 +502,24 @@ fn conflicting_dimension_constraint_reports_error() {
     assert!(
         err.contains("conflicting dimension constraint"),
         "expected dimension conflict, got: {err}"
+    );
+}
+
+#[test]
+fn dimension_rejects_non_positive_length() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval(
+            "sketch do
+               p1 = point(0, 0)
+               p2 = point(nil, 0)
+               dimension p1, p2, 0
+             end",
+        )
+        .unwrap_err();
+    assert!(
+        err.contains("dimension length must be > 0"),
+        "expected positive dimension error, got: {err}"
     );
 }
 

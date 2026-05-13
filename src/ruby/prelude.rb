@@ -129,18 +129,21 @@ class SketchBuilder
 
   def circle_at(center, radius)
     require_point!(center, "circle_at")
+    require_positive_number!(radius, "circle_at radius")
     @profile = [:circle_at, center, radius]
     nil
   end
 
   def arc_at(center, radius, start_deg, end_deg)
     require_point!(center, "arc_at")
+    require_positive_number!(radius, "arc_at radius")
     @profile = [:arc_at, center, radius, start_deg, end_deg]
     nil
   end
 
   def slot_between(a, b, radius)
     require_points!(a, b, "slot_between")
+    require_positive_number!(radius, "slot_between radius")
     @profile = [:slot_between, a, b, radius]
     nil
   end
@@ -155,6 +158,8 @@ class SketchBuilder
 
   def rectangle(origin, width, height)
     require_point!(origin, "rectangle")
+    require_positive_number!(width, "rectangle width")
+    require_positive_number!(height, "rectangle height")
 
     right = point(nil, nil)
     top_right = point(nil, nil)
@@ -177,6 +182,8 @@ class SketchBuilder
 
   def centered_rectangle(center, width, height)
     require_point!(center, "centered_rectangle")
+    require_positive_number!(width, "centered_rectangle width")
+    require_positive_number!(height, "centered_rectangle height")
 
     bottom_left = point(nil, nil)
     bottom_right = point(nil, nil)
@@ -224,6 +231,7 @@ class SketchBuilder
 
   def dimension(a, b, length)
     require_points!(a, b, "dimension")
+    require_positive_number!(length, "dimension length")
     @constraints << [:dimension, a, b, length]
     [a, b]
   end
@@ -604,6 +612,12 @@ class SketchBuilder
   def require_points!(a, b, name)
     require_point!(a, name)
     require_point!(b, name)
+  end
+
+  def require_positive_number!(value, name)
+    unless value.is_a?(Numeric) && value > 0
+      raise ArgumentError, "#{name} must be > 0"
+    end
   end
 
   def same_point?(a, b)
