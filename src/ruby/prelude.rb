@@ -56,6 +56,77 @@ class Numeric
 end
 
 # ---------------------------------------------------------------------------
+# Constraint sketching — Phase 10 MVP
+# ---------------------------------------------------------------------------
+class SketchPoint
+  attr_accessor :x, :y
+
+  def initialize(x = nil, y = nil)
+    @x = x
+    @y = y
+  end
+
+  def resolved?
+    !@x.nil? && !@y.nil?
+  end
+
+  def to_a
+    raise RuntimeError, "sketch point is under-constrained" unless resolved?
+    [@x, @y]
+  end
+end
+
+class SketchBuilder
+  def initialize
+    @points = []
+    @lines = []
+  end
+
+  def point(x = nil, y = nil)
+    p = SketchPoint.new(x, y)
+    @points << p
+    p
+  end
+
+  def line(a, b)
+    unless a.is_a?(SketchPoint) && b.is_a?(SketchPoint)
+      raise TypeError, "line endpoints must be sketch points"
+    end
+    @lines << [a, b]
+    [a, b]
+  end
+
+  def to_profile
+    raise RuntimeError, "sketch requires at least 3 line segments" if @lines.length < 3
+
+    pts = []
+    @lines.each_with_index do |(a, b), i|
+      unless a.resolved? && b.resolved?
+        raise RuntimeError, "sketch is under-constrained"
+      end
+
+      if i > 0 && !same_point?(@lines[i - 1][1], a)
+        raise RuntimeError, "sketch lines must form one closed loop"
+      end
+
+      pts << a.to_a
+    end
+
+    unless same_point?(@lines[-1][1], @lines[0][0])
+      raise RuntimeError, "sketch lines must form one closed loop"
+    end
+
+    polygon(pts)
+  end
+
+  private
+
+  def same_point?(a, b)
+    a.resolved? && b.resolved? && (a.x - b.x).abs < 1.0e-9 && (a.y - b.y).abs < 1.0e-9
+  end
+end
+
+# ---------------------------------------------------------------------------
 # Shape — backing class for all solid geometry objects.
 #
 # Native instances (created via box/cylinder/sphere/rect/circle) are mRuby
@@ -540,6 +611,19 @@ module Kernel
   # `solid do ... end` — evaluates block, returns its result.
   def solid
     yield
+  end
+
+  # `sketch do ... end` — builds a constrained 2-D profile and returns a Shape.
+  # The Phase 10 MVP supports closed polygon loops. Constraint methods are
+  # added incrementally on SketchBuilder.
+  def sketch(&block)
+    builder = SketchBuilder.new
+    if block.arity == 1
+      block.call(builder)
+    else
+      builder.instance_eval(&block)
+    end
+    builder.to_profile
   end
 
   # `assembly "name" do |asm| ... end` — creates an Assembly.
