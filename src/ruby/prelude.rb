@@ -139,6 +139,12 @@ class SketchBuilder
     nil
   end
 
+  def slot_between(a, b, radius)
+    require_points!(a, b, "slot_between")
+    @profile = [:slot_between, a, b, radius]
+    nil
+  end
+
   def line(a, b)
     unless a.is_a?(SketchPoint) && b.is_a?(SketchPoint)
       raise TypeError, "line endpoints must be sketch points"
@@ -290,9 +296,44 @@ class SketchBuilder
         raise RuntimeError, "sketch is under-constrained: #{point_label(center)} missing #{missing_coords(center)}"
       end
       arc(radius, start_deg, end_deg).translate(center.x, center.y, 0)
+    when :slot_between
+      _type, a, b, radius = @profile
+      unless a.resolved? && b.resolved?
+        point = a.resolved? ? b : a
+        raise RuntimeError, "sketch is under-constrained: #{point_label(point)} missing #{missing_coords(point)}"
+      end
+      slot_shape(a, b, radius)
     else
       raise RuntimeError, "unknown sketch profile"
     end
+  end
+
+  def slot_shape(a, b, radius)
+    if (a.y - b.y).abs <= 1.0e-9
+      left, right = a.x <= b.x ? [a, b] : [b, a]
+      pts = arc_points(right.x, right.y, radius, -90.0, 90.0, 12)
+      pts += arc_points(left.x, left.y, radius, 90.0, 270.0, 12)
+    elsif (a.x - b.x).abs <= 1.0e-9
+      bottom, top = a.y <= b.y ? [a, b] : [b, a]
+      pts = arc_points(top.x, top.y, radius, 0.0, 180.0, 12)
+      pts += arc_points(bottom.x, bottom.y, radius, 180.0, 360.0, 12)
+    else
+      raise RuntimeError, "slot_between currently requires horizontal or vertical points"
+    end
+
+    polygon(pts)
+  end
+
+  def arc_points(cx, cy, radius, start_deg, end_deg, segments)
+    pts = []
+    i = 0
+    while i <= segments
+      t = start_deg + (end_deg - start_deg) * i / segments
+      rad = t * Math::PI / 180.0
+      pts << [cx + radius * Math.cos(rad), cy + radius * Math.sin(rad)]
+      i += 1
+    end
+    pts
   end
 
   def solve_constraints

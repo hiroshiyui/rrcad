@@ -217,6 +217,60 @@ fn arc_at_center_can_be_constraint_resolved() {
 }
 
 #[test]
+fn slot_between_builds_horizontal_face() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               a = point(0, 0)
+               b = point(20, 0)
+               slot_between a, b, 3
+             end
+             profile.shape_type",
+        )
+        .unwrap();
+    assert_eq!(result, ":face");
+}
+
+#[test]
+fn slot_between_can_extrude() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               a = point(0, 0)
+               b = point(20, 0)
+               slot_between a, b, 3
+             end
+             profile.extrude(1).volume",
+        )
+        .unwrap();
+    let volume: f64 = result.trim().parse().expect("expected a volume");
+    assert!(
+        volume > 145.0 && volume < 152.0,
+        "expected slot extrusion volume near 148.3, got {volume}"
+    );
+}
+
+#[test]
+fn slot_between_requires_axis_aligned_points() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval(
+            "sketch do
+               a = point(0, 0)
+               b = point(20, 5)
+               slot_between a, b, 3
+             end",
+        )
+        .unwrap_err();
+    assert!(
+        err.contains("horizontal or vertical"),
+        "expected axis-aligned slot error, got: {err}"
+    );
+}
+
+#[test]
 fn sketch_requires_closed_loop() {
     let mut vm = MrubyVm::new();
     let err = vm

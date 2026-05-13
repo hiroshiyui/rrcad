@@ -181,8 +181,8 @@ closed polygon profiles from points and lines, with constraint propagation for
 `circle_at(center, radius)` plus translated arc wires via
 `arc_at(center, radius, start_deg, end_deg)`. It also includes a constrained
 `rectangle(origin, width, height)` helper and `centered_rectangle(center, width,
-height)`. Remaining work: tangent, richer construction geometry, stronger
-solver diagnostics, and broader
+height)`, plus axis-aligned `slot_between(a, b, radius)` profiles. Remaining
+work: tangent, richer construction geometry, stronger solver diagnostics, and broader
 under/over-constrained sketch analysis.
 
 **Feature history / parametric model tree:** Represent modeling operations as a

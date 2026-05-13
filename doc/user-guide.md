@@ -189,6 +189,7 @@ same entry point.
 | `midpoint(a, b)` / `midpoint(:name, a, b)` | Create a construction point halfway between two points |
 | `circle_at(center, radius)` | Build an exact circular profile at a resolved sketch point |
 | `arc_at(center, radius, start_deg, end_deg)` | Build an arc wire at a resolved sketch point |
+| `slot_between(a, b, radius)` | Build an axis-aligned rounded slot between two resolved points |
 | `line(a, b)` | Add a line segment between two sketch points |
 | `rectangle(origin, width, height)` | Add a constrained rectangular line loop from an origin point |
 | `centered_rectangle(center, width, height)` | Add a constrained rectangle around a center point |
@@ -244,6 +245,12 @@ end.extrude(6.mm)
 path = sketch do
   c = point(0, 0)
   arc_at c, 12.mm, 0.deg, 180.deg
+end
+
+slot = sketch do
+  a = point(0, 0)
+  b = point(24.mm, 0)
+  slot_between a, b, 3.mm
 end
 ```
 
