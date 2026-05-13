@@ -1249,6 +1249,25 @@ module Kernel
     cylinder((d + adjust) / 2.0, depth)
   end
 
+  # shaft(diameter, length:, fit: :nominal) — solid cylinder shaft sized for a
+  # nominal hole of +diameter+ millimetres, with the diameter adjusted to match
+  # a standard fit class. +fit+ may be `:nominal`, `:press` (interference),
+  # `:slip` (light clearance), or `:running` (running clearance). Returns a
+  # solid cylinder oriented along +Z, suitable for `.fuse` or assembly.
+  def shaft(diameter, length:, fit: :nominal)
+    validate_positive_dimension(diameter, "shaft diameter")
+    validate_positive_dimension(length, "shaft length")
+    adjust = case fit
+             when :nominal then  0.0
+             when :press   then  0.02
+             when :slip    then -0.02
+             when :running then -0.05
+             else
+               raise ArgumentError, "shaft: unsupported fit #{fit.inspect}"
+             end
+    cylinder((diameter + adjust) / 2.0, length)
+  end
+
   def hardware_diameter(size, table, label)
     if size.is_a?(Numeric)
       validate_positive_dimension(size, "#{label} diameter")

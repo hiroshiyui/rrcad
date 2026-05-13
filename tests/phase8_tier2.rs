@@ -373,6 +373,74 @@ fn bearing_bore_rejects_unknown_fit() {
 }
 
 // ---------------------------------------------------------------------------
+// Shaft fits
+// ---------------------------------------------------------------------------
+
+#[test]
+fn shaft_returns_solid() {
+    let mut vm = MrubyVm::new();
+    let result = vm.eval("shaft(8, length: 20).shape_type").unwrap();
+    assert_eq!(result, ":solid");
+}
+
+#[test]
+fn shaft_nominal_matches_diameter() {
+    let mut vm = MrubyVm::new();
+    let result = vm.eval("shaft(8, length: 20).bounding_box[:dx]").unwrap();
+    let dx: f64 = result.trim().parse().expect("expected a float");
+    assert!((dx - 8.0).abs() < 0.01, "expected ~8 mm, got {dx}");
+}
+
+#[test]
+fn shaft_press_fit_is_larger_than_nominal() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "shaft(8, length: 20, fit: :press).bounding_box[:dx] > \
+             shaft(8, length: 20, fit: :nominal).bounding_box[:dx]",
+        )
+        .unwrap();
+    assert_eq!(result, "true");
+}
+
+#[test]
+fn shaft_running_fit_is_smaller_than_slip_fit() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "shaft(8, length: 20, fit: :running).bounding_box[:dx] < \
+             shaft(8, length: 20, fit: :slip).bounding_box[:dx]",
+        )
+        .unwrap();
+    assert_eq!(result, "true");
+}
+
+#[test]
+fn shaft_height_matches_length() {
+    let mut vm = MrubyVm::new();
+    let result = vm.eval("shaft(8, length: 20).bounding_box[:dz]").unwrap();
+    let dz: f64 = result.trim().parse().expect("expected a float");
+    assert!((dz - 20.0).abs() < 0.01, "expected length 20, got {dz}");
+}
+
+#[test]
+fn shaft_rejects_unknown_fit() {
+    let mut vm = MrubyVm::new();
+    let err = vm.eval("shaft(8, length: 20, fit: :tight)").unwrap_err();
+    assert!(
+        err.contains("unsupported fit"),
+        "expected unsupported fit error, got: {err}"
+    );
+}
+
+#[test]
+fn shaft_rejects_non_positive_diameter() {
+    let mut vm = MrubyVm::new();
+    let err = vm.eval("shaft(0, length: 20)").unwrap_err();
+    assert!(err.contains("must be > 0"), "got: {err}");
+}
+
+// ---------------------------------------------------------------------------
 // Draft angle extrude
 // ---------------------------------------------------------------------------
 

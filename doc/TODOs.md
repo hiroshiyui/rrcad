@@ -219,8 +219,9 @@ head_depth:)` adds metric socket-head counterbores. `flat_head_csink(size,
 depth:, angle:)` adds metric flat-head countersinks. `bearing_bore(size,
 depth:, fit:)` adds outer-diameter bores for common deep-groove ball bearings
 (`:b608`, `:b623`, `:b624`, `:b625`, `:b626`, `:b688`, `:b695`, `:b6000`,
-`:b6001`) with `:press` or `:slip` fit. Remaining work: shaft fits and
-standard fasteners.
+`:b6001`) with `:press` or `:slip` fit. `shaft(diameter, length:, fit:)`
+generates mating shaft cylinders with `:nominal`, `:press`, `:slip`, or
+`:running` fit adjustments. Remaining work: standard fasteners.
 
 **Preview inspection UX:** Upgrade the browser preview with face/edge hover IDs,
 click-to-print selectors, bounding box / volume / surface-area display, section
