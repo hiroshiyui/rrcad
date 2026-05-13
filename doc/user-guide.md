@@ -191,6 +191,7 @@ same entry point.
 | `arc_at(center, radius, start_deg, end_deg)` | Build an arc wire at a resolved sketch point |
 | `line(a, b)` | Add a line segment between two sketch points |
 | `rectangle(origin, width, height)` | Add a constrained rectangular line loop from an origin point |
+| `centered_rectangle(center, width, height)` | Add a constrained rectangle around a center point |
 | `fixed(point, x = point.x, y = point.y)` | Lock a point coordinate |
 | `horizontal(a, b)` | Force two points to share Y |
 | `vertical(a, b)` | Force two points to share X |
@@ -227,6 +228,11 @@ plate = sketch do
   origin = point(:origin, 0, 0)
   rectangle origin, 40.mm, 20.mm
 end.extrude(4.mm)
+
+boss_plate = sketch do
+  center = point(:center, 0, 0)
+  centered_rectangle center, 30.mm, 12.mm
+end.extrude(3.mm)
 
 round_part = sketch { circle(8.mm) }.extrude(3.mm)
 

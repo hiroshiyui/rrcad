@@ -169,6 +169,29 @@ class SketchBuilder
     [origin, right, top_right, top_left]
   end
 
+  def centered_rectangle(center, width, height)
+    require_point!(center, "centered_rectangle")
+
+    bottom_left = point(nil, nil)
+    bottom_right = point(nil, nil)
+    top_right = point(nil, nil)
+    top_left = point(nil, nil)
+
+    horizontal bottom_left, bottom_right
+    horizontal top_right, top_left
+    vertical bottom_left, top_left
+    vertical bottom_right, top_right
+    @constraints << [:centered_dimension, center, bottom_left, bottom_right, :x, width]
+    @constraints << [:centered_dimension, center, bottom_left, top_left, :y, height]
+
+    line bottom_left, bottom_right
+    line bottom_right, top_right
+    line top_right, top_left
+    line top_left, bottom_left
+
+    [bottom_left, bottom_right, top_right, top_left]
+  end
+
   def fixed(point, x = point.x, y = point.y)
     require_point!(point, "fixed")
     @constraints << [:fixed, point, x, y]
@@ -317,6 +340,35 @@ class SketchBuilder
     when :midpoint
       _type, p, a, b = constraint
       apply_midpoint(p, a, b)
+    when :centered_dimension
+      _type, center, a, b, attr, length = constraint
+      apply_centered_dimension(center, a, b, attr, length)
+    else
+      false
+    end
+  end
+
+  def apply_centered_dimension(center, a, b, attr, length)
+    cv = coord_get(center, attr)
+    av = coord_get(a, attr)
+    bv = coord_get(b, attr)
+
+    if cv && av.nil? && bv.nil?
+      changed = assign_coord(a, attr, cv - length / 2.0, "centered_dimension")
+      assign_coord(b, attr, cv + length / 2.0, "centered_dimension") || changed
+    elsif av && bv && cv.nil?
+      assign_coord(center, attr, (av + bv) / 2.0, "centered_dimension")
+    elsif cv && av && bv
+      expected_a = cv - length / 2.0
+      expected_b = cv + length / 2.0
+      if (av - expected_a).abs > 1.0e-6 || (bv - expected_b).abs > 1.0e-6
+        raise RuntimeError, "conflicting centered_dimension constraint"
+      end
+      false
+    elsif cv && av
+      assign_coord(b, attr, cv + length / 2.0, "centered_dimension")
+    elsif cv && bv
+      assign_coord(a, attr, cv - length / 2.0, "centered_dimension")
     else
       false
     end

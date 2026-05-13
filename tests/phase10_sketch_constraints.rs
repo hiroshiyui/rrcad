@@ -88,6 +88,45 @@ fn rectangle_helper_origin_can_be_constraint_resolved() {
 }
 
 #[test]
+fn centered_rectangle_helper_builds_profile_around_center() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "bb = sketch do
+               center = point(:center, 0, 0)
+               centered_rectangle center, 20, 8
+             end.bounding_box
+             [bb[:x], bb[:y], bb[:dx], bb[:dy]].inspect",
+        )
+        .unwrap();
+    assert!(result.contains("-10"), "expected xmin near -10, got {result}");
+    assert!(result.contains("-4"), "expected ymin near -4, got {result}");
+    assert!(result.contains("20"), "expected dx near 20, got {result}");
+    assert!(result.contains("8"), "expected dy near 8, got {result}");
+}
+
+#[test]
+fn centered_rectangle_center_can_be_constraint_resolved() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               a = point(-5, 0)
+               b = point(5, 0)
+               center = midpoint(:center, a, b)
+               centered_rectangle center, 10, 6
+             end
+             profile.extrude(2).volume",
+        )
+        .unwrap();
+    let volume: f64 = result.trim().parse().expect("expected a volume");
+    assert!(
+        (volume - 120.0).abs() < 1.0,
+        "expected 10x6x2 centered rectangle volume near 120, got {volume}"
+    );
+}
+
+#[test]
 fn sketch_can_return_existing_exact_profile() {
     let mut vm = MrubyVm::new();
     let result = vm

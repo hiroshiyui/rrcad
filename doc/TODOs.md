@@ -180,8 +180,9 @@ closed polygon profiles from points and lines, with constraint propagation for
 `.extrude`, `.pad`, and `.pocket`, and supports exact circle profiles via
 `circle_at(center, radius)` plus translated arc wires via
 `arc_at(center, radius, start_deg, end_deg)`. It also includes a constrained
-`rectangle(origin, width, height)` helper. Remaining work: tangent, richer
-construction geometry, stronger solver diagnostics, and broader
+`rectangle(origin, width, height)` helper and `centered_rectangle(center, width,
+height)`. Remaining work: tangent, richer construction geometry, stronger
+solver diagnostics, and broader
 under/over-constrained sketch analysis.
 
 **Feature history / parametric model tree:** Represent modeling operations as a
