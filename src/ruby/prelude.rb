@@ -1226,14 +1226,109 @@ end
 # Assembly — groups named shapes; supports place; mate is Phase 5.
 # ---------------------------------------------------------------------------
 class Assembly
+  SOLVER_TOLERANCE = 1.0e-6
+
+  class FaceRef
+    attr_reader :part_name, :selector
+
+    def initialize(part_name, selector)
+      @part_name = part_name
+      @selector = selector
+    end
+
+    def inspect
+      "#<Assembly::FaceRef #{part_name}:#{selector.inspect}>"
+    end
+  end
+
+  class PartBuilder
+    def initialize(assembly, part)
+      @assembly = assembly
+      @part = part
+    end
+
+    def face(part_name, selector)
+      @assembly.face(part_name, selector)
+    end
+
+    def mate(from:, to:, offset: 0.0)
+      from_sel = @assembly.__send__(:normalize_local_selector!, from, @part[:name], "mate from:")
+      to_ref = @assembly.__send__(:normalize_face_ref!, to, "mate to:")
+      @assembly.__send__(:validate_numeric!, offset, "mate offset")
+      @part[:constraints] << [:mate, from_sel, to_ref, offset]
+      @assembly.__send__(:mark_solver_dirty!)
+      to_ref
+    end
+
+    def distance_mate(from:, to:, distance:)
+      from_sel = @assembly.__send__(:normalize_local_selector!, from, @part[:name], "distance_mate from:")
+      to_ref = @assembly.__send__(:normalize_face_ref!, to, "distance_mate to:")
+      @assembly.__send__(:validate_positive_numeric!, distance, "distance_mate distance")
+      @part[:constraints] << [:distance_mate, from_sel, to_ref, distance]
+      @assembly.__send__(:mark_solver_dirty!)
+      to_ref
+    end
+
+    def angle_mate(from:, to:, angle:, pivot:, axis_dir:, offset: 0.0)
+      from_sel = @assembly.__send__(:normalize_local_selector!, from, @part[:name], "angle_mate from:")
+      to_ref = @assembly.__send__(:normalize_face_ref!, to, "angle_mate to:")
+      @assembly.__send__(:validate_numeric!, angle, "angle_mate angle")
+      @assembly.__send__(:validate_point!, pivot, "angle_mate pivot")
+      @assembly.__send__(:validate_point!, axis_dir, "angle_mate axis_dir")
+      @assembly.__send__(:validate_numeric!, offset, "angle_mate offset")
+      @part[:constraints] << [:angle_mate, from_sel, to_ref, angle, pivot, axis_dir, offset]
+      @assembly.__send__(:mark_solver_dirty!)
+      to_ref
+    end
+  end
+
   def initialize(name)
     @name = name
     @shapes = []
+    @solver_parts = []
+    @solver_parts_by_name = {}
+    @solver_cache = nil
+    @solver_dirty = true
   end
 
   def place(shape)
     @shapes << shape
     shape
+  end
+
+  # Declare a named rigid part to be solved lazily from constraints.
+  # The first declared part is fixed by default unless fixed: false is given.
+  def part(name, shape, fixed: nil, &block)
+    unless shape.is_a?(Shape)
+      raise ArgumentError, "part shape must be a Shape"
+    end
+    name = normalize_part_name(name)
+    if @solver_parts_by_name.key?(name)
+      raise ArgumentError, "duplicate assembly part #{name.inspect}"
+    end
+    fixed = @solver_parts.empty? if fixed.nil?
+    part = { name: name, shape: shape, fixed: fixed, constraints: [] }
+    @solver_parts << part
+    @solver_parts_by_name[name] = part
+    mark_solver_dirty!
+
+    if block_given?
+      builder = PartBuilder.new(self, part)
+      if block.arity == 1
+        block.call(builder)
+      else
+        builder.instance_eval(&block)
+      end
+    end
+    shape
+  end
+
+  def ground(name, shape, &block)
+    part(name, shape, fixed: true, &block)
+  end
+
+  def face(part_name, selector)
+    FaceRef.new(normalize_part_name(part_name), selector)
   end
 
   # Reposition +shape+ so that +from:+ face aligns with +to:+ face, then add
@@ -1302,6 +1397,46 @@ class Assembly
     positioned
   end
 
+  # Solve the declarative assembly graph and return a Hash of part name →
+  # positioned Shape.  The result is cached until the assembly changes.
+  def solve
+    return @solver_cache unless @solver_dirty
+    if @solver_parts.empty?
+      @solver_cache = {}
+      @solver_dirty = false
+      return @solver_cache
+    end
+
+    validate_solver_refs!
+
+    resolved = {}
+    @solver_parts.each do |part|
+      resolved[part[:name]] = part[:shape] if part[:fixed]
+    end
+
+    progress = true
+    while progress
+      progress = false
+      @solver_parts.each do |part|
+        next if resolved.key?(part[:name])
+        candidate = solve_part_candidate(part, resolved)
+        next unless candidate
+        resolved[part[:name]] = candidate
+        progress = true
+      end
+    end
+
+    unresolved = @solver_parts.map { |part| part[:name] } - resolved.keys
+    unless unresolved.empty?
+      raise RuntimeError,
+            "assembly '#{@name}' is under-constrained: unresolved parts #{unresolved.map { |name| ":#{name}" }.join(', ')}"
+    end
+
+    @solver_cache = resolved
+    @solver_dirty = false
+    resolved
+  end
+
   def validate_axis_pair!(pair, label)
     unless pair.is_a?(Array) && pair.length == 2
       raise ArgumentError, "#{label} must be a [point_a, point_b] pair"
@@ -1318,10 +1453,28 @@ class Assembly
     [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
   end
 
+  def vec_dot(a, b)
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+  end
+
+  def vec_scale(v, s)
+    [v[0] * s, v[1] * s, v[2] * s]
+  end
+
+  def vec_length(v)
+    Math.sqrt(vec_dot(v, v))
+  end
+
   def vec_normalize(v, label = "axis")
     mag = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
     raise ArgumentError, "#{label} axis points must be distinct" if mag < 1.0e-12
     [v[0] / mag, v[1] / mag, v[2] / mag]
+  end
+
+  def format_num(v)
+    return v.to_s unless v.is_a?(Numeric)
+    rounded = (v * 1.0e6).round / 1.0e6
+    rounded.to_s
   end
 
   # Apply the rotation that takes unit vector u to unit vector v, pivoting
@@ -1352,11 +1505,177 @@ class Assembly
     end
   end
 
-  private :validate_axis_pair!, :vec_sub, :vec_normalize, :apply_axis_rotation
+  def normalize_part_name(name)
+    case name
+    when Symbol then name
+    when String then name.to_sym
+    else
+      raise ArgumentError, "assembly part name must be a Symbol or String"
+    end
+  end
+
+  def normalize_face_ref!(ref, label)
+    case ref
+    when FaceRef
+      ref
+    when Array
+      if ref.length == 2
+        FaceRef.new(normalize_part_name(ref[0]), ref[1])
+      else
+        raise ArgumentError, "#{label} must be an Assembly::FaceRef or [part_name, selector]"
+      end
+    else
+      raise ArgumentError, "#{label} must be an Assembly::FaceRef or [part_name, selector]"
+    end
+  end
+
+  def normalize_local_selector!(selector, part_name, label)
+    case selector
+    when Symbol, String
+      selector
+    when FaceRef
+      if selector.part_name == part_name
+        selector.selector
+      else
+        raise ArgumentError, "#{label} must refer to the current part"
+      end
+    else
+      raise ArgumentError, "#{label} must be a Symbol, String, or Assembly::FaceRef"
+    end
+  end
+
+  def validate_numeric!(value, label)
+    unless value.is_a?(Numeric)
+      raise ArgumentError, "#{label} must be a number"
+    end
+  end
+
+  def validate_positive_numeric!(value, label)
+    validate_numeric!(value, label)
+    raise ArgumentError, "#{label} must be > 0" unless value > 0
+  end
+
+  def validate_point!(point, label)
+    unless point.is_a?(Array) && point.length == 3 && point.all? { |v| v.is_a?(Numeric) }
+      raise ArgumentError, "#{label} must be a 3-element numeric array"
+    end
+  end
+
+  def mark_solver_dirty!
+    @solver_dirty = true
+    @solver_cache = nil
+  end
+
+  def resolve_face_ref(ref, resolved)
+    part = @solver_parts_by_name[ref.part_name]
+    raise RuntimeError, "assembly '#{@name}' references unknown part #{ref.part_name.inspect}" if part.nil?
+    shape = resolved[ref.part_name]
+    return nil unless shape
+    faces = shape.faces(ref.selector)
+    face = faces.first
+    raise RuntimeError, "assembly '#{@name}' face #{ref.inspect} resolved to no face" if face.nil?
+    face
+  end
+
+  def solve_part_candidate(part, resolved)
+    return nil if part[:constraints].empty?
+    return nil unless part[:constraints].all? { |constraint| constraint_target_resolved?(constraint, resolved) }
+
+    candidate = part[:shape]
+    part[:constraints].each do |constraint|
+      kind, from_sel, to_ref, *rest = constraint
+      target_face = resolve_face_ref(to_ref, resolved)
+      case kind
+      when :mate
+        source_face = candidate.faces(from_sel).first
+        raise RuntimeError, "assembly '#{@name}' face #{from_sel.inspect} resolved to no face" if source_face.nil?
+        candidate = candidate.mate(source_face, target_face, rest[0])
+      when :distance_mate
+        source_face = candidate.faces(from_sel).first
+        raise RuntimeError, "assembly '#{@name}' face #{from_sel.inspect} resolved to no face" if source_face.nil?
+        candidate = candidate.mate(source_face, target_face, rest[0])
+      when :angle_mate
+        source_face = candidate.faces(from_sel).first
+        raise RuntimeError, "assembly '#{@name}' face #{from_sel.inspect} resolved to no face" if source_face.nil?
+        angle, pivot, axis_dir, offset = rest
+        candidate = candidate.mate(source_face, target_face, offset)
+        candidate = candidate.rotate_about(pivot, axis_dir, angle)
+      else
+        raise RuntimeError, "assembly '#{@name}' does not support constraint #{kind.inspect}"
+      end
+    end
+
+    verify_part_constraints!(part, candidate, resolved)
+    candidate
+  end
+
+  def constraint_target_resolved?(constraint, resolved)
+    _kind, _from_sel, to_ref, *_rest = constraint
+    resolved.key?(to_ref.part_name)
+  end
+
+  def verify_part_constraints!(part, candidate, resolved)
+    part[:constraints].each do |constraint|
+      kind, from_sel, to_ref, *rest = constraint
+      next unless [:mate, :distance_mate, :angle_mate].include?(kind)
+      target_face = resolve_face_ref(to_ref, resolved)
+      source_face = candidate.faces(from_sel).first
+      raise RuntimeError, "assembly '#{@name}' face #{from_sel.inspect} resolved to no face" if source_face.nil?
+      expected_offset = kind == :angle_mate ? rest[3] : rest[0]
+      verify_face_relation!(part[:name], kind, source_face, target_face, expected_offset)
+    end
+  end
+
+  def verify_face_relation!(part_name, kind, source_face, target_face, expected_offset)
+    source_centroid = source_face.centroid
+    target_centroid = target_face.centroid
+    target_normal = target_face.normal
+    source_normal = source_face.normal
+
+    dot = source_normal[0] * target_normal[0] + source_normal[1] * target_normal[1] +
+          source_normal[2] * target_normal[2]
+    unless (dot + 1.0).abs <= 1.0e-4
+      raise RuntimeError,
+            "assembly '#{@name}' conflicting #{kind} constraint on #{part_name}: face normals are not antiparallel"
+    end
+
+    delta = vec_sub(source_centroid, target_centroid)
+    along = vec_dot(delta, target_normal)
+    tangent = vec_sub(delta, vec_scale(target_normal, along))
+    unless vec_length(tangent) <= SOLVER_TOLERANCE
+      raise RuntimeError,
+            "assembly '#{@name}' conflicting #{kind} constraint on #{part_name}: face centroids do not line up"
+    end
+
+    unless (along - expected_offset).abs <= 1.0e-4
+      raise RuntimeError,
+            "assembly '#{@name}' conflicting #{kind} constraint on #{part_name}: expected offset #{format_num(expected_offset)}, got #{format_num(along)}"
+    end
+  end
+
+  def validate_solver_refs!
+    @solver_parts.each do |part|
+      part[:constraints].each do |constraint|
+        _kind, _from_sel, to_ref, *_rest = constraint
+        next if @solver_parts_by_name.key?(to_ref.part_name)
+        raise RuntimeError,
+              "assembly '#{@name}' references unknown part #{to_ref.part_name.inspect}"
+      end
+    end
+  end
+
+  private :validate_axis_pair!, :vec_sub, :vec_normalize, :vec_dot, :vec_scale, :vec_length,
+          :apply_axis_rotation, :normalize_part_name, :normalize_face_ref!,
+          :normalize_local_selector!, :validate_numeric!, :validate_positive_numeric!,
+          :validate_point!, :mark_solver_dirty!, :resolve_face_ref,
+          :solve_part_candidate, :constraint_target_resolved?, :verify_part_constraints!,
+          :verify_face_relation!, :validate_solver_refs!
 
   def to_shape
-    raise RuntimeError, "Assembly '#{@name}' contains no shapes" if @shapes.empty?
-    @shapes.inject { |acc, s| acc.fuse(s) }
+    shapes = @shapes.dup
+    shapes.concat(solve.values) unless @solver_parts.empty?
+    raise RuntimeError, "Assembly '#{@name}' contains no shapes" if shapes.empty?
+    shapes.inject { |acc, s| acc.fuse(s) }
   end
 
   def export(path)

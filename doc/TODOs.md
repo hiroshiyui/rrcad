@@ -222,14 +222,15 @@ prefixed with `hint:`. Sample message:
 smallest adjacent face/edge; try a smaller value or use fillet_sel with
 an edge selector`.
 
-**Assembly constraints beyond `mate` ◐ STARTED:** Added transform-based
-helpers that cover most of the planned constraint set without introducing a
-full constraint solver: `Assembly#distance_mate` (named air-gap variant of
-`mate`); `Assembly#axis_align(from: [p1, p2], to: [q1, q2])` (coaxial /
-concentric / axis-alignment by point-pair axes); `Assembly#angle_mate(...,
-angle:, pivot:, axis_dir:)` (mate + extra rotation about a chosen axis for
-rotation-lock); and `Shape#rotate_about(point, axis_dir, angle_deg)` as a
-general primitive. Coincident-plane is the existing `mate(..., offset: 0)`.
+**Assembly constraints beyond `mate` ✓ COMPLETE:** The assembly layer now has
+a declarative rigid-body solver alongside the existing eager helpers. Use
+`assembly("rig") do |a| ... end` with `a.ground :base, base` and
+`a.part :post, post do |p| mate from: :bottom, to: face(:base, :top) end`
+to resolve chained parts lazily when `to_shape` / `export` runs. The solver
+detects under-constrained parts and conflicting mate chains, while the older
+`place`, `mate`, `distance_mate`, `axis_align`, and `angle_mate` helpers
+remain available as compatibility transforms. `Shape#rotate_about(point,
+axis_dir, angle_deg)` remains the primitive used by `angle_mate`.
 
 **Units system ✓ COMPLETE:** Initial `Numeric` helpers are implemented in the
 Ruby prelude: `1.6.mm`, `2.inch`, `1.cm`, `0.5.m`, `15.deg`, and
@@ -296,9 +297,6 @@ important.
 - **Diagnostics — failure debug exports** of intermediate geometry, and
   richer hints driven by inspecting operand bounding-box extents.
   (Extends *Better diagnostics*.)
-- **Assembly — full constraint solver** that resolves under-constrained
-  poses iteratively, in addition to the transform-based helpers already
-  shipped. (Extends *Assembly constraints beyond `mate`*.)
 - **Units — dimensional analysis** with richer unit-aware values,
   beyond the current `Numeric` helpers. (Extends *Units system*.)
 - **Hardware helpers — washer/nut bodies.** Imperial sizes (#4-40 through

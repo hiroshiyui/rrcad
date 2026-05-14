@@ -740,7 +740,8 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 
 ### Assembly
 
-`Assembly` groups named shapes and can position them via face mating.
+`Assembly` groups named shapes and can position them either eagerly via the
+existing transform helpers or lazily via a declarative constraint graph.
 
 ```ruby
 base = box(100, 80, 10)
@@ -753,16 +754,28 @@ asm = assembly("bracket") do |a|
                to:   base.faces(:top).first, offset: 2.0  # 2 mm gap
 end
 asm.export("bracket.glb")
+
+rig = assembly("rig") do |a|
+  a.ground :base, base
+  a.part :post, post do
+    mate from: :bottom, to: face(:base, :top)
+  end
+end
+rig.to_shape
 ```
 
 | Method | Description |
 |--------|-------------|
 | `a.place(shape)` | Add `shape` at its current position. Returns `shape`. |
+| `a.ground(name, shape) { ... }` | Register a fixed part in the declarative solver. The first `part` is fixed by default; use `ground` for clarity on the root body. |
+| `a.part(name, shape, fixed: nil) { ... }` | Register a named rigid part for lazy solving. The yielded builder supports `mate`, `distance_mate`, and `angle_mate` constraints; the first part defaults to fixed when `fixed:` is omitted. |
+| `a.face(part_name, selector)` | Build a face reference for the declarative solver. Use with `a.part(...){ mate from: :bottom, to: face(:base, :top) }`. |
+| `asm.solve` | Resolve the declarative assembly graph and return a Hash of part names to positioned Shapes. Raises on under-constrained or conflicting assemblies. |
 | `a.mate(shape, from:, to:, offset: 0.0)` | Reposition `shape` so `from:` face aligns against `to:` face, then add to the assembly. Returns the repositioned shape. |
 | `a.distance_mate(shape, from:, to:, distance:)` | Variant of `mate` that names the air-gap intent and requires `distance > 0`. Equivalent to `mate(..., offset: distance)`. |
 | `a.axis_align(shape, from: [p1, p2], to: [q1, q2])` | Rotate and translate `shape` so the source axis (`p1 → p2` in the shape's frame) maps to the target axis (`q1 → q2` in world coordinates). Useful for coaxial / concentric / axis-alignment placement by point pairs. |
 | `a.angle_mate(shape, from:, to:, angle:, pivot:, axis_dir:, offset: 0.0)` | Mate `from:` face flush onto `to:` face (with optional `offset:` gap), then rotate the placed shape by `angle` degrees about an axis through `pivot` in direction `axis_dir`. Locks the rotational DOF left over by a planar mate. |
-| `asm.export(path)` | Fuse all shapes and export to file. |
+| `asm.export(path)` | Fuse all shapes and export to file. When declarative parts are present, the assembly is solved lazily before fusion. |
 
 `Shape#rotate_about(point, axis_dir, angle_deg)` is the underlying transform
 primitive used by `angle_mate`: rotate the shape by `angle_deg` around an

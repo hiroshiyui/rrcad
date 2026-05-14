@@ -487,6 +487,23 @@ end
 asm.export("frame.step")
 ```
 
+For assemblies that need more than one dependent part, use the declarative
+solver. The first part is fixed by default, and later parts can be chained off
+named face references:
+
+```ruby
+asm = assembly("rig") do |a|
+  a.ground :base, base
+  a.part :post, post do
+    mate from: :bottom, to: face(:base, :top)
+  end
+  a.part :cap, cap do
+    mate from: :bottom, to: face(:post, :top), offset: 2.0
+  end
+end
+asm.to_shape
+```
+
 **`.mate` alignment:**
 
 ```ruby
