@@ -29,6 +29,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/phase8_tier2.rs`): `screw(size, length:, style:)` generates solid
   fastener bodies for `:m2`–`:m5` in `:socket` (ISO 4762), `:button`
   (ISO 7380), and `:flat` (ISO 10642 90° conical head) styles.
+- **Sketch — tangent constraint** (`src/ruby/prelude.rb`,
+  `tests/phase10_sketch_constraints.rs`): `tangent(a, b, center, radius,
+  side:)` constrains a line segment tangent to a circle. With `side:`
+  (`:above`/`:below` for horizontal lines, `:left`/`:right` for vertical
+  lines) the solver propagates the unknown perpendicular coordinate on
+  either the line or the center; for fully-resolved geometry it verifies the
+  point-to-line distance and raises on conflict. Endpoint-driven orientation
+  inference lets the constraint work inside open rectangle sketches.
+- **Assembly — transform-based constraint helpers** (`src/ruby/prelude.rb`,
+  `tests/assembly_constraints.rs`): `Shape#rotate_about(point, axis_dir,
+  angle_deg)` rotates around any pivot; `Assembly#distance_mate(shape,
+  from:, to:, distance:)` is a named air-gap variant of `mate`;
+  `Assembly#axis_align(shape, from: [p1, p2], to: [q1, q2])` rotates and
+  translates a shape so a source axis maps to a target axis (covers
+  coaxial / concentric / axis-alignment cases); `Assembly#angle_mate(...,
+  angle:, pivot:, axis_dir:, offset:)` mates a face flush and then rotates
+  about a chosen pivot axis to lock the leftover rotational degree of
+  freedom.
 
 ---
 

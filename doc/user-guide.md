@@ -205,6 +205,7 @@ same entry point.
 | `symmetric(a, b, center)` | Keep two points opposite each other around a center point |
 | `mirror_x(source, target, axis_y = 0)` | Mirror a point across a horizontal axis |
 | `mirror_y(source, target, axis_x = 0)` | Mirror a point across a vertical axis |
+| `tangent(a, b, center, radius, side: nil)` | Constrain line segment `a→b` tangent to a circle of given center and radius. With `side:` of `:above`/`:below` (horizontal lines) or `:left`/`:right` (vertical lines), solves the unknown perpendicular coordinate; otherwise verifies distance for fully-resolved geometry. |
 
 ```ruby
 profile = sketch do
@@ -442,6 +443,33 @@ placed = part.mate(from_face, to_face)
 # Align with a gap
 placed = part.mate(from_face, to_face, offset: 2.0)
 ```
+
+**Assembly constraint helpers:**
+
+```ruby
+asm = assembly("rig") do |a|
+  a.place base
+  # Named air-gap variant of mate.
+  a.distance_mate post, from: post.faces(:bottom).first,
+                        to:   base.faces(:top).first, distance: 5
+
+  # Coaxial / concentric alignment by point-pair axes (source axis in shape
+  # frame → target axis in world). Useful when both axes are known by two
+  # points (e.g. a hole's centreline).
+  a.axis_align shaft_part,
+    from: [[0, 0, 0], [0, 0, 10]],
+    to:   [[hole_x, hole_y, 0], [hole_x, hole_y, 10]]
+
+  # Mate + lock the leftover rotational DOF by rotating about a chosen pivot.
+  a.angle_mate cover, from: cover.faces(:bottom).first,
+                      to:   base.faces(:top).first,
+                      angle: 30, pivot: [10, 10, 5], axis_dir: [0, 0, 1]
+end
+```
+
+`Shape#rotate_about(point, axis_dir, angle_deg)` is the underlying primitive
+— rotate a shape by `angle_deg` around an axis through `point` pointing in
+`axis_dir`.
 
 **Color:**
 

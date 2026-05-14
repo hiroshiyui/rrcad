@@ -727,7 +727,15 @@ asm.export("bracket.glb")
 |--------|-------------|
 | `a.place(shape)` | Add `shape` at its current position. Returns `shape`. |
 | `a.mate(shape, from:, to:, offset: 0.0)` | Reposition `shape` so `from:` face aligns against `to:` face, then add to the assembly. Returns the repositioned shape. |
+| `a.distance_mate(shape, from:, to:, distance:)` | Variant of `mate` that names the air-gap intent and requires `distance > 0`. Equivalent to `mate(..., offset: distance)`. |
+| `a.axis_align(shape, from: [p1, p2], to: [q1, q2])` | Rotate and translate `shape` so the source axis (`p1 → p2` in the shape's frame) maps to the target axis (`q1 → q2` in world coordinates). Useful for coaxial / concentric / axis-alignment placement by point pairs. |
+| `a.angle_mate(shape, from:, to:, angle:, pivot:, axis_dir:, offset: 0.0)` | Mate `from:` face flush onto `to:` face (with optional `offset:` gap), then rotate the placed shape by `angle` degrees about an axis through `pivot` in direction `axis_dir`. Locks the rotational DOF left over by a planar mate. |
 | `asm.export(path)` | Fuse all shapes and export to file. |
+
+`Shape#rotate_about(point, axis_dir, angle_deg)` is the underlying transform
+primitive used by `angle_mate`: rotate the shape by `angle_deg` around an
+axis through `point` (3-element array) pointing in `axis_dir` (3-element
+array). Implemented as `translate(−p) → rotate → translate(+p)`.
 
 ---
 
