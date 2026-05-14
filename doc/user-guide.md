@@ -18,6 +18,7 @@ rrcad is a Ruby DSL for 3D parametric CAD. You write `.rb` scripts; an embedded 
    - [Boolean Operations](#boolean-operations)
    - [Modifiers](#modifiers)
    - [Sub-shape Selectors](#sub-shape-selectors)
+   - [Named Topology](#named-topology)
    - [Patterns](#patterns)
    - [Surface Modeling](#surface-modeling)
    - [Part Design](#part-design)
@@ -349,6 +350,29 @@ These return an `Array` of Shape objects.
 ```ruby
 top_face  = part.faces(:top).first
 side_edge = part.edges(:vertical).first
+```
+
+### Named Topology
+
+Register named selectors for recurring faces and edges, or attach a datum
+shape for later reuse.
+
+| Method | Description |
+|--------|-------------|
+| `name_face(name, selector)` | Name a face selector such as `:top` or `">Z"` |
+| `name_edge(name, selector)` | Name an edge selector such as `:vertical` |
+| `datum(name, shape)` | Store a reference shape such as a datum plane |
+| `ref(name)` | Resolve a named face, edge, or datum |
+
+```ruby
+part = box(10, 20, 30)
+part.name_face(:mounting_face, :top)
+part.name_edge(:boss_edges, :vertical)
+part.datum(:fixture_plane, datum_plane(origin: [0, 0, 0], normal: [0, 0, 1], x_dir: [1, 0, 0]))
+
+part.faces(:mounting_face).first
+part.edges(:boss_edges).length
+part.ref(:fixture_plane)
 ```
 
 ### Patterns

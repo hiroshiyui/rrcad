@@ -14,6 +14,7 @@ mod ffi {
             g: f64,
             b: f64,
         ) -> Result<UniquePtr<OcctShape>>;
+        fn shape_copy(shape: &OcctShape) -> Result<UniquePtr<OcctShape>>;
 
         // --- Assembly mating ---
         fn shape_mate(
@@ -327,10 +328,21 @@ mod ffi {
 }
 
 use cxx::UniquePtr;
+use std::cell::RefCell;
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+#[derive(Clone)]
+enum NamedRef {
+    FaceSelector(String),
+    EdgeSelector(String),
+    Datum(Arc<Shape>),
+}
 
 /// Owned handle to a live OCCT shape.
 pub struct Shape {
     inner: UniquePtr<ffi::OcctShape>,
+    named_refs: RefCell<BTreeMap<String, NamedRef>>,
 }
 
 /// Best-effort one-word shape kind ("solid", "face", "wire", …) used to
@@ -353,41 +365,79 @@ fn hint(s: &str) -> String {
 }
 
 impl Shape {
+    fn fresh(inner: UniquePtr<ffi::OcctShape>) -> Self {
+        Self {
+            inner,
+            named_refs: RefCell::new(BTreeMap::new()),
+        }
+    }
+
+    fn with_inner(&self, inner: UniquePtr<ffi::OcctShape>) -> Self {
+        Self {
+            inner,
+            named_refs: RefCell::new(self.named_refs.borrow().clone()),
+        }
+    }
+
+    fn named_ref(&self, name: &str) -> Option<NamedRef> {
+        self.named_refs.borrow().get(name).cloned()
+    }
+
+    fn set_named_ref(&self, name: impl Into<String>, named: NamedRef) {
+        self.named_refs.borrow_mut().insert(name.into(), named);
+    }
+
+    fn resolve_named_selector(&self, name: &str) -> Option<NamedRef> {
+        self.named_ref(name)
+    }
+}
+
+impl Clone for Shape {
+    fn clone(&self) -> Self {
+        Self {
+            inner: ffi::shape_copy(&self.inner)
+                .expect("shape_copy failed while cloning Shape"),
+            named_refs: RefCell::new(self.named_refs.borrow().clone()),
+        }
+    }
+}
+
+impl Shape {
     // --- Constructors ---
 
     pub fn make_box(dx: f64, dy: f64, dz: f64) -> Result<Self, String> {
         ffi::make_box(dx, dy, dz)
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
     pub fn make_cylinder(radius: f64, height: f64) -> Result<Self, String> {
         ffi::make_cylinder(radius, height)
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
     pub fn make_sphere(radius: f64) -> Result<Self, String> {
         ffi::make_sphere(radius)
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
     pub fn make_cone(r1: f64, r2: f64, height: f64) -> Result<Self, String> {
         ffi::make_cone(r1, r2, height)
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
     pub fn make_torus(r1: f64, r2: f64) -> Result<Self, String> {
         ffi::make_torus(r1, r2)
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
     pub fn make_wedge(dx: f64, dy: f64, dz: f64, ltx: f64) -> Result<Self, String> {
         ffi::make_wedge(dx, dy, dz, ltx)
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
@@ -395,7 +445,7 @@ impl Shape {
 
     pub fn fuse(&self, other: &Shape) -> Result<Shape, String> {
         ffi::shape_fuse(&self.inner, &other.inner)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| {
                 format!(
                     "fuse({}, {}) failed: {e}",
@@ -407,13 +457,13 @@ impl Shape {
 
     pub fn cut(&self, other: &Shape) -> Result<Shape, String> {
         ffi::shape_cut(&self.inner, &other.inner)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| format!("cut({}, {}) failed: {e}", summarize(self), summarize(other)))
     }
 
     pub fn common(&self, other: &Shape) -> Result<Shape, String> {
         ffi::shape_common(&self.inner, &other.inner)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| {
                 format!(
                     "common({}, {}) failed: {e}",
@@ -427,7 +477,7 @@ impl Shape {
 
     pub fn fillet(&self, radius: f64) -> Result<Shape, String> {
         ffi::shape_fillet(&self.inner, radius)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| {
                 format!(
                     "fillet(r={radius}) on {} failed: {e}{}",
@@ -439,7 +489,7 @@ impl Shape {
 
     pub fn chamfer(&self, dist: f64) -> Result<Shape, String> {
         ffi::shape_chamfer(&self.inner, dist)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| {
                 format!(
                     "chamfer(d={dist}) on {} failed: {e}{}",
@@ -452,7 +502,7 @@ impl Shape {
     /// Fillet only edges matching `selector` (`:all` / `:vertical` / `:horizontal`).
     pub fn fillet_sel(&self, radius: f64, selector: &str) -> Result<Shape, String> {
         ffi::shape_fillet_sel(&self.inner, radius, selector)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| {
                 format!(
                     "fillet(r={radius}, edges: {selector:?}) on {} failed: {e}",
@@ -464,7 +514,7 @@ impl Shape {
     /// Chamfer only edges matching `selector` (`:all` / `:vertical` / `:horizontal`).
     pub fn chamfer_sel(&self, dist: f64, selector: &str) -> Result<Shape, String> {
         ffi::shape_chamfer_sel(&self.inner, dist, selector)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| {
                 format!(
                     "chamfer(d={dist}, edges: {selector:?}) on {} failed: {e}",
@@ -477,7 +527,7 @@ impl Shape {
     /// end-vertex of each edge to `r2` at the other.
     pub fn fillet_var(&self, r1: f64, r2: f64) -> Result<Shape, String> {
         ffi::shape_fillet_var(&self.inner, r1, r2)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| {
                 format!(
                     "fillet_var(r1={r1}, r2={r2}) on {} failed: {e}",
@@ -489,7 +539,7 @@ impl Shape {
     /// Variable-radius fillet on edges matching `selector`.
     pub fn fillet_var_sel(&self, r1: f64, r2: f64, selector: &str) -> Result<Shape, String> {
         ffi::shape_fillet_var_sel(&self.inner, r1, r2, selector)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| {
                 format!(
                     "fillet_var(r1={r1}, r2={r2}, edges: {selector:?}) on {} failed: {e}",
@@ -501,7 +551,7 @@ impl Shape {
     /// Asymmetric chamfer on all edges: `d1` and `d2` are the two bevel distances.
     pub fn chamfer_asym(&self, d1: f64, d2: f64) -> Result<Shape, String> {
         ffi::shape_chamfer_asym(&self.inner, d1, d2)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| {
                 format!(
                     "chamfer_asym(d1={d1}, d2={d2}) on {} failed: {e}",
@@ -513,7 +563,7 @@ impl Shape {
     /// Asymmetric chamfer on edges matching `selector`.
     pub fn chamfer_asym_sel(&self, d1: f64, d2: f64, selector: &str) -> Result<Shape, String> {
         ffi::shape_chamfer_asym_sel(&self.inner, d1, d2, selector)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| {
                 format!(
                     "chamfer_asym(d1={d1}, d2={d2}, edges: {selector:?}) on {} failed: {e}",
@@ -531,7 +581,7 @@ impl Shape {
     /// `offset > 0` leaves a gap; `offset < 0` creates interference.
     pub fn mate(&self, from_face: &Shape, to_face: &Shape, offset: f64) -> Result<Shape, String> {
         ffi::shape_mate(&self.inner, &from_face.inner, &to_face.inner, offset)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| e.to_string())
     }
 
@@ -540,76 +590,114 @@ impl Shape {
     /// the XDE document during GLB / glTF / OBJ export.
     pub fn set_color(&self, r: f64, g: f64, b: f64) -> Result<Shape, String> {
         ffi::shape_set_color(&self.inner, r, g, b)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| e.to_string())
+    }
+
+    /// Register a persistent face name that resolves to a selector on this shape.
+    pub fn name_face(&self, name: &str, selector: &str) -> Result<(), String> {
+        self.faces(selector)?;
+        self.set_named_ref(name, NamedRef::FaceSelector(selector.to_string()));
+        Ok(())
+    }
+
+    /// Register a persistent edge name that resolves to a selector on this shape.
+    pub fn name_edge(&self, name: &str, selector: &str) -> Result<(), String> {
+        self.edges(selector)?;
+        self.set_named_ref(name, NamedRef::EdgeSelector(selector.to_string()));
+        Ok(())
+    }
+
+    /// Register a persistent datum/reference shape.
+    pub fn datum(&self, name: &str, shape: &Shape) -> Result<(), String> {
+        self.set_named_ref(name, NamedRef::Datum(Arc::new(shape.clone())));
+        Ok(())
+    }
+
+    /// Resolve a named face, edge, or datum reference.
+    pub fn ref_named(&self, name: &str) -> Result<Shape, String> {
+        match self.named_ref(name) {
+            Some(NamedRef::FaceSelector(selector)) => self
+                .faces(&selector)?
+                .into_iter()
+                .next()
+                .ok_or_else(|| format!("unknown named reference: {name}")),
+            Some(NamedRef::EdgeSelector(selector)) => self
+                .edges(&selector)?
+                .into_iter()
+                .next()
+                .ok_or_else(|| format!("unknown named reference: {name}")),
+            Some(NamedRef::Datum(shape)) => Ok(shape.as_ref().clone()),
+            None => Err(format!("unknown named reference: {name}")),
+        }
     }
 
     // --- Transforms ---
 
     pub fn translate(&self, dx: f64, dy: f64, dz: f64) -> Result<Shape, String> {
         ffi::shape_translate(&self.inner, dx, dy, dz)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| e.to_string())
     }
 
     pub fn rotate(&self, ax: f64, ay: f64, az: f64, angle_deg: f64) -> Result<Shape, String> {
         ffi::shape_rotate(&self.inner, ax, ay, az, angle_deg)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| e.to_string())
     }
 
     pub fn scale(&self, factor: f64) -> Result<Shape, String> {
         ffi::shape_scale(&self.inner, factor)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| e.to_string())
     }
 
     /// Non-uniform scale with independent factors for each axis.
     pub fn scale_xyz(&self, sx: f64, sy: f64, sz: f64) -> Result<Shape, String> {
         ffi::shape_scale_xyz(&self.inner, sx, sy, sz)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| e.to_string())
     }
 
     pub fn mirror(&self, plane: &str) -> Result<Shape, String> {
         ffi::shape_mirror(&self.inner, plane)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| e.to_string())
     }
 
     pub fn make_rect(w: f64, h: f64) -> Result<Self, String> {
         ffi::make_rect(w, h)
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
     pub fn make_circle_face(r: f64) -> Result<Self, String> {
         ffi::make_circle_face(r)
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
     pub fn make_polygon(pts: &[f64]) -> Result<Self, String> {
         ffi::make_polygon(pts)
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
     pub fn make_ellipse_face(rx: f64, ry: f64) -> Result<Self, String> {
         ffi::make_ellipse_face(rx, ry)
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
     pub fn make_arc(r: f64, start_deg: f64, end_deg: f64) -> Result<Self, String> {
         ffi::make_arc(r, start_deg, end_deg)
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
     pub fn extrude(&self, height: f64) -> Result<Shape, String> {
         ffi::shape_extrude(&self.inner, height)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| {
                 format!(
                     "extrude(h={height}) on {} failed: {e}{}",
@@ -623,7 +711,7 @@ impl Shape {
 
     pub fn revolve(&self, angle_deg: f64) -> Result<Shape, String> {
         ffi::shape_revolve(&self.inner, angle_deg)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| {
                 format!(
                     "revolve(angle={angle_deg}°) on {} failed: {e}",
@@ -652,7 +740,7 @@ impl Shape {
             })?;
         }
         ffi::thru_sections_build(builder.pin_mut())
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| format!("{} failed: {e}", ctx()))
     }
 
@@ -662,7 +750,7 @@ impl Shape {
     /// by `thickness`.  Wraps BRepOffsetAPI_MakeThickSolid::MakeThickSolidByJoin.
     pub fn shell(&self, thickness: f64) -> Result<Shape, String> {
         ffi::shape_shell(&self.inner, thickness)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| {
                 format!(
                     "shell(thickness={thickness}) on {} failed: {e}{}",
@@ -676,7 +764,7 @@ impl Shape {
     /// Wraps BRepOffsetAPI_MakeOffsetShape::PerformByJoin.
     pub fn offset(&self, distance: f64) -> Result<Shape, String> {
         ffi::shape_offset(&self.inner, distance)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| {
                 format!(
                     "offset(distance={distance}) on {} failed: {e}",
@@ -688,7 +776,7 @@ impl Shape {
     /// Offset a 2D Wire or Face inward (negative) or outward (positive) in its own plane.
     pub fn offset_2d(&self, distance: f64) -> Result<Shape, String> {
         ffi::shape_offset_2d(&self.inner, distance)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| {
                 format!(
                     "offset_2d(distance={distance}) on {} failed: {e}",
@@ -702,7 +790,7 @@ impl Shape {
     /// unchanged if no faces qualify.
     pub fn simplify(&self, min_feature_size: f64) -> Result<Shape, String> {
         ffi::shape_simplify(&self.inner, min_feature_size)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| {
                 format!(
                     "simplify(min_feature_size={min_feature_size}) on {} failed: {e}",
@@ -715,7 +803,7 @@ impl Shape {
     /// Falls back to MakePrism for the zero-twist/unity-scale case.
     pub fn extrude_ex(&self, height: f64, twist_deg: f64, scale: f64) -> Result<Shape, String> {
         ffi::shape_extrude_ex(&self.inner, height, twist_deg, scale)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| {
                 format!(
                     "extrude(h={height}, twist={twist_deg}°, scale={scale}) on {} failed: {e}",
@@ -728,13 +816,13 @@ impl Shape {
 
     pub fn make_spline_2d(pts: &[f64]) -> Result<Self, String> {
         ffi::make_spline_2d(pts)
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
     pub fn make_spline_3d(pts: &[f64]) -> Result<Self, String> {
         ffi::make_spline_3d(pts)
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
@@ -748,7 +836,7 @@ impl Shape {
         t1z: f64,
     ) -> Result<Self, String> {
         ffi::make_spline_2d_tan(pts, t0x, t0z, t1x, t1z)
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
@@ -764,13 +852,13 @@ impl Shape {
         t1z: f64,
     ) -> Result<Self, String> {
         ffi::make_spline_3d_tan(pts, t0x, t0y, t0z, t1x, t1y, t1z)
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
     pub fn sweep(&self, path: &Shape) -> Result<Shape, String> {
         ffi::shape_sweep(&self.inner, &path.inner)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| {
                 format!(
                     "sweep({}, path={}) failed: {e}{}",
@@ -804,7 +892,7 @@ impl Shape {
             })?;
         }
         ffi::pipe_shell_build(builder.pin_mut())
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| format!("{} failed: {e}", ctx()))
     }
 
@@ -814,7 +902,7 @@ impl Shape {
     /// `pts` must be a flat slice of 48 doubles: 16 points × (x, y, z) in row-major order.
     pub fn make_bezier_patch(pts: &[f64]) -> Result<Self, String> {
         ffi::make_bezier_patch(pts)
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
@@ -827,29 +915,57 @@ impl Shape {
             ffi::sewing_add(builder.pin_mut(), &face.inner).map_err(|e| e.to_string())?;
         }
         ffi::sewing_build(builder.pin_mut())
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
     // --- Phase 3: sub-shape selectors ---
 
     pub fn faces(&self, selector: &str) -> Result<Vec<Shape>, String> {
+        if let Some(named) = self.resolve_named_selector(selector) {
+            match named {
+                NamedRef::FaceSelector(alias) => return self.faces(&alias),
+                NamedRef::EdgeSelector(_) => {
+                    return Err(format!("faces: named reference ':{selector}' is an edge"))
+                }
+                NamedRef::Datum(shape) => {
+                    if shape.shape_type_name()? == "face" {
+                        return Ok(vec![shape.as_ref().clone()]);
+                    }
+                    return Err(format!("faces: named reference ':{selector}' is not a face"));
+                }
+            }
+        }
         let n = ffi::shape_faces_count(&self.inner, selector).map_err(|e| e.to_string())?;
         (0..n)
             .map(|i| {
                 ffi::shape_faces_get(&self.inner, selector, i)
-                    .map(|p| Shape { inner: p })
+                    .map(|p| self.with_inner(p))
                     .map_err(|e| e.to_string())
             })
             .collect()
     }
 
     pub fn edges(&self, selector: &str) -> Result<Vec<Shape>, String> {
+        if let Some(named) = self.resolve_named_selector(selector) {
+            match named {
+                NamedRef::EdgeSelector(alias) => return self.edges(&alias),
+                NamedRef::FaceSelector(_) => {
+                    return Err(format!("edges: named reference ':{selector}' is a face"))
+                }
+                NamedRef::Datum(shape) => {
+                    if shape.shape_type_name()? == "edge" {
+                        return Ok(vec![shape.as_ref().clone()]);
+                    }
+                    return Err(format!("edges: named reference ':{selector}' is not an edge"));
+                }
+            }
+        }
         let n = ffi::shape_edges_count(&self.inner, selector).map_err(|e| e.to_string())?;
         (0..n)
             .map(|i| {
                 ffi::shape_edges_get(&self.inner, selector, i)
-                    .map(|p| Shape { inner: p })
+                    .map(|p| self.with_inner(p))
                     .map_err(|e| e.to_string())
             })
             .collect()
@@ -861,7 +977,7 @@ impl Shape {
         (0..n)
             .map(|i| {
                 ffi::shape_vertices_get(&self.inner, selector, i)
-                    .map(|p| Shape { inner: p })
+                    .map(|p| self.with_inner(p))
                     .map_err(|e| e.to_string())
             })
             .collect()
@@ -936,7 +1052,7 @@ impl Shape {
     /// by `height`, then fuse the resulting prism with `self` (the body).
     pub fn pad(&self, face_ref: &Shape, sketch: &Shape, height: f64) -> Result<Shape, String> {
         ffi::shape_pad(&self.inner, &face_ref.inner, &sketch.inner, height)
-            .map(|s| Shape { inner: s })
+            .map(|s| self.with_inner(s))
             .map_err(|e| {
                 format!(
                     "pad(h={height}, face={}, sketch={}) on {} failed: {e}{}",
@@ -951,7 +1067,7 @@ impl Shape {
     /// Extrude a `sketch` along `-normal` by `depth` and subtract the prism from `self`.
     pub fn pocket(&self, face_ref: &Shape, sketch: &Shape, depth: f64) -> Result<Shape, String> {
         ffi::shape_pocket(&self.inner, &face_ref.inner, &sketch.inner, depth)
-            .map(|s| Shape { inner: s })
+            .map(|s| self.with_inner(s))
             .map_err(|e| {
                 format!(
                     "pocket(depth={depth}, face={}, sketch={}) on {} failed: {e}{}",
@@ -967,7 +1083,7 @@ impl Shape {
     /// Uses `BRepFilletAPI_MakeFillet2d`; non-corner vertices are silently skipped.
     pub fn fillet_wire(&self, radius: f64) -> Result<Shape, String> {
         ffi::shape_fillet_wire(&self.inner, radius)
-            .map(|s| Shape { inner: s })
+            .map(|s| self.with_inner(s))
             .map_err(|e| e.to_string())
     }
 
@@ -986,7 +1102,7 @@ impl Shape {
         xz: f64,
     ) -> Result<Shape, String> {
         ffi::make_datum_plane(ox, oy, oz, nx, ny, nz, xx, xy, xz)
-            .map(|s| Shape { inner: s })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
@@ -998,7 +1114,7 @@ impl Shape {
     /// Falls through to a straight extrude when `draft_deg == 0`.
     pub fn extrude_draft(&self, height: f64, draft_deg: f64) -> Result<Shape, String> {
         ffi::shape_extrude_draft(&self.inner, height, draft_deg)
-            .map(|s| Shape { inner: s })
+            .map(|s| self.with_inner(s))
             .map_err(|e| {
                 format!(
                     "extrude(h={height}, draft={draft_deg}°) on {} failed: {e}",
@@ -1012,7 +1128,7 @@ impl Shape {
     /// `height`: total Z extent (= pitch × number of turns).
     pub fn make_helix(radius: f64, pitch: f64, height: f64) -> Result<Shape, String> {
         ffi::make_helix(radius, pitch, height)
-            .map(|s| Shape { inner: s })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
@@ -1046,7 +1162,7 @@ impl Shape {
     /// Both `wire_a` and `wire_b` must be Wire shapes.
     pub fn ruled_surface(wire_a: &Shape, wire_b: &Shape) -> Result<Shape, String> {
         ffi::shape_ruled_surface(&wire_a.inner, &wire_b.inner)
-            .map(|s| Shape { inner: s })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
@@ -1054,7 +1170,7 @@ impl Shape {
     /// using `BRepFill_Filling`.  `boundary_wire` must be a Wire.
     pub fn fill_surface(boundary_wire: &Shape) -> Result<Shape, String> {
         ffi::shape_fill_surface(&boundary_wire.inner)
-            .map(|s| Shape { inner: s })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
@@ -1063,7 +1179,7 @@ impl Shape {
     /// Returns a compound of the section edges/wires via `BRepAlgoAPI_Section`.
     pub fn slice(&self, plane: &str, offset: f64) -> Result<Shape, String> {
         ffi::shape_slice(&self.inner, plane, offset)
-            .map(|s| Shape { inner: s })
+            .map(|s| self.with_inner(s))
             .map_err(|e| e.to_string())
     }
 
@@ -1073,7 +1189,7 @@ impl Shape {
     /// Returns a `TopoDS_Compound` — fuse explicitly if a merged solid is needed.
     pub fn linear_pattern(&self, n: i32, dx: f64, dy: f64, dz: f64) -> Result<Shape, String> {
         ffi::shape_linear_pattern(&self.inner, n, dx, dy, dz)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| e.to_string())
     }
 
@@ -1081,7 +1197,7 @@ impl Shape {
     /// Returns a `TopoDS_Compound`.
     pub fn polar_pattern(&self, n: i32, angle_deg: f64) -> Result<Shape, String> {
         ffi::shape_polar_pattern(&self.inner, n, angle_deg)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| e.to_string())
     }
 
@@ -1145,14 +1261,14 @@ impl Shape {
             ffi::fragment_add(builder.pin_mut(), &s.inner).map_err(|e| e.to_string())?;
         }
         ffi::fragment_build(builder.pin_mut())
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| e.to_string())
     }
 
     /// 3-D convex hull of the shape's tessellated mesh vertices.
     pub fn convex_hull(&self) -> Result<Shape, String> {
         ffi::shape_convex_hull(&self.inner)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| e.to_string())
     }
 
@@ -1160,7 +1276,7 @@ impl Shape {
     /// Each copy is oriented so its local Z-axis aligns with the path tangent.
     pub fn path_pattern(&self, path: &Shape, n: i32) -> Result<Shape, String> {
         ffi::shape_path_pattern(&self.inner, &path.inner, n)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| e.to_string())
     }
 
@@ -1168,7 +1284,7 @@ impl Shape {
     /// keeping the profile orientation locked to the `guide` auxiliary Wire.
     pub fn sweep_guide(&self, path: &Shape, guide: &Shape) -> Result<Shape, String> {
         ffi::shape_sweep_guide(&self.inner, &path.inner, &guide.inner)
-            .map(|p| Shape { inner: p })
+            .map(|p| self.with_inner(p))
             .map_err(|e| {
                 format!(
                     "sweep(profile={}, path={}, guide={}) failed: {e}{}",
@@ -1184,7 +1300,7 @@ impl Shape {
 
     pub fn import_step(path: &str) -> Result<Self, String> {
         ffi::import_step(path)
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| {
                 format!(
                     "import_step({path:?}) failed: {e}{}",
@@ -1195,7 +1311,7 @@ impl Shape {
 
     pub fn import_stl(path: &str) -> Result<Self, String> {
         ffi::import_stl(path)
-            .map(|p| Shape { inner: p })
+            .map(Shape::fresh)
             .map_err(|e| {
                 format!(
                     "import_stl({path:?}) failed: {e}{}",

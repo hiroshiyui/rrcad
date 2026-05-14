@@ -286,6 +286,19 @@ std::unique_ptr<OcctShape> shape_set_color(const OcctShape& shape, double r, dou
     }
 }
 
+std::unique_ptr<OcctShape> shape_copy(const OcctShape& shape) {
+    try {
+        if (shape.has_color())
+            return wrap_colored(shape.get(), shape.color_r(), shape.color_g(),
+                                shape.color_b());
+        return wrap(shape.get());
+    } catch (const Standard_Failure& e) {
+        throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
+    } catch (const std::exception&) {
+        throw;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Assembly mating
 // ---------------------------------------------------------------------------

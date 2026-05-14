@@ -64,6 +64,7 @@ inline std::unique_ptr<OcctShape> wrap_colored(TopoDS_Shape s, float r, float g,
 // Return a copy of shape with an sRGB color tag (r/g/b each in [0, 1]).
 // The color is written into the XDE document during GLB/glTF/OBJ export.
 std::unique_ptr<OcctShape> shape_set_color(const OcctShape& shape, double r, double g, double b);
+std::unique_ptr<OcctShape> shape_copy(const OcctShape& shape);
 
 // --- Assembly mating ---
 // Return a copy of `shape` rigidly transformed so that `from_face` (a planar

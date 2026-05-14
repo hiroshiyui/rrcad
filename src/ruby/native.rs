@@ -519,6 +519,102 @@ pub unsafe extern "C" fn rrcad_shape_set_color(
     unsafe { shape_result_to_ptr(shape.set_color(r, g, b), error_out) }
 }
 
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_name_face(
+    ptr: *mut c_void,
+    name: *const c_char,
+    selector: *const c_char,
+    error_out: *mut *const c_char,
+) {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let name = match unsafe { std::ffi::CStr::from_ptr(name) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "name is not valid UTF-8") };
+            return;
+        }
+    };
+    let selector = match unsafe { std::ffi::CStr::from_ptr(selector) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "selector is not valid UTF-8") };
+            return;
+        }
+    };
+    if let Err(e) = shape.name_face(name, selector) {
+        unsafe { set_err(error_out, &e) };
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_name_edge(
+    ptr: *mut c_void,
+    name: *const c_char,
+    selector: *const c_char,
+    error_out: *mut *const c_char,
+) {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let name = match unsafe { std::ffi::CStr::from_ptr(name) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "name is not valid UTF-8") };
+            return;
+        }
+    };
+    let selector = match unsafe { std::ffi::CStr::from_ptr(selector) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "selector is not valid UTF-8") };
+            return;
+        }
+    };
+    if let Err(e) = shape.name_edge(name, selector) {
+        unsafe { set_err(error_out, &e) };
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_datum(
+    ptr: *mut c_void,
+    name: *const c_char,
+    datum_ptr: *mut c_void,
+    error_out: *mut *const c_char,
+) {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let datum = unsafe { &*(datum_ptr as *const Shape) };
+    let name = match unsafe { std::ffi::CStr::from_ptr(name) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "name is not valid UTF-8") };
+            return;
+        }
+    };
+    if let Err(e) = shape.datum(name, datum) {
+        unsafe { set_err(error_out, &e) };
+    }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_ref(
+    ptr: *mut c_void,
+    name: *const c_char,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let name = match unsafe { std::ffi::CStr::from_ptr(name) }.to_str() {
+        Ok(s) => s,
+        Err(_) => {
+            unsafe { set_err(error_out, "name is not valid UTF-8") };
+            return std::ptr::null_mut();
+        }
+    };
+    unsafe { shape_result_to_ptr(shape.ref_named(name), error_out) }
+}
+
 // ---------------------------------------------------------------------------
 // Transforms (Phase 2 — wiring existing OCCT ops)
 // ---------------------------------------------------------------------------

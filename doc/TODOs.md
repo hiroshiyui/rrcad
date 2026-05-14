@@ -196,10 +196,12 @@ regeneratable feature graph instead of only immutable shape results. This would
 enable dependency tracking, clearer regeneration failures, better debug output,
 and eventually GUI editing.
 
-**Named faces, edges, and datums:** Add persistent names for selected topology
-and reference geometry, so scripts can target `:mounting_face` or
-`:front_boss_axis` instead of relying only on broad selectors such as `:top`,
-`:vertical`, or `">Z"`.
+**Named faces, edges, and datums ✓ COMPLETE:** Persistent names now work for
+face selectors, edge selectors, and datum reference shapes. Scripts can target
+`name_face(:mounting_face, :top)`, `name_edge(:boss_edges, :vertical)`, and
+`datum(:fixture_plane, datum_plane(...))`, then resolve them later with
+`faces(:mounting_face)`, `edges(:boss_edges)`, or `ref(:fixture_plane)` instead
+of relying only on broad selectors such as `:top`, `:vertical`, or `">Z"`.
 
 **Better diagnostics ✓ COMPLETE (initial scope):** Errors from boolean
 operations (`fuse`/`cut`/`common`), fillets and chamfers (including

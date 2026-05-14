@@ -79,6 +79,13 @@ extern void* rrcad_shape_common(void* a, void* b, const char** error_out);
 extern void* rrcad_shape_mate(void* ptr, void* from_ptr, void* to_ptr, double offset,
                               const char** error_out);
 extern void* rrcad_shape_set_color(void* ptr, double r, double g, double b, const char** error_out);
+extern void rrcad_shape_name_face(void* ptr, const char* name, const char* selector,
+                                  const char** error_out);
+extern void rrcad_shape_name_edge(void* ptr, const char* name, const char* selector,
+                                  const char** error_out);
+extern void rrcad_shape_datum(void* ptr, const char* name, void* datum_ptr,
+                              const char** error_out);
+extern void* rrcad_shape_ref(void* ptr, const char* name, const char** error_out);
 
 /* Phase 2 */
 extern void* rrcad_shape_translate(void* ptr, double dx, double dy, double dz,
@@ -582,6 +589,89 @@ static mrb_value mrb_rrcad_shape_color(mrb_state* mrb, mrb_value self) {
     require_native_ptr(mrb, ptr);
     const char* err = NULL;
     void* result = rrcad_shape_set_color(ptr, (double)r, (double)g, (double)b, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, result);
+}
+
+static const char* shape_name_from_value(mrb_state* mrb, mrb_value v) {
+    if (mrb_symbol_p(v))
+        return mrb_sym_name(mrb, mrb_symbol(v));
+    if (mrb_string_p(v))
+        return mrb_str_to_cstr(mrb, v);
+    return NULL;
+}
+
+static mrb_value mrb_rrcad_shape_name_face(mrb_state* mrb, mrb_value self) {
+    mrb_value name_val, selector_val;
+    mrb_get_args(mrb, "oo", &name_val, &selector_val);
+
+    const char* name = shape_name_from_value(mrb, name_val);
+    const char* selector = shape_name_from_value(mrb, selector_val);
+    if (!name || !selector)
+        mrb_raise(mrb, E_TYPE_ERROR,
+                  "name_face expects a Symbol or String name and a Symbol or String selector");
+
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    rrcad_shape_name_face(ptr, name, selector, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return self;
+}
+
+static mrb_value mrb_rrcad_shape_name_edge(mrb_state* mrb, mrb_value self) {
+    mrb_value name_val, selector_val;
+    mrb_get_args(mrb, "oo", &name_val, &selector_val);
+
+    const char* name = shape_name_from_value(mrb, name_val);
+    const char* selector = shape_name_from_value(mrb, selector_val);
+    if (!name || !selector)
+        mrb_raise(mrb, E_TYPE_ERROR,
+                  "name_edge expects a Symbol or String name and a Symbol or String selector");
+
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    rrcad_shape_name_edge(ptr, name, selector, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return self;
+}
+
+static mrb_value mrb_rrcad_shape_datum(mrb_state* mrb, mrb_value self) {
+    mrb_value name_val, datum_val;
+    mrb_get_args(mrb, "oo", &name_val, &datum_val);
+
+    const char* name = shape_name_from_value(mrb, name_val);
+    if (!name)
+        mrb_raise(mrb, E_TYPE_ERROR, "datum expects a Symbol or String name");
+
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    void* datum_ptr = shape_ptr(mrb, datum_val);
+    require_native_ptr(mrb, datum_ptr);
+
+    const char* err = NULL;
+    rrcad_shape_datum(ptr, name, datum_ptr, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return self;
+}
+
+static mrb_value mrb_rrcad_shape_ref(mrb_state* mrb, mrb_value self) {
+    mrb_value name_val;
+    mrb_get_args(mrb, "o", &name_val);
+
+    const char* name = shape_name_from_value(mrb, name_val);
+    if (!name)
+        mrb_raise(mrb, E_TYPE_ERROR, "ref expects a Symbol or String name");
+
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    const char* err = NULL;
+    void* result = rrcad_shape_ref(ptr, name, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
@@ -2277,6 +2367,12 @@ void rrcad_register_shape_class(mrb_state* mrb) {
 
     /* Phase 5: Color */
     mrb_define_method(mrb, shape_class, "color", mrb_rrcad_shape_color, MRB_ARGS_REQ(3));
+    mrb_define_method(mrb, shape_class, "name_face", mrb_rrcad_shape_name_face,
+                      MRB_ARGS_REQ(2));
+    mrb_define_method(mrb, shape_class, "name_edge", mrb_rrcad_shape_name_edge,
+                      MRB_ARGS_REQ(2));
+    mrb_define_method(mrb, shape_class, "datum", mrb_rrcad_shape_datum, MRB_ARGS_REQ(2));
+    mrb_define_method(mrb, shape_class, "ref", mrb_rrcad_shape_ref, MRB_ARGS_REQ(1));
 
     /* Phase 2: Transforms */
     mrb_define_method(mrb, shape_class, "translate", mrb_rrcad_shape_translate, MRB_ARGS_REQ(3));

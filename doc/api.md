@@ -182,6 +182,26 @@ let top_faces = part.faces("top")?;
 let vert_edges = part.edges("vertical")?;
 ```
 
+### Named Topology
+
+You can attach persistent names to face/edge selectors or to datum/reference
+shapes, then resolve them later.
+
+| Method | Description |
+|--------|-------------|
+| `.name_face(name, selector)` | Store a named face selector such as `"top"` or `">Z"` |
+| `.name_edge(name, selector)` | Store a named edge selector such as `"vertical"` |
+| `.datum(name, shape)` | Attach a reference shape such as a datum plane |
+| `.ref(name)` | Resolve a named face, edge, or datum reference |
+
+```rust
+part.name_face("mounting_face", "top")?;
+part.name_edge("boss_edges", "vertical")?;
+part.datum("fixture_plane", Shape::make_rect(10.0, 10.0)?)?;
+let top = part.faces("mounting_face")?;
+let datum = part.ref("fixture_plane")?;
+```
+
 ---
 
 ### Patterns

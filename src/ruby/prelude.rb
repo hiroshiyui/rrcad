@@ -1204,6 +1204,22 @@ class Shape
   def fillet_wire(_radius)
     raise NotImplementedError, "Shape#fillet_wire is not yet implemented (Phase 8 Tier 1)"
   end
+
+  def name_face(_name, _selector)
+    raise NotImplementedError, "Shape#name_face is not yet implemented (Named faces, edges, and datums)"
+  end
+
+  def name_edge(_name, _selector)
+    raise NotImplementedError, "Shape#name_edge is not yet implemented (Named faces, edges, and datums)"
+  end
+
+  def datum(_name, _shape)
+    raise NotImplementedError, "Shape#datum is not yet implemented (Named faces, edges, and datums)"
+  end
+
+  def ref(_name)
+    raise NotImplementedError, "Shape#ref is not yet implemented (Named faces, edges, and datums)"
+  end
 end
 
 # ---------------------------------------------------------------------------
