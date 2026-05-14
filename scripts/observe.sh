@@ -25,6 +25,7 @@ command_name="$(basename "$1")"
 safe_name="$(printf '%s' "$command_name" | tr '/ ' '__' | tr -cd '[:alnum:]_.-')"
 stamp="$(date -u +%Y%m%dT%H%M%SZ)"
 log_file="$log_root/${safe_name}-${stamp}-$$.log"
+command_line="$(printf '%q ' "$@")"
 
 fifo="$(mktemp "$log_root/.observe.XXXXXX")"
 rm -f "$fifo"
@@ -36,6 +37,7 @@ cleanup() {
 trap cleanup EXIT
 
 printf '==> logging %s to %s\n' "$command_name" "$log_file" | tee -a "$log_file"
+printf '==> command: %s\n' "$command_line" | tee -a "$log_file"
 printf '==> heartbeat every %ss\n' "$heartbeat_seconds" | tee -a "$log_file"
 
 tee -a "$log_file" <"$fifo" &
@@ -48,18 +50,36 @@ tee_pid=$!
 cmd_pid=$!
 
 last_size=0
+stalled_heartbeats=0
+heartbeat_report() {
+  size=$(wc -c <"$log_file" 2>/dev/null || printf '0')
+  delta=$((size - last_size))
+  last_size=$size
+  if [ "$delta" -gt 0 ]; then
+    stalled_heartbeats=0
+  else
+    stalled_heartbeats=$((stalled_heartbeats + 1))
+  fi
+
+  state_line="$(ps -o pid=,ppid=,etime=,stat=,pcpu=,pmem=,cmd= -p "$cmd_pid" 2>/dev/null | sed 's/^ *//')"
+  child_lines="$(ps -o pid=,ppid=,etime=,stat=,pcpu=,pmem=,cmd= --ppid "$cmd_pid" 2>/dev/null | sed 's/^ *//')"
+
+  {
+    printf '==> %s heartbeat: %s bytes logged (+%s), %s quiet ticks\n' \
+      "$command_name" "$size" "$delta" "$stalled_heartbeats"
+    if [ -n "$state_line" ]; then
+      printf '==> %s process: %s\n' "$command_name" "$state_line"
+    fi
+    if [ -n "$child_lines" ]; then
+      printf '==> %s children:\n%s\n' "$command_name" "$child_lines"
+    fi
+  } | tee -a "$log_file"
+}
+
 while kill -0 "$cmd_pid" 2>/dev/null; do
   sleep "$heartbeat_seconds"
   if kill -0 "$cmd_pid" 2>/dev/null; then
-    size=$(wc -c <"$log_file" 2>/dev/null || printf '0')
-    if [ "$size" -gt "$last_size" ]; then
-      printf '==> %s still running; %s bytes logged so far; log: %s\n' \
-        "$command_name" "$size" "$log_file" | tee -a "$log_file"
-    else
-      printf '==> %s still running; no new output; log: %s\n' \
-        "$command_name" "$log_file" | tee -a "$log_file"
-    fi
-    last_size=$size
+    heartbeat_report
   fi
 done
 
