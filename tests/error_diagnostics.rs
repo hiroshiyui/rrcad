@@ -94,3 +94,40 @@ fn export_svg_error_includes_view() {
         "expected export_svg + view in error, got: {err}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Sweeps, lofts, Part Design, and other 3-D operations
+// ---------------------------------------------------------------------------
+
+#[test]
+fn extrude_error_includes_height() {
+    // A solid can't be extruded — only Faces / Wires.
+    let cube = Shape::make_box(1.0, 1.0, 1.0).expect("make_box");
+    let err = err_of(cube.extrude(5.0));
+    assert!(
+        err.contains("extrude(h=5"),
+        "expected extrude(h=5) prefix, got: {err}"
+    );
+}
+
+#[test]
+fn loft_error_includes_profile_count() {
+    // Lofting through a single profile is invalid (needs ≥ 2).
+    let only = Shape::make_box(1.0, 1.0, 1.0).expect("make_box");
+    let err = err_of(Shape::loft(&[&only], true));
+    assert!(
+        err.contains("loft(profiles=1"),
+        "expected loft(profiles=1, …) prefix, got: {err}"
+    );
+}
+
+#[test]
+fn sweep_sections_error_for_too_few_profiles() {
+    let path = Shape::make_box(1.0, 1.0, 1.0).expect("make_box");
+    let only = Shape::make_box(1.0, 1.0, 1.0).expect("make_box");
+    let err = err_of(Shape::sweep_sections(&[&only], &path));
+    assert!(
+        err.contains("sweep_sections"),
+        "expected sweep_sections error, got: {err}"
+    );
+}

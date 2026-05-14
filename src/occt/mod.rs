@@ -560,13 +560,18 @@ impl Shape {
     pub fn extrude(&self, height: f64) -> Result<Shape, String> {
         ffi::shape_extrude(&self.inner, height)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| format!("extrude(h={height}) on {} failed: {e}", summarize(self)))
     }
 
     pub fn revolve(&self, angle_deg: f64) -> Result<Shape, String> {
         ffi::shape_revolve(&self.inner, angle_deg)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                format!(
+                    "revolve(angle={angle_deg}°) on {} failed: {e}",
+                    summarize(self)
+                )
+            })
     }
 
     // --- Phase 4: loft (ThruSections builder pattern) ---
@@ -574,13 +579,23 @@ impl Shape {
     /// Loft through a sequence of planar profiles (Faces or Wires).
     /// `ruled=true` produces a ruled surface (straight lines between sections).
     pub fn loft(profiles: &[&Shape], ruled: bool) -> Result<Shape, String> {
-        let mut builder = ffi::thru_sections_new(true, ruled).map_err(|e| e.to_string())?;
-        for p in profiles {
-            ffi::thru_sections_add(builder.pin_mut(), &p.inner).map_err(|e| e.to_string())?;
+        let n = profiles.len();
+        let ctx = || format!("loft(profiles={n}, ruled={ruled})");
+        let mut builder =
+            ffi::thru_sections_new(true, ruled).map_err(|e| format!("{} failed: {e}", ctx()))?;
+        for (i, p) in profiles.iter().enumerate() {
+            ffi::thru_sections_add(builder.pin_mut(), &p.inner).map_err(|e| {
+                format!(
+                    "{} failed adding profile {} ({}): {e}",
+                    ctx(),
+                    i,
+                    summarize(p)
+                )
+            })?;
         }
         ffi::thru_sections_build(builder.pin_mut())
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| format!("{} failed: {e}", ctx()))
     }
 
     // --- Phase 4: 3-D operations ---
@@ -590,7 +605,12 @@ impl Shape {
     pub fn shell(&self, thickness: f64) -> Result<Shape, String> {
         ffi::shape_shell(&self.inner, thickness)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                format!(
+                    "shell(thickness={thickness}) on {} failed: {e}",
+                    summarize(self)
+                )
+            })
     }
 
     /// Inflate (positive) or deflate (negative) the solid uniformly.
@@ -598,14 +618,24 @@ impl Shape {
     pub fn offset(&self, distance: f64) -> Result<Shape, String> {
         ffi::shape_offset(&self.inner, distance)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                format!(
+                    "offset(distance={distance}) on {} failed: {e}",
+                    summarize(self)
+                )
+            })
     }
 
     /// Offset a 2D Wire or Face inward (negative) or outward (positive) in its own plane.
     pub fn offset_2d(&self, distance: f64) -> Result<Shape, String> {
         ffi::shape_offset_2d(&self.inner, distance)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                format!(
+                    "offset_2d(distance={distance}) on {} failed: {e}",
+                    summarize(self)
+                )
+            })
     }
 
     /// Remove small holes and fillets.  Faces with area < min_feature_size²
@@ -614,7 +644,12 @@ impl Shape {
     pub fn simplify(&self, min_feature_size: f64) -> Result<Shape, String> {
         ffi::shape_simplify(&self.inner, min_feature_size)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                format!(
+                    "simplify(min_feature_size={min_feature_size}) on {} failed: {e}",
+                    summarize(self)
+                )
+            })
     }
 
     /// Extrude with optional end-twist (degrees) and end-scale.
@@ -622,7 +657,12 @@ impl Shape {
     pub fn extrude_ex(&self, height: f64, twist_deg: f64, scale: f64) -> Result<Shape, String> {
         ffi::shape_extrude_ex(&self.inner, height, twist_deg, scale)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                format!(
+                    "extrude(h={height}, twist={twist_deg}°, scale={scale}) on {} failed: {e}",
+                    summarize(self)
+                )
+            })
     }
 
     // --- Phase 3: splines and sweep ---
@@ -672,7 +712,13 @@ impl Shape {
     pub fn sweep(&self, path: &Shape) -> Result<Shape, String> {
         ffi::shape_sweep(&self.inner, &path.inner)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                format!(
+                    "sweep({}, path={}) failed: {e}",
+                    summarize(self),
+                    summarize(path)
+                )
+            })
     }
 
     /// Variable-section pipe sweep using BRepOffsetAPI_MakePipeShell.
@@ -683,13 +729,23 @@ impl Shape {
         if profiles.len() < 2 {
             return Err("sweep_sections requires at least 2 profiles".to_string());
         }
-        let mut builder = ffi::pipe_shell_new(&path.inner).map_err(|e| e.to_string())?;
-        for p in profiles {
-            ffi::pipe_shell_add(builder.pin_mut(), &p.inner).map_err(|e| e.to_string())?;
+        let n = profiles.len();
+        let ctx = || format!("sweep_sections(profiles={n}, path={})", summarize(path));
+        let mut builder =
+            ffi::pipe_shell_new(&path.inner).map_err(|e| format!("{} failed: {e}", ctx()))?;
+        for (i, p) in profiles.iter().enumerate() {
+            ffi::pipe_shell_add(builder.pin_mut(), &p.inner).map_err(|e| {
+                format!(
+                    "{} failed adding profile {} ({}): {e}",
+                    ctx(),
+                    i,
+                    summarize(p)
+                )
+            })?;
         }
         ffi::pipe_shell_build(builder.pin_mut())
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| format!("{} failed: {e}", ctx()))
     }
 
     // --- Bézier surface patch ---
@@ -821,14 +877,28 @@ impl Shape {
     pub fn pad(&self, face_ref: &Shape, sketch: &Shape, height: f64) -> Result<Shape, String> {
         ffi::shape_pad(&self.inner, &face_ref.inner, &sketch.inner, height)
             .map(|s| Shape { inner: s })
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                format!(
+                    "pad(h={height}, face={}, sketch={}) on {} failed: {e}",
+                    summarize(face_ref),
+                    summarize(sketch),
+                    summarize(self)
+                )
+            })
     }
 
     /// Extrude a `sketch` along `-normal` by `depth` and subtract the prism from `self`.
     pub fn pocket(&self, face_ref: &Shape, sketch: &Shape, depth: f64) -> Result<Shape, String> {
         ffi::shape_pocket(&self.inner, &face_ref.inner, &sketch.inner, depth)
             .map(|s| Shape { inner: s })
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                format!(
+                    "pocket(depth={depth}, face={}, sketch={}) on {} failed: {e}",
+                    summarize(face_ref),
+                    summarize(sketch),
+                    summarize(self)
+                )
+            })
     }
 
     /// Fillet all corner vertices of a 2D Wire or Face profile with the given `radius`.
@@ -867,7 +937,12 @@ impl Shape {
     pub fn extrude_draft(&self, height: f64, draft_deg: f64) -> Result<Shape, String> {
         ffi::shape_extrude_draft(&self.inner, height, draft_deg)
             .map(|s| Shape { inner: s })
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                format!(
+                    "extrude(h={height}, draft={draft_deg}°) on {} failed: {e}",
+                    summarize(self)
+                )
+            })
     }
 
     /// Helical Wire path — 32 sample points per turn via `GeomAPI_Interpolate`.
@@ -1032,7 +1107,14 @@ impl Shape {
     pub fn sweep_guide(&self, path: &Shape, guide: &Shape) -> Result<Shape, String> {
         ffi::shape_sweep_guide(&self.inner, &path.inner, &guide.inner)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                format!(
+                    "sweep(profile={}, path={}, guide={}) failed: {e}",
+                    summarize(self),
+                    summarize(path),
+                    summarize(guide)
+                )
+            })
     }
 
     // --- Import ---
