@@ -135,6 +135,22 @@ fn svg_sheet_title_block_adds_metadata_block() {
 }
 
 #[test]
+fn svg_sheet_dimensions_show_axis_labels() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_sheet_dimensions.svg");
+    vm.eval(&format!(
+        "box(20,10,5).export('{}', view: :sheet, dimensions: true)",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains(">X ") && content.contains(">Y ") && content.contains(">Z "),
+        "sheet dimensions should label X/Y/Z axes"
+    );
+}
+
+#[test]
 fn svg_cylinder_top_view() {
     // Curved surfaces (circles) must be discretised into smooth polylines.
     let mut vm = MrubyVm::new();
@@ -344,6 +360,23 @@ fn dxf_sheet_title_block_adds_metadata_block() {
     assert!(
         content.contains("\nTITLEBLOCK\n") && content.contains("rrcad"),
         "title_block: true should add a DXF title block"
+    );
+}
+
+#[test]
+fn dxf_sheet_dimensions_show_axis_labels() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_sheet_dimensions.dxf");
+    vm.eval(&format!(
+        "box(20,10,5).export('{}', view: :sheet, dimensions: true)",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("\n  1\nX ") && content.contains("\n  1\nY ")
+            && content.contains("\n  1\nZ "),
+        "sheet dimensions should label X/Y/Z axes"
     );
 }
 

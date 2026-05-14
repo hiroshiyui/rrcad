@@ -520,12 +520,14 @@ part.export("drawing.svg", view: :front)              # front view
 part.export("drawing.svg", view: :side, scale: 2.0)   # side view at 2:1
 part.export("drawing.svg", view: :sheet)              # 3-view sheet
 part.export("drawing.svg", view: :sheet, title_block: true) # sheet with title block
+part.export("drawing.svg", view: :sheet, dimensions: true)   # sheet with X/Y/Z labels
 part.export("drawing.svg", hidden: true)              # dashed hidden lines
 part.export("drawing.svg", center_marks: true)       # cylinder centres
 part.export("drawing.svg", dimensions: true)         # overall width/height labels
 part.export("drawing.dxf", scale: 0.5, hidden: true)  # DXF at 1:2 with HIDDEN layer
 part.export("drawing.dxf", view: :sheet)              # 3-view sheet
 part.export("drawing.dxf", view: :sheet, title_block: true) # sheet with title block
+part.export("drawing.dxf", view: :sheet, dimensions: true)   # sheet with X/Y/Z labels
 part.export("drawing.dxf", center_marks: true)       # DXF centre marks
 part.export("drawing.dxf", dimensions: true)         # DXF width/height labels
 ```
