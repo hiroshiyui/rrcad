@@ -77,6 +77,8 @@ class SketchPoint
 end
 
 class SketchBuilder
+  attr_accessor :points, :lines, :constraints, :named, :profile
+
   def initialize
     @points = []
     @lines = []
@@ -339,10 +341,23 @@ class SketchBuilder
     [a, b, center]
   end
 
-  def to_profile
+  def diagnostics
+    analyze_diagnostics
+  end
+
+  def to_profile(diagnostics: false, strict: false)
+    diagnostics_payload = (diagnostics || strict) ? analyze_diagnostics : nil
+    if strict && diagnostics_payload && !diagnostics_payload[:redundant_constraints].empty?
+      redundant = diagnostics_payload[:redundant_constraints]
+      labels = redundant.map { |entry| entry[:summary] }.join(", ")
+      raise RuntimeError, "sketch has redundant constraints: #{labels}"
+    end
+
     if @profile
       solve_constraints
-      return profile_shape
+      shape = profile_shape
+      shape.sketch_diagnostics = diagnostics_payload if diagnostics_payload
+      return shape
     end
 
     raise RuntimeError, "sketch requires at least 3 line segments" if @lines.length < 3
@@ -366,10 +381,285 @@ class SketchBuilder
       raise RuntimeError, "sketch lines must form one closed loop"
     end
 
-    polygon(pts)
+    shape = polygon(pts)
+    shape.sketch_diagnostics = diagnostics_payload if diagnostics_payload
+    shape
   end
 
-  private
+  def analyze_diagnostics
+    baseline = clone_builder
+    begin
+      baseline.solve_constraints
+    rescue RuntimeError => e
+      components = component_report(baseline)
+      return {
+        status: :unsolved,
+        error: e.message,
+        component_count: components.length,
+        components: components,
+        estimated_dof: components.sum { |component| component[:estimated_dof] },
+        redundant_constraint_count: 0,
+        redundant_constraints: [],
+      }
+    end
+
+    baseline_points = baseline.point_states
+
+    redundant_constraints = []
+    @constraints.each_with_index do |constraint, idx|
+      trial = clone_builder
+      trial.constraints.delete_at(idx)
+      begin
+        trial.solve_constraints
+      rescue RuntimeError
+        next
+      end
+
+      next unless same_point_states?(baseline_points, trial.point_states)
+
+      redundant_constraints << {
+        index: idx + 1,
+        type: constraint[0],
+        summary: constraint_summary(constraint),
+      }
+    end
+
+    components = component_report(baseline)
+    unsolved = components.any? { |component| !component[:unresolved_points].empty? }
+
+    {
+      status: unsolved ? :unsolved : (redundant_constraints.empty? ? :ok : :redundant_constraints),
+      component_count: components.length,
+      components: components,
+      estimated_dof: components.sum { |component| component[:estimated_dof] },
+      redundant_constraint_count: redundant_constraints.length,
+      redundant_constraints: redundant_constraints,
+    }
+  end
+
+  def component_report(builder)
+    points = builder.points
+    builder.connected_components.map.with_index do |indices, component_index|
+      component_points = indices.map { |i| points[i] }
+      unresolved_points = component_points.select { |point| !point.resolved? }
+      {
+        index: component_index + 1,
+        point_count: component_points.length,
+        points: component_points.map { |point| builder.point_label(point) },
+        unresolved_points: unresolved_points.map { |point| builder.point_label(point) },
+        estimated_dof: unresolved_points.sum { |point| builder.missing_coords(point).split("/").length },
+      }
+    end
+  end
+
+  def clone_builder
+    clone = SketchBuilder.new
+    point_map = {}
+
+    @points.each do |point|
+      copy = SketchPoint.new(point.x, point.y)
+      clone.points << copy
+      point_map[point] = copy
+    end
+
+    @named.each do |name, point|
+      clone.named[name] = point_map.fetch(point)
+    end
+
+    @lines.each do |a, b|
+      clone.lines << [point_map.fetch(a), point_map.fetch(b)]
+    end
+
+    @constraints.each do |constraint|
+      clone.constraints << remap_constraint(constraint, point_map)
+    end
+
+    clone.profile = remap_profile(@profile, point_map) if @profile
+    clone
+  end
+
+  def remap_constraint(constraint, point_map)
+    type = constraint[0]
+    case type
+    when :fixed
+      _type, p, x, y = constraint
+      [:fixed, point_map.fetch(p), x, y]
+    when :horizontal, :vertical
+      _type, a, b = constraint
+      [type, point_map.fetch(a), point_map.fetch(b)]
+    when :coincident
+      _type, a, b = constraint
+      [:coincident, point_map.fetch(a), point_map.fetch(b)]
+    when :dimension
+      _type, a, b, length = constraint
+      [:dimension, point_map.fetch(a), point_map.fetch(b), length]
+    when :equal_length, :parallel, :perpendicular
+      _type, a, b, c, d = constraint
+      [type, point_map.fetch(a), point_map.fetch(b), point_map.fetch(c), point_map.fetch(d)]
+    when :midpoint
+      _type, p, a, b = constraint
+      [:midpoint, point_map.fetch(p), point_map.fetch(a), point_map.fetch(b)]
+    when :centered_dimension
+      _type, center, a, b, attr, length = constraint
+      [:centered_dimension, point_map.fetch(center), point_map.fetch(a), point_map.fetch(b), attr, length]
+    when :symmetric
+      _type, a, b, center = constraint
+      [:symmetric, point_map.fetch(a), point_map.fetch(b), point_map.fetch(center)]
+    when :mirror_x, :mirror_y
+      _type, source, target, axis = constraint
+      [type, point_map.fetch(source), point_map.fetch(target), axis]
+    when :tangent
+      _type, a, b, center, radius, side = constraint
+      [:tangent, point_map.fetch(a), point_map.fetch(b), point_map.fetch(center), radius, side]
+    when :polar_point
+      _type, p, center, radius, angle_deg = constraint
+      [:polar_point, point_map.fetch(p), point_map.fetch(center), radius, angle_deg]
+    else
+      constraint.dup
+    end
+  end
+
+  def remap_profile(profile, point_map)
+    return nil if profile.nil?
+
+    type = profile[0]
+    case type
+    when :circle_at
+      _type, center, radius = profile
+      [:circle_at, point_map.fetch(center), radius]
+    when :arc_at
+      _type, center, radius, start_deg, end_deg = profile
+      [:arc_at, point_map.fetch(center), radius, start_deg, end_deg]
+    when :slot_between
+      _type, a, b, radius = profile
+      [:slot_between, point_map.fetch(a), point_map.fetch(b), radius]
+    else
+      profile.dup
+    end
+  end
+
+  def point_states
+    @points.map { |point| [point.x, point.y] }
+  end
+
+  def same_point_states?(a, b)
+    return false unless a.length == b.length
+
+    a.zip(b).all? do |lhs, rhs|
+      same_value?(lhs[0], rhs[0]) && same_value?(lhs[1], rhs[1])
+    end
+  end
+
+  def same_value?(lhs, rhs)
+    return true if lhs.nil? && rhs.nil?
+    return false if lhs.nil? || rhs.nil?
+
+    (lhs - rhs).abs <= 1.0e-9
+  end
+
+  def connected_components
+    parent = (0...@points.length).to_a
+
+    find = lambda do |i|
+      parent[i] = find.call(parent[i]) if parent[i] != i
+      parent[i]
+    end
+
+    union = lambda do |a, b|
+      ra = find.call(a)
+      rb = find.call(b)
+      parent[ra] = rb if ra != rb
+    end
+
+    index_for = {}
+    @points.each_with_index { |point, idx| index_for[point] = idx }
+
+    @lines.each do |a, b|
+      union.call(index_for.fetch(a), index_for.fetch(b))
+    end
+
+    @constraints.each do |constraint|
+      point_indices = constraint_points(constraint).map { |point| index_for[point] }.compact
+      point_indices.each_cons(2) do |a, b|
+        union.call(a, b)
+      end
+    end
+
+    groups = Hash.new { |hash, key| hash[key] = [] }
+    @points.each_with_index do |point, idx|
+      groups[find.call(idx)] << idx
+    end
+    groups.values
+  end
+
+  def constraint_points(constraint)
+    case constraint[0]
+    when :fixed
+      [constraint[1]]
+    when :horizontal, :vertical, :coincident
+      [constraint[1], constraint[2]]
+    when :dimension
+      [constraint[1], constraint[2]]
+    when :equal_length, :parallel, :perpendicular
+      constraint[1, 4]
+    when :midpoint
+      [constraint[1], constraint[2], constraint[3]]
+    when :centered_dimension
+      [constraint[1], constraint[2], constraint[3]]
+    when :symmetric
+      [constraint[1], constraint[2], constraint[3]]
+    when :mirror_x, :mirror_y
+      [constraint[1], constraint[2]]
+    when :tangent
+      [constraint[1], constraint[2], constraint[3]]
+    when :polar_point
+      [constraint[1], constraint[2]]
+    else
+      []
+    end
+  end
+
+  def constraint_summary(constraint)
+    type = constraint[0]
+    case type
+    when :fixed
+      _type, point, x, y = constraint
+      parts = ["fixed #{point_label(point)}"]
+      parts << "x=#{format_num(x)}" unless x.nil?
+      parts << "y=#{format_num(y)}" unless y.nil?
+      parts.join(" ")
+    when :horizontal, :vertical, :coincident
+      _type, a, b = constraint
+      "#{type} #{point_label(a)} #{point_label(b)}"
+    when :dimension
+      _type, a, b, length = constraint
+      "dimension #{point_label(a)}→#{point_label(b)}=#{format_num(length)}"
+    when :equal_length, :parallel, :perpendicular
+      _type, a, b, c, d = constraint
+      "#{type} #{point_label(a)}→#{point_label(b)} / #{point_label(c)}→#{point_label(d)}"
+    when :midpoint
+      _type, p, a, b = constraint
+      "midpoint #{point_label(p)} = midpoint(#{point_label(a)}, #{point_label(b)})"
+    when :centered_dimension
+      _type, center, a, b, attr, length = constraint
+      "centered_dimension #{point_label(center)} #{attr}=#{format_num(length)}"
+    when :symmetric
+      _type, a, b, center = constraint
+      "symmetric #{point_label(a)} #{point_label(b)} around #{point_label(center)}"
+    when :mirror_x, :mirror_y
+      _type, source, target, axis = constraint
+      "#{type} #{point_label(source)} #{point_label(target)} axis=#{format_num(axis)}"
+    when :tangent
+      _type, a, b, center, radius, side = constraint
+      label = "tangent #{point_label(a)} #{point_label(b)} around #{point_label(center)} r=#{format_num(radius)}"
+      side.nil? ? label : "#{label} side=#{side}"
+    when :polar_point
+      _type, p, center, radius, angle_deg = constraint
+      "polar_point #{point_label(p)} around #{point_label(center)} r=#{format_num(radius)} angle=#{format_num(angle_deg)}"
+    else
+      type.to_s
+    end
+  end
 
   def profile_shape
     type = @profile[0]
@@ -914,6 +1204,8 @@ end
 # until the native override runs.
 # ---------------------------------------------------------------------------
 class Shape
+  attr_accessor :sketch_diagnostics
+
   def initialize(kind = nil, *args)
     @kind = kind
     @args = args
@@ -2626,7 +2918,7 @@ module Kernel
   # `sketch do ... end` — builds a constrained 2-D profile and returns a Shape.
   # The Phase 10 MVP supports closed polygon loops. Constraint methods are
   # added incrementally on SketchBuilder.
-  def sketch(&block)
+  def sketch(diagnostics: false, strict: false, &block)
     builder = SketchBuilder.new
     result = if block.arity == 1
       block.call(builder)
@@ -2634,7 +2926,7 @@ module Kernel
       builder.instance_eval(&block)
     end
     return result if result.is_a?(Shape)
-    builder.to_profile
+    builder.to_profile(diagnostics: diagnostics, strict: strict)
   end
 
   # `assembly "name" do |asm| ... end` — creates an Assembly.

@@ -187,3 +187,99 @@ fn import_step_error_includes_actionable_hint() {
         "expected 'readable' hint, got: {err}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Debug exports
+// ---------------------------------------------------------------------------
+
+use std::path::Path;
+use std::sync::{Mutex, MutexGuard, OnceLock};
+
+fn debug_exports_lock() -> &'static Mutex<()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+}
+
+struct DebugExportEnvGuard<'a> {
+    _lock: MutexGuard<'a, ()>,
+}
+
+impl Drop for DebugExportEnvGuard<'_> {
+    fn drop(&mut self) {
+        unsafe {
+            std::env::remove_var("RRCAD_DEBUG_EXPORTS");
+            std::env::remove_var("RRCAD_DEBUG_EXPORTS_DIR");
+        }
+    }
+}
+
+fn enable_debug_exports(dir: &Path) -> DebugExportEnvGuard<'_> {
+    let lock = debug_exports_lock().lock().unwrap_or_else(|e| e.into_inner());
+    unsafe {
+        std::env::set_var("RRCAD_DEBUG_EXPORTS", "1");
+        std::env::set_var("RRCAD_DEBUG_EXPORTS_DIR", dir);
+    }
+    DebugExportEnvGuard { _lock: lock }
+}
+
+fn find_debug_step(root: &Path, stem: &str) -> Option<std::path::PathBuf> {
+    let entries = std::fs::read_dir(root).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(found) = find_debug_step(&path, stem) {
+                return Some(found);
+            }
+        } else if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.contains(stem) && name.ends_with(".step"))
+        {
+            return Some(path);
+        }
+    }
+    None
+}
+
+#[test]
+fn boolean_failure_writes_debug_exports() {
+    let dir = std::env::temp_dir().join(format!("rrcad-debug-boolean-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let _guard = enable_debug_exports(&dir);
+
+    let cube = Shape::make_box(10.0, 10.0, 10.0).expect("make_box");
+    let top_face = cube.faces("top").expect("faces").remove(0);
+    let err = err_of(cube.fuse(&top_face));
+
+    assert!(
+        err.contains("debug export:") && err.contains(dir.to_string_lossy().as_ref()),
+        "expected debug export path in boolean error, got: {err}"
+    );
+    let lhs = find_debug_step(&dir, "lhs").expect("lhs debug STEP missing");
+    let rhs = find_debug_step(&dir, "rhs").expect("rhs debug STEP missing");
+    assert!(
+        std::fs::metadata(&lhs).unwrap().len() > 0,
+        "lhs debug STEP is empty"
+    );
+    assert!(std::fs::metadata(&rhs).unwrap().len() > 0, "rhs debug STEP is empty");
+}
+
+#[test]
+fn fillet_failure_writes_debug_exports() {
+    let dir = std::env::temp_dir().join(format!("rrcad-debug-fillet-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let _guard = enable_debug_exports(&dir);
+
+    let cube = Shape::make_box(1.0, 1.0, 1.0).expect("make_box");
+    let err = err_of(cube.fillet(10.0));
+
+    assert!(
+        err.contains("debug export:") && err.contains(dir.to_string_lossy().as_ref()),
+        "expected debug export path in fillet error, got: {err}"
+    );
+    let input = find_debug_step(&dir, "input").expect("input debug STEP missing");
+    assert!(
+        std::fs::metadata(&input).unwrap().len() > 0,
+        "input debug STEP is empty"
+    );
+}

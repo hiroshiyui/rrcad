@@ -344,8 +344,11 @@ mod ffi {
 }
 
 use cxx::UniquePtr;
+use std::env;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -435,6 +438,47 @@ fn hint(s: &str) -> String {
         String::new()
     } else {
         format!("\n  hint: {s}")
+    }
+}
+
+static DEBUG_EXPORT_SEQ: AtomicUsize = AtomicUsize::new(1);
+
+fn debug_exports_enabled() -> bool {
+    matches!(
+        env::var("RRCAD_DEBUG_EXPORTS")
+            .ok()
+            .as_deref()
+            .map(|v| v.to_ascii_lowercase())
+            .as_deref(),
+        Some("1") | Some("true") | Some("yes") | Some("on")
+    )
+}
+
+fn debug_exports_root() -> PathBuf {
+    env::var_os("RRCAD_DEBUG_EXPORTS_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| env::temp_dir().join("rrcad-debug"))
+}
+
+fn debug_export_component(s: &str) -> String {
+    let mut out = String::new();
+    for ch in s.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+            out.push(ch);
+        } else {
+            out.push('_');
+        }
+    }
+    while out.starts_with('_') {
+        out.remove(0);
+    }
+    while out.ends_with('_') {
+        out.pop();
+    }
+    if out.is_empty() {
+        "shape".to_string()
+    } else {
+        out
     }
 }
 
@@ -540,6 +584,44 @@ impl Shape {
 
     fn set_gdt_render(&self, render: Option<GdtRenderSpec>) {
         *self.gdt_render.borrow_mut() = render;
+    }
+
+    fn debug_export_note(&self, op: &str, shapes: &[(&str, &Shape)]) -> Option<String> {
+        if !debug_exports_enabled() {
+            return None;
+        }
+
+        let seq = DEBUG_EXPORT_SEQ.fetch_add(1, Ordering::Relaxed);
+        let dir = debug_exports_root().join(format!(
+            "{}-{}-{}",
+            debug_export_component(op),
+            std::process::id(),
+            seq
+        ));
+
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            return Some(format!("\n  debug export: could not create {}: {e}", dir.display()));
+        }
+
+        for (label, shape) in shapes {
+            let file = dir.join(format!("{}.step", debug_export_component(label)));
+            if let Err(e) = ffi::export_step(&shape.inner, file.to_string_lossy().as_ref()) {
+                return Some(format!(
+                    "\n  debug export: {} (failed writing {}: {e})",
+                    dir.display(),
+                    file.display()
+                ));
+            }
+        }
+
+        Some(format!("\n  debug export: {}", dir.display()))
+    }
+
+    fn fail_with_debug(&self, base: String, op: &str, shapes: &[(&str, &Shape)]) -> String {
+        match self.debug_export_note(op, shapes) {
+            Some(note) => format!("{base}{note}"),
+            None => base,
+        }
     }
 
     fn format_gdt_feature_control(
@@ -698,10 +780,14 @@ impl Shape {
         ffi::shape_fuse(&self.inner, &other.inner)
             .map(|p| self.with_inner(p))
             .map_err(|e| {
-                format!(
-                    "fuse({}, {}) failed: {e}",
+                self.fail_with_debug(
+                    format!(
+                        "fuse({}, {}) failed: {e}",
                     summarize(self),
                     summarize(other)
+                    ),
+                    "fuse",
+                    &[("lhs", self), ("rhs", other)],
                 )
             })
     }
@@ -709,17 +795,27 @@ impl Shape {
     pub fn cut(&self, other: &Shape) -> Result<Shape, String> {
         ffi::shape_cut(&self.inner, &other.inner)
             .map(|p| self.with_inner(p))
-            .map_err(|e| format!("cut({}, {}) failed: {e}", summarize(self), summarize(other)))
+            .map_err(|e| {
+                self.fail_with_debug(
+                    format!("cut({}, {}) failed: {e}", summarize(self), summarize(other)),
+                    "cut",
+                    &[("lhs", self), ("rhs", other)],
+                )
+            })
     }
 
     pub fn common(&self, other: &Shape) -> Result<Shape, String> {
         ffi::shape_common(&self.inner, &other.inner)
             .map(|p| self.with_inner(p))
             .map_err(|e| {
-                format!(
-                    "common({}, {}) failed: {e}",
+                self.fail_with_debug(
+                    format!(
+                        "common({}, {}) failed: {e}",
                     summarize(self),
                     summarize(other)
+                    ),
+                    "common",
+                    &[("lhs", self), ("rhs", other)],
                 )
             })
     }
@@ -730,10 +826,14 @@ impl Shape {
         ffi::shape_fillet(&self.inner, radius)
             .map(|p| self.with_inner(p))
             .map_err(|e| {
-                format!(
-                    "fillet(r={radius}) on {} failed: {e}{}",
-                    summarize(self),
-                    hint("radius likely exceeds the smallest adjacent face/edge; try a smaller value or use fillet_sel with an edge selector")
+                self.fail_with_debug(
+                    format!(
+                        "fillet(r={radius}) on {} failed: {e}{}",
+                        summarize(self),
+                        hint("radius likely exceeds the smallest adjacent face/edge; try a smaller value or use fillet_sel with an edge selector")
+                    ),
+                    "fillet",
+                    &[("input", self)],
                 )
             })
     }
@@ -742,10 +842,14 @@ impl Shape {
         ffi::shape_chamfer(&self.inner, dist)
             .map(|p| self.with_inner(p))
             .map_err(|e| {
-                format!(
-                    "chamfer(d={dist}) on {} failed: {e}{}",
-                    summarize(self),
-                    hint("distance likely exceeds an adjacent face dimension; try a smaller value or use chamfer_sel with an edge selector")
+                self.fail_with_debug(
+                    format!(
+                        "chamfer(d={dist}) on {} failed: {e}{}",
+                        summarize(self),
+                        hint("distance likely exceeds an adjacent face dimension; try a smaller value or use chamfer_sel with an edge selector")
+                    ),
+                    "chamfer",
+                    &[("input", self)],
                 )
             })
     }
@@ -755,9 +859,13 @@ impl Shape {
         ffi::shape_fillet_sel(&self.inner, radius, selector)
             .map(|p| self.with_inner(p))
             .map_err(|e| {
-                format!(
-                    "fillet(r={radius}, edges: {selector:?}) on {} failed: {e}",
-                    summarize(self)
+                self.fail_with_debug(
+                    format!(
+                        "fillet(r={radius}, edges: {selector:?}) on {} failed: {e}",
+                        summarize(self)
+                    ),
+                    "fillet_sel",
+                    &[("input", self)],
                 )
             })
     }
@@ -767,9 +875,13 @@ impl Shape {
         ffi::shape_chamfer_sel(&self.inner, dist, selector)
             .map(|p| self.with_inner(p))
             .map_err(|e| {
-                format!(
-                    "chamfer(d={dist}, edges: {selector:?}) on {} failed: {e}",
-                    summarize(self)
+                self.fail_with_debug(
+                    format!(
+                        "chamfer(d={dist}, edges: {selector:?}) on {} failed: {e}",
+                        summarize(self)
+                    ),
+                    "chamfer_sel",
+                    &[("input", self)],
                 )
             })
     }
@@ -780,9 +892,13 @@ impl Shape {
         ffi::shape_fillet_var(&self.inner, r1, r2)
             .map(|p| self.with_inner(p))
             .map_err(|e| {
-                format!(
-                    "fillet_var(r1={r1}, r2={r2}) on {} failed: {e}",
-                    summarize(self)
+                self.fail_with_debug(
+                    format!(
+                        "fillet_var(r1={r1}, r2={r2}) on {} failed: {e}",
+                        summarize(self)
+                    ),
+                    "fillet_var",
+                    &[("input", self)],
                 )
             })
     }
@@ -792,9 +908,13 @@ impl Shape {
         ffi::shape_fillet_var_sel(&self.inner, r1, r2, selector)
             .map(|p| self.with_inner(p))
             .map_err(|e| {
-                format!(
-                    "fillet_var(r1={r1}, r2={r2}, edges: {selector:?}) on {} failed: {e}",
-                    summarize(self)
+                self.fail_with_debug(
+                    format!(
+                        "fillet_var(r1={r1}, r2={r2}, edges: {selector:?}) on {} failed: {e}",
+                        summarize(self)
+                    ),
+                    "fillet_var_sel",
+                    &[("input", self)],
                 )
             })
     }
@@ -804,9 +924,13 @@ impl Shape {
         ffi::shape_chamfer_asym(&self.inner, d1, d2)
             .map(|p| self.with_inner(p))
             .map_err(|e| {
-                format!(
-                    "chamfer_asym(d1={d1}, d2={d2}) on {} failed: {e}",
-                    summarize(self)
+                self.fail_with_debug(
+                    format!(
+                        "chamfer_asym(d1={d1}, d2={d2}) on {} failed: {e}",
+                        summarize(self)
+                    ),
+                    "chamfer_asym",
+                    &[("input", self)],
                 )
             })
     }
@@ -816,9 +940,13 @@ impl Shape {
         ffi::shape_chamfer_asym_sel(&self.inner, d1, d2, selector)
             .map(|p| self.with_inner(p))
             .map_err(|e| {
-                format!(
-                    "chamfer_asym(d1={d1}, d2={d2}, edges: {selector:?}) on {} failed: {e}",
-                    summarize(self)
+                self.fail_with_debug(
+                    format!(
+                        "chamfer_asym(d1={d1}, d2={d2}, edges: {selector:?}) on {} failed: {e}",
+                        summarize(self)
+                    ),
+                    "chamfer_asym_sel",
+                    &[("input", self)],
                 )
             })
     }
@@ -962,12 +1090,16 @@ impl Shape {
         ffi::shape_extrude(&self.inner, height)
             .map(|p| self.with_inner(p))
             .map_err(|e| {
-                format!(
-                    "extrude(h={height}) on {} failed: {e}{}",
-                    summarize(self),
-                    hint(
-                        "extrude requires a 2-D profile (Face or Wire); a Solid cannot be extruded"
-                    )
+                self.fail_with_debug(
+                    format!(
+                        "extrude(h={height}) on {} failed: {e}{}",
+                        summarize(self),
+                        hint(
+                            "extrude requires a 2-D profile (Face or Wire); a Solid cannot be extruded"
+                        )
+                    ),
+                    "extrude",
+                    &[("input", self)],
                 )
             })
     }
@@ -976,9 +1108,13 @@ impl Shape {
         ffi::shape_revolve(&self.inner, angle_deg)
             .map(|p| self.with_inner(p))
             .map_err(|e| {
-                format!(
-                    "revolve(angle={angle_deg}°) on {} failed: {e}",
-                    summarize(self)
+                self.fail_with_debug(
+                    format!(
+                        "revolve(angle={angle_deg}°) on {} failed: {e}",
+                        summarize(self)
+                    ),
+                    "revolve",
+                    &[("input", self)],
                 )
             })
     }
@@ -1015,10 +1151,14 @@ impl Shape {
         ffi::shape_shell(&self.inner, thickness)
             .map(|p| self.with_inner(p))
             .map_err(|e| {
-                format!(
-                    "shell(thickness={thickness}) on {} failed: {e}{}",
-                    summarize(self),
-                    hint("thickness must be smaller than the part's smallest dimension; reduce thickness or shell with a specific face removed")
+                self.fail_with_debug(
+                    format!(
+                        "shell(thickness={thickness}) on {} failed: {e}{}",
+                        summarize(self),
+                        hint("thickness must be smaller than the part's smallest dimension; reduce thickness or shell with a specific face removed")
+                    ),
+                    "shell",
+                    &[("input", self)],
                 )
             })
     }
@@ -1029,9 +1169,13 @@ impl Shape {
         ffi::shape_offset(&self.inner, distance)
             .map(|p| self.with_inner(p))
             .map_err(|e| {
-                format!(
-                    "offset(distance={distance}) on {} failed: {e}",
-                    summarize(self)
+                self.fail_with_debug(
+                    format!(
+                        "offset(distance={distance}) on {} failed: {e}",
+                        summarize(self)
+                    ),
+                    "offset",
+                    &[("input", self)],
                 )
             })
     }
@@ -1041,9 +1185,13 @@ impl Shape {
         ffi::shape_offset_2d(&self.inner, distance)
             .map(|p| self.with_inner(p))
             .map_err(|e| {
-                format!(
-                    "offset_2d(distance={distance}) on {} failed: {e}",
-                    summarize(self)
+                self.fail_with_debug(
+                    format!(
+                        "offset_2d(distance={distance}) on {} failed: {e}",
+                        summarize(self)
+                    ),
+                    "offset_2d",
+                    &[("input", self)],
                 )
             })
     }
@@ -1055,9 +1203,13 @@ impl Shape {
         ffi::shape_simplify(&self.inner, min_feature_size)
             .map(|p| self.with_inner(p))
             .map_err(|e| {
-                format!(
-                    "simplify(min_feature_size={min_feature_size}) on {} failed: {e}",
-                    summarize(self)
+                self.fail_with_debug(
+                    format!(
+                        "simplify(min_feature_size={min_feature_size}) on {} failed: {e}",
+                        summarize(self)
+                    ),
+                    "simplify",
+                    &[("input", self)],
                 )
             })
     }
@@ -1068,9 +1220,13 @@ impl Shape {
         ffi::shape_extrude_ex(&self.inner, height, twist_deg, scale)
             .map(|p| self.with_inner(p))
             .map_err(|e| {
-                format!(
-                    "extrude(h={height}, twist={twist_deg}°, scale={scale}) on {} failed: {e}",
-                    summarize(self)
+                self.fail_with_debug(
+                    format!(
+                        "extrude(h={height}, twist={twist_deg}°, scale={scale}) on {} failed: {e}",
+                        summarize(self)
+                    ),
+                    "extrude_ex",
+                    &[("input", self)],
                 )
             })
     }
@@ -1123,11 +1279,15 @@ impl Shape {
         ffi::shape_sweep(&self.inner, &path.inner)
             .map(|p| self.with_inner(p))
             .map_err(|e| {
-                format!(
-                    "sweep({}, path={}) failed: {e}{}",
-                    summarize(self),
-                    summarize(path),
-                    hint("profile must be a Face or Wire and path must be a Wire; check the path doesn't kink sharply against the profile size")
+                self.fail_with_debug(
+                    format!(
+                        "sweep({}, path={}) failed: {e}{}",
+                        summarize(self),
+                        summarize(path),
+                        hint("profile must be a Face or Wire and path must be a Wire; check the path doesn't kink sharply against the profile size")
+                    ),
+                    "sweep",
+                    &[("profile", self), ("path", path)],
                 )
             })
     }
@@ -1156,7 +1316,39 @@ impl Shape {
         }
         ffi::pipe_shell_build(builder.pin_mut())
             .map(Shape::fresh)
-            .map_err(|e| format!("{} failed: {e}", ctx()))
+            .map_err(|e| {
+                let mut note = String::new();
+                if debug_exports_enabled() {
+                    let seq = DEBUG_EXPORT_SEQ.fetch_add(1, Ordering::Relaxed);
+                    let dir = debug_exports_root().join(format!(
+                        "sweep_sections-{}-{}",
+                        std::process::id(),
+                        seq
+                    ));
+                    if let Err(dir_err) = std::fs::create_dir_all(&dir) {
+                        note = format!("\n  debug export: could not create {}: {dir_err}", dir.display());
+                    } else {
+                        for (i, p) in profiles.iter().enumerate() {
+                            let file = dir.join(format!(
+                                "profile-{}.step",
+                                debug_export_component(&i.to_string())
+                            ));
+                            let _ = ffi::export_step(&p.inner, file.to_string_lossy().as_ref());
+                        }
+                        let file = dir.join("path.step");
+                        if let Err(path_err) = ffi::export_step(&path.inner, file.to_string_lossy().as_ref()) {
+                            note = format!(
+                                "\n  debug export: {} (failed writing {}: {path_err})",
+                                dir.display(),
+                                file.display()
+                            );
+                        } else {
+                            note = format!("\n  debug export: {}", dir.display());
+                        }
+                    }
+                }
+                format!("{} failed: {e}{note}", ctx())
+            })
     }
 
     // --- Bézier surface patch ---
@@ -1317,12 +1509,16 @@ impl Shape {
         ffi::shape_pad(&self.inner, &face_ref.inner, &sketch.inner, height)
             .map(|s| self.with_inner(s))
             .map_err(|e| {
-                format!(
-                    "pad(h={height}, face={}, sketch={}) on {} failed: {e}{}",
-                    summarize(face_ref),
-                    summarize(sketch),
-                    summarize(self),
-                    hint("face must be a planar face of the body; sketch must lie in (or be transformed into) that face's plane")
+                self.fail_with_debug(
+                    format!(
+                        "pad(h={height}, face={}, sketch={}) on {} failed: {e}{}",
+                        summarize(face_ref),
+                        summarize(sketch),
+                        summarize(self),
+                        hint("face must be a planar face of the body; sketch must lie in (or be transformed into) that face's plane")
+                    ),
+                    "pad",
+                    &[("body", self), ("face", face_ref), ("sketch", sketch)],
                 )
             })
     }
@@ -1332,12 +1528,16 @@ impl Shape {
         ffi::shape_pocket(&self.inner, &face_ref.inner, &sketch.inner, depth)
             .map(|s| self.with_inner(s))
             .map_err(|e| {
-                format!(
-                    "pocket(depth={depth}, face={}, sketch={}) on {} failed: {e}{}",
-                    summarize(face_ref),
-                    summarize(sketch),
-                    summarize(self),
-                    hint("face must be a planar face of the body; sketch must lie in (or be transformed into) that face's plane and fit within it")
+                self.fail_with_debug(
+                    format!(
+                        "pocket(depth={depth}, face={}, sketch={}) on {} failed: {e}{}",
+                        summarize(face_ref),
+                        summarize(sketch),
+                        summarize(self),
+                        hint("face must be a planar face of the body; sketch must lie in (or be transformed into) that face's plane and fit within it")
+                    ),
+                    "pocket",
+                    &[("body", self), ("face", face_ref), ("sketch", sketch)],
                 )
             })
     }
@@ -1379,9 +1579,13 @@ impl Shape {
         ffi::shape_extrude_draft(&self.inner, height, draft_deg)
             .map(|s| self.with_inner(s))
             .map_err(|e| {
-                format!(
-                    "extrude(h={height}, draft={draft_deg}°) on {} failed: {e}",
-                    summarize(self)
+                self.fail_with_debug(
+                    format!(
+                        "extrude(h={height}, draft={draft_deg}°) on {} failed: {e}",
+                        summarize(self)
+                    ),
+                    "extrude_draft",
+                    &[("input", self)],
                 )
             })
     }
@@ -1587,31 +1791,61 @@ impl Shape {
 
     pub fn export_step(&self, path: &str) -> Result<(), String> {
         ffi::export_step(&self.inner, path)
-            .map_err(|e| format!("export_step({path:?}) on {} failed: {e}", summarize(self)))
+            .map_err(|e| {
+                self.fail_with_debug(
+                    format!("export_step({path:?}) on {} failed: {e}", summarize(self)),
+                    "export_step",
+                    &[("input", self)],
+                )
+            })
     }
 
     pub fn export_stl(&self, path: &str) -> Result<(), String> {
         ffi::export_stl(&self.inner, path)
-            .map_err(|e| format!("export_stl({path:?}) on {} failed: {e}", summarize(self)))
+            .map_err(|e| {
+                self.fail_with_debug(
+                    format!("export_stl({path:?}) on {} failed: {e}", summarize(self)),
+                    "export_stl",
+                    &[("input", self)],
+                )
+            })
     }
 
     /// Export to glTF. `linear_deflection` controls tessellation quality (e.g. `0.1` for 0.1 mm).
     pub fn export_gltf(&self, path: &str, linear_deflection: f64) -> Result<(), String> {
         ffi::export_gltf(&self.inner, path, linear_deflection)
-            .map_err(|e| format!("export_gltf({path:?}) on {} failed: {e}", summarize(self)))
+            .map_err(|e| {
+                self.fail_with_debug(
+                    format!("export_gltf({path:?}) on {} failed: {e}", summarize(self)),
+                    "export_gltf",
+                    &[("input", self)],
+                )
+            })
     }
 
     /// Export to binary glTF (GLB). Single-file format suitable for HTTP serving.
     pub fn export_glb(&self, path: &str, linear_deflection: f64) -> Result<(), String> {
         ffi::export_glb(&self.inner, path, linear_deflection)
-            .map_err(|e| format!("export_glb({path:?}) on {} failed: {e}", summarize(self)))
+            .map_err(|e| {
+                self.fail_with_debug(
+                    format!("export_glb({path:?}) on {} failed: {e}", summarize(self)),
+                    "export_glb",
+                    &[("input", self)],
+                )
+            })
     }
 
     /// Export to Wavefront OBJ. Tessellates with `linear_deflection` and writes
     /// the `.obj` file plus a companion `.mtl` material file in the same directory.
     pub fn export_obj(&self, path: &str, linear_deflection: f64) -> Result<(), String> {
         ffi::export_obj(&self.inner, path, linear_deflection)
-            .map_err(|e| format!("export_obj({path:?}) on {} failed: {e}", summarize(self)))
+            .map_err(|e| {
+                self.fail_with_debug(
+                    format!("export_obj({path:?}) on {} failed: {e}", summarize(self)),
+                    "export_obj",
+                    &[("input", self)],
+                )
+            })
     }
 
     /// Export to SVG using hidden-line removal (HLRBRep_PolyAlgo).
@@ -1723,9 +1957,13 @@ impl Shape {
             tolerance_minus,
         )
         .map_err(|e| {
-            format!(
-                "export_svg({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, datum: {datum:?}, datum_anchor_valid: {datum_anchor_valid}, feature_control: {feature_control:?}, feature_control_anchor_valid: {feature_control_anchor_valid}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}) on {} failed: {e}",
-                summarize(self)
+            self.fail_with_debug(
+                format!(
+                    "export_svg({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, datum: {datum:?}, datum_anchor_valid: {datum_anchor_valid}, feature_control: {feature_control:?}, feature_control_anchor_valid: {feature_control_anchor_valid}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}) on {} failed: {e}",
+                    summarize(self)
+                ),
+                "export_svg",
+                &[("input", self)],
             )
         })
     }
@@ -1839,9 +2077,13 @@ impl Shape {
             tolerance_minus,
         )
         .map_err(|e| {
-            format!(
-                "export_dxf({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, datum: {datum:?}, datum_anchor_valid: {datum_anchor_valid}, feature_control: {feature_control:?}, feature_control_anchor_valid: {feature_control_anchor_valid}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}) on {} failed: {e}",
-                summarize(self)
+            self.fail_with_debug(
+                format!(
+                    "export_dxf({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, datum: {datum:?}, datum_anchor_valid: {datum_anchor_valid}, feature_control: {feature_control:?}, feature_control_anchor_valid: {feature_control_anchor_valid}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}) on {} failed: {e}",
+                    summarize(self)
+                ),
+                "export_dxf",
+                &[("input", self)],
             )
         })
     }

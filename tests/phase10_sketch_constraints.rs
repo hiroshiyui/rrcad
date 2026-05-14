@@ -1162,6 +1162,77 @@ fn conflicting_horizontal_reports_point_coords() {
     );
 }
 
+#[test]
+fn sketch_diagnostics_report_redundant_constraints() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch(diagnostics: true) do
+               c = point(:c, nil, nil)
+               fixed c, 0, 0
+               fixed c, 0, 0
+               circle_at c, 5
+             end
+             diag = profile.sketch_diagnostics
+             [diag[:status], diag[:component_count], diag[:redundant_constraint_count], diag[:components].first[:estimated_dof]].inspect",
+        )
+        .unwrap();
+    assert!(
+        result.contains(":redundant_constraints"),
+        "expected redundant diagnostics status, got: {result}"
+    );
+    assert!(
+        result.contains("2"),
+        "expected redundant constraint count in diagnostics, got: {result}"
+    );
+    assert!(
+        result.contains("0"),
+        "expected zero estimated dof for the resolved sketch, got: {result}"
+    );
+}
+
+#[test]
+fn sketch_strict_mode_rejects_redundant_constraints() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval(
+            "sketch(strict: true) do
+               c = point(:c, nil, nil)
+               fixed c, 0, 0
+               fixed c, 0, 0
+               circle_at c, 5
+             end",
+        )
+        .unwrap_err();
+    assert!(
+        err.contains("redundant constraints"),
+        "expected strict-mode redundancy error, got: {err}"
+    );
+}
+
+#[test]
+fn sketch_diagnostics_report_unsolved_components() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "builder = SketchBuilder.new
+             a = builder.point(:a, nil, nil)
+             b = builder.point(:b, nil, nil)
+             builder.line a, b
+             diag = builder.diagnostics
+             [diag[:status], diag[:estimated_dof], diag[:components].first[:unresolved_points]].inspect",
+        )
+        .unwrap();
+    assert!(
+        result.contains(":unsolved"),
+        "expected unsolved diagnostics status, got: {result}"
+    );
+    assert!(
+        result.contains(":a") && result.contains(":b"),
+        "expected unresolved point labels in diagnostics, got: {result}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // polar_point construction helper
 // ---------------------------------------------------------------------------

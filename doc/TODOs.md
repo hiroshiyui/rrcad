@@ -188,8 +188,10 @@ end_deg)`, constrained `rectangle(origin, width, height)` /
 `centered_rectangle(center, width, height)` helpers, and axis-aligned
 `slot_between(a, b, radius)` profiles. Solver diagnostics name the
 involved points and report actual vs expected values for conflicting
-constraints, and the "did not converge" failure lists every unresolved
-point with its missing coordinates.
+constraints, the "did not converge" failure lists every unresolved point
+with its missing coordinates, and `sketch(diagnostics: true)` attaches a
+structured redundancy report to solved profile shapes while `strict: true`
+raises when redundant constraints are present.
 
 **Feature history / parametric model tree:** Represent modeling operations as a
 regeneratable feature graph instead of only immutable shape results. This would
@@ -220,7 +222,9 @@ missing/unreadable files) also carry an actionable one-line hint
 prefixed with `hint:`. Sample message:
 `fillet(r=10) on solid failed: ...\n  hint: radius likely exceeds the
 smallest adjacent face/edge; try a smaller value or use fillet_sel with
-an edge selector`.
+an edge selector`. When `RRCAD_DEBUG_EXPORTS=1`, the same failure paths
+also emit STEP debug artifacts into `RRCAD_DEBUG_EXPORTS_DIR` or the
+system temp directory so the failing geometry can be inspected directly.
 
 **Assembly constraints beyond `mate` ✓ COMPLETE:** The assembly layer now has
 a declarative rigid-body solver alongside the existing eager helpers. Use
@@ -294,12 +298,6 @@ Open items deferred from completed or partially-complete tracks above.
 These are not blocking and can be picked up when the use cases become
 important.
 
-- **Sketch — DOF-counting analyser** for redundant-constraint detection
-  before solving, and a richer 2-D drawing/preview layer to visualise
-  the sketch graph. (Extends *Constraint-based sketching*.)
-- **Diagnostics — failure debug exports** of intermediate geometry, and
-  richer hints driven by inspecting operand bounding-box extents.
-  (Extends *Better diagnostics*.)
 - **Units — dimensional analysis** with richer unit-aware values,
   beyond the current `Numeric` helpers. (Extends *Units system*.)
 - **Hardware helpers — washer/nut bodies.** Imperial sizes (#4-40 through

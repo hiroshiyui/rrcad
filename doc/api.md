@@ -723,6 +723,7 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `.closed?` | `true` if every edge is shared by at least 2 faces (no open boundary) |
 | `.manifold?` | `true` if every edge is shared by exactly 2 faces (manifold mesh) |
 | `.validate` | Runs `BRepCheck_Analyzer`. Returns `:ok` if the shape is valid, or an `Array` of error description strings if not. |
+| `.sketch_diagnostics` | Returns the structured sketch diagnostics hash attached by `sketch(diagnostics: true)`, or `nil` if the shape did not come from a diagnostic sketch. |
 | `.slice(plane: :xy, z: d)` | Cross-section by an axis-aligned plane. `plane:` is `:xy` (offset along Z), `:xz` (offset along Y), or `:yz` (offset along X). The offset key matches the plane normal axis (`z:` for `:xy`, `y:` for `:xz`, `x:` for `:yz`). Returns a compound of the section edges/wires. Uses `BRepAlgoAPI_Section`. |
 | `.pad(face_sel, height:) { sketch }` | Extrude the block's sketch along the outward normal of `face_sel` and fuse with `self`. `face_sel` can be a Symbol (`:top`, `:bottom`, `">X"`, etc.) or an explicit face Shape. The sketch block is evaluated in the XY plane; it is automatically repositioned onto the target face. Returns a Solid. |
 | `.pocket(face_sel, depth:) { sketch }` | Same as `pad` but extrudes inward and subtracts from `self`. Returns a Solid. |

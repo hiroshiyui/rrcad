@@ -267,6 +267,13 @@ involved point labels, and the actual vs expected values (for example
 non-convergence message lists every unresolved point with its missing
 coordinates so the offending free variable is easy to spot.
 
+For solved sketches, `sketch(diagnostics: true)` attaches a structured
+`shape.sketch_diagnostics` hash with connected components and any redundant
+constraints that were detected. `sketch(strict: true)` raises instead of
+returning a profile when redundant constraints are present.
+For interactive inspection before solving, `SketchBuilder#diagnostics`
+returns the same report from the builder object itself.
+
 ### Transforms
 
 All transforms return a new Shape; the original is unchanged.
@@ -872,6 +879,11 @@ the actual vs expected values (e.g. `conflicting tangent constraint:
 distance from :c to line (:p1, :p2) is 2.0, expected radius 3.0`), and a
 non-convergence error lists every unresolved point with its missing
 coordinates.
+
+For deeper geometry failures, set `RRCAD_DEBUG_EXPORTS=1` to emit STEP
+debug artifacts under `RRCAD_DEBUG_EXPORTS_DIR` or the system temp
+directory. The error message includes the debug directory path so you can
+open the failing operands directly.
 
 ### Build failures
 
