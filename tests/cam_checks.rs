@@ -386,27 +386,29 @@ fn hole_axes_finds_vertical_hole_in_plate() {
 fn hole_axes_filters_by_orientation() {
     // Same drilled plate as above, but filter to vertical only — should find
     // the bore (Z-axis). Filter to horizontal — none.
-    let mut vm = MrubyVm::new();
-    let vert = vm
-        .eval(
+    let vert = {
+        let mut vm = MrubyVm::new();
+        vm.eval(
             "plate = box(40, 40, 10)
              drill = cylinder(3, 12).translate(20, 20, -1)
              hole_axes(plate.cut(drill), orientation: :vertical).length",
         )
-        .unwrap();
+        .unwrap()
+    };
     assert!(
         vert.trim().parse::<i32>().unwrap() >= 1,
         "expected ≥1 vertical bore, got {vert}"
     );
 
-    let mut vm2 = MrubyVm::new();
-    let horiz = vm2
-        .eval(
+    let horiz = {
+        let mut vm = MrubyVm::new();
+        vm.eval(
             "plate = box(40, 40, 10)
              drill = cylinder(3, 12).translate(20, 20, -1)
              hole_axes(plate.cut(drill), orientation: :horizontal).length",
         )
-        .unwrap();
+        .unwrap()
+    };
     assert_eq!(
         horiz.trim(),
         "0",
