@@ -50,6 +50,20 @@ fn fillet_sel_error_includes_selector() {
 }
 
 #[test]
+fn extrude_error_includes_history() {
+    let cube = Shape::make_box(1.0, 1.0, 1.0).expect("make_box");
+    let err = err_of(cube.extrude(5.0));
+    assert!(
+        err.contains("history:"),
+        "expected history note in message, got: {err}"
+    );
+    assert!(
+        err.contains("box("),
+        "expected constructor provenance in message, got: {err}"
+    );
+}
+
+#[test]
 fn import_step_error_includes_path() {
     let err = err_of(Shape::import_step("/tmp/rrcad_does_not_exist_zzz.step"));
     assert!(
@@ -214,7 +228,9 @@ impl Drop for DebugExportEnvGuard<'_> {
 }
 
 fn enable_debug_exports(dir: &Path) -> DebugExportEnvGuard<'_> {
-    let lock = debug_exports_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let lock = debug_exports_lock()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     unsafe {
         std::env::set_var("RRCAD_DEBUG_EXPORTS", "1");
         std::env::set_var("RRCAD_DEBUG_EXPORTS_DIR", dir);
@@ -261,7 +277,10 @@ fn boolean_failure_writes_debug_exports() {
         std::fs::metadata(&lhs).unwrap().len() > 0,
         "lhs debug STEP is empty"
     );
-    assert!(std::fs::metadata(&rhs).unwrap().len() > 0, "rhs debug STEP is empty");
+    assert!(
+        std::fs::metadata(&rhs).unwrap().len() > 0,
+        "rhs debug STEP is empty"
+    );
 }
 
 #[test]

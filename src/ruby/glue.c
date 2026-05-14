@@ -226,6 +226,7 @@ extern void rrcad_shape_cylinder_axis(void* ptr, double* out, const char** error
 extern int rrcad_shape_is_closed(void* ptr, const char** error_out);
 extern int rrcad_shape_is_manifold(void* ptr, const char** error_out);
 extern const char* rrcad_shape_validate(void* ptr, const char** error_out);
+extern const char* rrcad_shape_history(void* ptr, const char** error_out);
 
 /* Phase 7 Tier 3 — surface modeling */
 extern void* rrcad_ruled_surface(void* a, void* b, const char** error_out);
@@ -2334,6 +2335,32 @@ static mrb_value mrb_rrcad_shape_validate(mrb_state* mrb, mrb_value self) {
     return ary;
 }
 
+/* shape.history  → ["op(...)", "op(...)", ...] */
+static mrb_value mrb_rrcad_shape_history(mrb_state* mrb, mrb_value self) {
+    void* ptr = shape_ptr(mrb, self);
+    require_native_ptr(mrb, ptr);
+
+    const char* err = NULL;
+    const char* report = rrcad_shape_history(ptr, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+
+    mrb_value ary = mrb_ary_new(mrb);
+    if (report[0] == '\0')
+        return ary;
+
+    const char* p = report;
+    while (*p) {
+        const char* nl = strchr(p, '\n');
+        size_t len = nl ? (size_t)(nl - p) : strlen(p);
+        mrb_ary_push(mrb, ary, mrb_str_new(mrb, p, (mrb_int)len));
+        p += len;
+        if (*p == '\n')
+            p++;
+    }
+    return ary;
+}
+
 /* -------------------------------------------------------------------------
  * Phase 7 Tier 3: ruled_surface / fill_surface / slice
  * -------------------------------------------------------------------------
@@ -2896,6 +2923,7 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     mrb_define_method(mrb, shape_class, "closed?", mrb_rrcad_shape_closed, MRB_ARGS_NONE());
     mrb_define_method(mrb, shape_class, "manifold?", mrb_rrcad_shape_manifold, MRB_ARGS_NONE());
     mrb_define_method(mrb, shape_class, "validate", mrb_rrcad_shape_validate, MRB_ARGS_NONE());
+    mrb_define_method(mrb, shape_class, "history", mrb_rrcad_shape_history, MRB_ARGS_NONE());
 
     /* Phase 7: Bézier patch and sewing */
     mrb_define_method(mrb, mrb->kernel_module, "bezier_patch", mrb_rrcad_bezier_patch,

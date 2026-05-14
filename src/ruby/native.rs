@@ -549,7 +549,9 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
         dimensions != 0,
         title_block != 0,
         callouts != 0,
-        unsafe { std::ffi::CStr::from_ptr(datum) }.to_str().unwrap_or(""),
+        unsafe { std::ffi::CStr::from_ptr(datum) }
+            .to_str()
+            .unwrap_or(""),
         datum_anchor_valid != 0,
         datum_anchor_x,
         datum_anchor_y,
@@ -613,7 +615,9 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
         dimensions != 0,
         title_block != 0,
         callouts != 0,
-        unsafe { std::ffi::CStr::from_ptr(datum) }.to_str().unwrap_or(""),
+        unsafe { std::ffi::CStr::from_ptr(datum) }
+            .to_str()
+            .unwrap_or(""),
         datum_anchor_valid != 0,
         datum_anchor_x,
         datum_anchor_y,
@@ -1555,7 +1559,9 @@ pub unsafe extern "C" fn rrcad_preview_shape(ptr: *mut c_void, error_out: *mut *
                     eprintln!("rrcad preview: failed to write error metadata: {write_err}");
                 }
             }
-            Err(encode_err) => eprintln!("rrcad preview: failed to encode error metadata: {encode_err}"),
+            Err(encode_err) => {
+                eprintln!("rrcad preview: failed to encode error metadata: {encode_err}")
+            }
         }
         state.reload_tx.send(()).ok();
         return;
@@ -2096,4 +2102,21 @@ pub unsafe extern "C" fn rrcad_shape_validate(
             std::ptr::null()
         }
     }
+}
+
+/// Return the shape's provenance chain as a newline-separated C string.
+/// The pointer is valid until the next call on this thread.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_history(
+    ptr: *mut c_void,
+    error_out: *mut *const c_char,
+) -> *const c_char {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let joined = shape.history().join("\n");
+    let mut raw: *const c_char = std::ptr::null();
+    unsafe {
+        set_str(&mut raw as *mut *const c_char, &joined);
+    }
+    raw
 }

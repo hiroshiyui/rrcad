@@ -26,6 +26,21 @@ fn primitive_make_box() {
 }
 
 #[test]
+fn primitive_history_records_constructor() {
+    let shape = Shape::make_box(10.0, 20.0, 30.0).expect("make_box failed");
+    let history = shape.history();
+    assert_eq!(
+        history.len(),
+        1,
+        "expected one history entry, got: {history:?}"
+    );
+    assert!(
+        history[0].contains("box("),
+        "expected box constructor in history, got: {history:?}"
+    );
+}
+
+#[test]
 fn primitive_make_cylinder() {
     Shape::make_cylinder(5.0, 15.0).expect("make_cylinder failed");
 }
@@ -100,6 +115,29 @@ fn transform_rotate() {
 fn transform_scale() {
     let b = Shape::make_box(10.0, 10.0, 10.0).unwrap();
     b.scale(2.0).expect("scale failed");
+}
+
+#[test]
+fn history_tracks_derivations() {
+    let shape = Shape::make_box(10.0, 10.0, 10.0)
+        .unwrap()
+        .translate(5.0, 0.0, 0.0)
+        .unwrap()
+        .scale(2.0)
+        .unwrap();
+    let history = shape.history();
+    assert!(
+        history.len() >= 3,
+        "expected at least three history entries, got: {history:?}"
+    );
+    assert!(
+        history.iter().any(|entry| entry.contains("translate(")),
+        "expected translate step in history, got: {history:?}"
+    );
+    assert!(
+        history.iter().any(|entry| entry.contains("scale(")),
+        "expected scale step in history, got: {history:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------

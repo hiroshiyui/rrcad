@@ -61,9 +61,18 @@ fn numeric_length_units_convert_to_millimetres() {
     let result = vm
         .eval("[2.inch, 1.cm, 0.5.m, 3.mm].inspect")
         .expect("unit conversion should succeed");
-    assert!(result.contains("50.8"), "expected 2.inch = 50.8, got {result}");
-    assert!(result.contains("10.0"), "expected 1.cm = 10.0, got {result}");
-    assert!(result.contains("500.0"), "expected 0.5.m = 500.0, got {result}");
+    assert!(
+        result.contains("50.8"),
+        "expected 2.inch = 50.8, got {result}"
+    );
+    assert!(
+        result.contains("10.0"),
+        "expected 1.cm = 10.0, got {result}"
+    );
+    assert!(
+        result.contains("500.0"),
+        "expected 0.5.m = 500.0, got {result}"
+    );
     assert!(result.contains("3"), "expected 3.mm = 3, got {result}");
 }
 
@@ -85,10 +94,22 @@ fn typed_units_support_arithmetic_and_reject_cross_conversion() {
     let result = vm
         .eval("[1.mm + 2.mm, 1.mm * 2, 1.mm + 2, 90.deg + 15.deg, Math::PI.rad].inspect")
         .expect("typed unit arithmetic should succeed");
-    assert!(result.contains("3.0mm"), "expected length addition, got {result}");
-    assert!(result.contains("2.0mm"), "expected scalar multiplication, got {result}");
-    assert!(result.contains("105.0deg"), "expected angle addition, got {result}");
-    assert!(result.contains("180.0deg"), "expected radian conversion, got {result}");
+    assert!(
+        result.contains("3.0mm"),
+        "expected length addition, got {result}"
+    );
+    assert!(
+        result.contains("2.0mm"),
+        "expected scalar multiplication, got {result}"
+    );
+    assert!(
+        result.contains("105.0deg"),
+        "expected angle addition, got {result}"
+    );
+    assert!(
+        result.contains("180.0deg"),
+        "expected radian conversion, got {result}"
+    );
 
     assert_err_contains(&mut vm, "1.mm.deg", "cannot convert length to angle");
     assert_err_contains(&mut vm, "1.deg.mm", "cannot convert angle to length");
@@ -101,9 +122,30 @@ fn unit_helpers_work_in_shape_operations() {
     let result = vm
         .eval("bb = box(1.inch, 2.cm, 3.mm).rotate(0, 0, 1, 90.deg).bounding_box; [bb[:dx], bb[:dy], bb[:dz]].inspect")
         .expect("units should work in native shape operations");
-    assert!(result.contains("20"), "expected rotated dx near 20 mm, got {result}");
-    assert!(result.contains("25.4"), "expected rotated dy near 25.4 mm, got {result}");
+    assert!(
+        result.contains("20"),
+        "expected rotated dx near 20 mm, got {result}"
+    );
+    assert!(
+        result.contains("25.4"),
+        "expected rotated dy near 25.4 mm, got {result}"
+    );
     assert!(result.contains("3"), "expected dz near 3 mm, got {result}");
+}
+
+#[test]
+fn shape_history_is_visible_in_ruby() {
+    let mut vm = MrubyVm::new();
+    assert_contains(
+        &mut vm,
+        "box(1.0, 2.0, 3.0).translate(4.0, 0.0, 0.0).history.join(\" -> \")",
+        "box(dx=1",
+    );
+    assert_contains(
+        &mut vm,
+        "box(1.0, 2.0, 3.0).translate(4.0, 0.0, 0.0).history.join(\" -> \")",
+        "translate(dx=4",
+    );
 }
 
 // ---------------------------------------------------------------------------
