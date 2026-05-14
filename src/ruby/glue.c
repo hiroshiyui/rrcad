@@ -262,7 +262,10 @@ static const char* shape_name_from_value(mrb_state* mrb, mrb_value v);
 static void* shape_ptr(mrb_state* mrb, mrb_value v);
 static void require_native_ptr(mrb_state* mrb, void* ptr);
 static double value_to_double(mrb_state* mrb, mrb_value v) {
-    return (double)mrb_as_float(mrb, v);
+    if (!mrb_obj_is_kind_of(mrb, v, mrb_class_get(mrb, "Numeric"))) {
+        mrb_raisef(mrb, E_TYPE_ERROR, "%Y cannot be converted to Float", v);
+    }
+    return (double)mrb_as_float(mrb, mrb_funcall(mrb, v, "to_f", 0));
 }
 
 static int datum_anchor_from_shape_value(mrb_state* mrb, void* body_ptr, mrb_value value,
@@ -401,11 +404,14 @@ static void require_native_ptr(mrb_state* mrb, void* ptr) {
 
 static mrb_value mrb_rrcad_box(mrb_state* mrb, mrb_value self) {
     (void)self;
-    mrb_float dx, dy, dz;
-    mrb_get_args(mrb, "fff", &dx, &dy, &dz);
+    mrb_value dx_val, dy_val, dz_val;
+    mrb_get_args(mrb, "ooo", &dx_val, &dy_val, &dz_val);
+    double dx = value_to_double(mrb, dx_val);
+    double dy = value_to_double(mrb, dy_val);
+    double dz = value_to_double(mrb, dz_val);
 
     const char* err = NULL;
-    void* ptr = rrcad_make_box((double)dx, (double)dy, (double)dz, &err);
+    void* ptr = rrcad_make_box(dx, dy, dz, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, ptr);
@@ -413,11 +419,13 @@ static mrb_value mrb_rrcad_box(mrb_state* mrb, mrb_value self) {
 
 static mrb_value mrb_rrcad_cylinder(mrb_state* mrb, mrb_value self) {
     (void)self;
-    mrb_float r, h;
-    mrb_get_args(mrb, "ff", &r, &h);
+    mrb_value r_val, h_val;
+    mrb_get_args(mrb, "oo", &r_val, &h_val);
+    double r = value_to_double(mrb, r_val);
+    double h = value_to_double(mrb, h_val);
 
     const char* err = NULL;
-    void* ptr = rrcad_make_cylinder((double)r, (double)h, &err);
+    void* ptr = rrcad_make_cylinder(r, h, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, ptr);
@@ -425,11 +433,12 @@ static mrb_value mrb_rrcad_cylinder(mrb_state* mrb, mrb_value self) {
 
 static mrb_value mrb_rrcad_sphere(mrb_state* mrb, mrb_value self) {
     (void)self;
-    mrb_float r;
-    mrb_get_args(mrb, "f", &r);
+    mrb_value r_val;
+    mrb_get_args(mrb, "o", &r_val);
+    double r = value_to_double(mrb, r_val);
 
     const char* err = NULL;
-    void* ptr = rrcad_make_sphere((double)r, &err);
+    void* ptr = rrcad_make_sphere(r, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, ptr);
@@ -437,11 +446,14 @@ static mrb_value mrb_rrcad_sphere(mrb_state* mrb, mrb_value self) {
 
 static mrb_value mrb_rrcad_cone(mrb_state* mrb, mrb_value self) {
     (void)self;
-    mrb_float r1, r2, h;
-    mrb_get_args(mrb, "fff", &r1, &r2, &h);
+    mrb_value r1_val, r2_val, h_val;
+    mrb_get_args(mrb, "ooo", &r1_val, &r2_val, &h_val);
+    double r1 = value_to_double(mrb, r1_val);
+    double r2 = value_to_double(mrb, r2_val);
+    double h = value_to_double(mrb, h_val);
 
     const char* err = NULL;
-    void* ptr = rrcad_make_cone((double)r1, (double)r2, (double)h, &err);
+    void* ptr = rrcad_make_cone(r1, r2, h, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, ptr);
@@ -449,11 +461,13 @@ static mrb_value mrb_rrcad_cone(mrb_state* mrb, mrb_value self) {
 
 static mrb_value mrb_rrcad_torus(mrb_state* mrb, mrb_value self) {
     (void)self;
-    mrb_float r1, r2;
-    mrb_get_args(mrb, "ff", &r1, &r2);
+    mrb_value r1_val, r2_val;
+    mrb_get_args(mrb, "oo", &r1_val, &r2_val);
+    double r1 = value_to_double(mrb, r1_val);
+    double r2 = value_to_double(mrb, r2_val);
 
     const char* err = NULL;
-    void* ptr = rrcad_make_torus((double)r1, (double)r2, &err);
+    void* ptr = rrcad_make_torus(r1, r2, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, ptr);
@@ -461,11 +475,15 @@ static mrb_value mrb_rrcad_torus(mrb_state* mrb, mrb_value self) {
 
 static mrb_value mrb_rrcad_wedge(mrb_state* mrb, mrb_value self) {
     (void)self;
-    mrb_float dx, dy, dz, ltx;
-    mrb_get_args(mrb, "ffff", &dx, &dy, &dz, &ltx);
+    mrb_value dx_val, dy_val, dz_val, ltx_val;
+    mrb_get_args(mrb, "oooo", &dx_val, &dy_val, &dz_val, &ltx_val);
+    double dx = value_to_double(mrb, dx_val);
+    double dy = value_to_double(mrb, dy_val);
+    double dz = value_to_double(mrb, dz_val);
+    double ltx = value_to_double(mrb, ltx_val);
 
     const char* err = NULL;
-    void* ptr = rrcad_make_wedge((double)dx, (double)dy, (double)dz, (double)ltx, &err);
+    void* ptr = rrcad_make_wedge(dx, dy, dz, ltx, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, ptr);
@@ -767,8 +785,9 @@ static mrb_value mrb_rrcad_shape_common(mrb_state* mrb, mrb_value self) {
  * interference.  Both face arguments must be planar Shape objects. */
 static mrb_value mrb_rrcad_shape_mate(mrb_state* mrb, mrb_value self) {
     mrb_value from_val, to_val;
-    mrb_float offset = 0.0;
-    mrb_get_args(mrb, "oo|f", &from_val, &to_val, &offset);
+    mrb_value offset_val = mrb_float_value(mrb, 0.0);
+    mrb_get_args(mrb, "oo|o", &from_val, &to_val, &offset_val);
+    double offset = value_to_double(mrb, offset_val);
 
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
@@ -779,7 +798,7 @@ static mrb_value mrb_rrcad_shape_mate(mrb_state* mrb, mrb_value self) {
         mrb_raise(mrb, E_ARGUMENT_ERROR, "mate: from and to must be Shape objects");
 
     const char* err = NULL;
-    void* result = rrcad_shape_mate(ptr, from_ptr, to_ptr, (double)offset, &err);
+    void* result = rrcad_shape_mate(ptr, from_ptr, to_ptr, offset, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
@@ -1087,24 +1106,31 @@ static mrb_value mrb_rrcad_shape_gdt_apply(mrb_state* mrb, mrb_value self) {
  */
 
 static mrb_value mrb_rrcad_shape_translate(mrb_state* mrb, mrb_value self) {
-    mrb_float dx, dy, dz;
-    mrb_get_args(mrb, "fff", &dx, &dy, &dz);
+    mrb_value dx_val, dy_val, dz_val;
+    mrb_get_args(mrb, "ooo", &dx_val, &dy_val, &dz_val);
+    double dx = value_to_double(mrb, dx_val);
+    double dy = value_to_double(mrb, dy_val);
+    double dz = value_to_double(mrb, dz_val);
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
     const char* err = NULL;
-    void* result = rrcad_shape_translate(ptr, (double)dx, (double)dy, (double)dz, &err);
+    void* result = rrcad_shape_translate(ptr, dx, dy, dz, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
 }
 
 static mrb_value mrb_rrcad_shape_rotate(mrb_state* mrb, mrb_value self) {
-    mrb_float ax, ay, az, angle;
-    mrb_get_args(mrb, "ffff", &ax, &ay, &az, &angle);
+    mrb_value ax_val, ay_val, az_val, angle_val;
+    mrb_get_args(mrb, "oooo", &ax_val, &ay_val, &az_val, &angle_val);
+    double ax = value_to_double(mrb, ax_val);
+    double ay = value_to_double(mrb, ay_val);
+    double az = value_to_double(mrb, az_val);
+    double angle = value_to_double(mrb, angle_val);
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
     const char* err = NULL;
-    void* result = rrcad_shape_rotate(ptr, (double)ax, (double)ay, (double)az, (double)angle, &err);
+    void* result = rrcad_shape_rotate(ptr, ax, ay, az, angle, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
@@ -1113,17 +1139,23 @@ static mrb_value mrb_rrcad_shape_rotate(mrb_state* mrb, mrb_value self) {
 /* scale(factor)       — uniform scale
  * scale(sx, sy, sz)  — non-uniform scale (independent axis factors) */
 static mrb_value mrb_rrcad_shape_scale(mrb_state* mrb, mrb_value self) {
-    mrb_float sx, sy = 0.0, sz = 0.0;
-    mrb_int argc = mrb_get_args(mrb, "f|ff", &sx, &sy, &sz);
+    mrb_value sx_val, sy_val = mrb_nil_value(), sz_val = mrb_nil_value();
+    mrb_int argc = mrb_get_args(mrb, "o|oo", &sx_val, &sy_val, &sz_val);
+    double sx = value_to_double(mrb, sx_val);
+    double sy = 0.0, sz = 0.0;
+    if (argc == 3) {
+        sy = value_to_double(mrb, sy_val);
+        sz = value_to_double(mrb, sz_val);
+    }
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
     const char* err = NULL;
     void* result;
     if (argc == 1) {
         /* Uniform: use the exact gp_Trsf path (no approximation). */
-        result = rrcad_shape_scale(ptr, (double)sx, &err);
+        result = rrcad_shape_scale(ptr, sx, &err);
     } else if (argc == 3) {
-        result = rrcad_shape_scale_xyz(ptr, (double)sx, (double)sy, (double)sz, &err);
+        result = rrcad_shape_scale_xyz(ptr, sx, sy, sz, &err);
     } else {
         mrb_raise(mrb, E_ARGUMENT_ERROR, "scale requires 1 argument (uniform) or 3 (sx, sy, sz)");
         return mrb_nil_value(); /* unreachable */
@@ -1154,8 +1186,8 @@ static mrb_value mrb_rrcad_shape_fillet(mrb_state* mrb, mrb_value self) {
         /* Variable-radius form: fillet(r1..r2) or fillet(r1..r2, :selector) */
         mrb_value beg = mrb_range_beg(mrb, radius_val);
         mrb_value end = mrb_range_end(mrb, radius_val);
-        double r1 = mrb_as_float(mrb, beg);
-        double r2 = mrb_as_float(mrb, end);
+        double r1 = value_to_double(mrb, beg);
+        double r2 = value_to_double(mrb, end);
 
         if (mrb_nil_p(sel_val)) {
             result = rrcad_shape_fillet_var(ptr, r1, r2, &err);
@@ -1168,7 +1200,7 @@ static mrb_value mrb_rrcad_shape_fillet(mrb_state* mrb, mrb_value self) {
         }
     } else {
         /* Constant-radius form: fillet(r) or fillet(r, :selector) */
-        double r = mrb_as_float(mrb, radius_val);
+        double r = value_to_double(mrb, radius_val);
         if (mrb_nil_p(sel_val)) {
             result = rrcad_shape_fillet(ptr, r, &err);
         } else {
@@ -1188,15 +1220,16 @@ static mrb_value mrb_rrcad_shape_fillet(mrb_state* mrb, mrb_value self) {
 /* chamfer(d)            — bevel all edges
  * chamfer(d, :selector) — bevel only edges matching selector */
 static mrb_value mrb_rrcad_shape_chamfer(mrb_state* mrb, mrb_value self) {
-    mrb_float d;
+    mrb_value d_val;
     mrb_value sel_val = mrb_nil_value();
-    mrb_get_args(mrb, "f|o", &d, &sel_val);
+    mrb_get_args(mrb, "o|o", &d_val, &sel_val);
+    double d = value_to_double(mrb, d_val);
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
     const char* err = NULL;
     void* result;
     if (mrb_nil_p(sel_val)) {
-        result = rrcad_shape_chamfer(ptr, (double)d, &err);
+        result = rrcad_shape_chamfer(ptr, d, &err);
     } else {
         if (!mrb_symbol_p(sel_val))
             mrb_raise(mrb, E_TYPE_ERROR,
@@ -1213,21 +1246,23 @@ static mrb_value mrb_rrcad_shape_chamfer(mrb_state* mrb, mrb_value self) {
  * Two distance arguments distinguish this from the symmetric form.
  * An optional Symbol selector (:all / :vertical / :horizontal) restricts edges. */
 static mrb_value mrb_rrcad_shape_chamfer_asym(mrb_state* mrb, mrb_value self) {
-    mrb_float d1, d2;
+    mrb_value d1_val, d2_val;
     mrb_value sel_val = mrb_nil_value();
-    mrb_get_args(mrb, "ff|o", &d1, &d2, &sel_val);
+    mrb_get_args(mrb, "oo|o", &d1_val, &d2_val, &sel_val);
+    double d1 = value_to_double(mrb, d1_val);
+    double d2 = value_to_double(mrb, d2_val);
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
     const char* err = NULL;
     void* result;
     if (mrb_nil_p(sel_val)) {
-        result = rrcad_shape_chamfer_asym(ptr, (double)d1, (double)d2, &err);
+        result = rrcad_shape_chamfer_asym(ptr, d1, d2, &err);
     } else {
         if (!mrb_symbol_p(sel_val))
             mrb_raise(mrb, E_TYPE_ERROR,
                       "chamfer selector must be a Symbol (:all, :vertical, :horizontal)");
         const char* sel = mrb_sym_name(mrb, mrb_symbol(sel_val));
-        result = rrcad_shape_chamfer_asym_sel(ptr, (double)d1, (double)d2, sel, &err);
+        result = rrcad_shape_chamfer_asym_sel(ptr, d1, d2, sel, &err);
     }
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
@@ -1254,10 +1289,12 @@ static mrb_value mrb_rrcad_shape_mirror(mrb_state* mrb, mrb_value self) {
 
 static mrb_value mrb_rrcad_rect(mrb_state* mrb, mrb_value self) {
     (void)self;
-    mrb_float w, h;
-    mrb_get_args(mrb, "ff", &w, &h);
+    mrb_value w_val, h_val;
+    mrb_get_args(mrb, "oo", &w_val, &h_val);
+    double w = value_to_double(mrb, w_val);
+    double h = value_to_double(mrb, h_val);
     const char* err = NULL;
-    void* ptr = rrcad_make_rect((double)w, (double)h, &err);
+    void* ptr = rrcad_make_rect(w, h, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, ptr);
@@ -1265,10 +1302,11 @@ static mrb_value mrb_rrcad_rect(mrb_state* mrb, mrb_value self) {
 
 static mrb_value mrb_rrcad_circle(mrb_state* mrb, mrb_value self) {
     (void)self;
-    mrb_float r;
-    mrb_get_args(mrb, "f", &r);
+    mrb_value r_val;
+    mrb_get_args(mrb, "o", &r_val);
+    double r = value_to_double(mrb, r_val);
     const char* err = NULL;
-    void* ptr = rrcad_make_circle_face((double)r, &err);
+    void* ptr = rrcad_make_circle_face(r, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, ptr);
@@ -1285,9 +1323,10 @@ static mrb_value mrb_rrcad_circle(mrb_state* mrb, mrb_value self) {
  * extrude (uses BRepPrimAPI_MakePrism).  When twist_deg or scale are
  * supplied the extended path (BRepOffsetAPI_ThruSections) is used. */
 static mrb_value mrb_rrcad_shape_extrude(mrb_state* mrb, mrb_value self) {
-    mrb_float height;
+    mrb_value height_val;
     mrb_value opts = mrb_nil_value();
-    mrb_get_args(mrb, "f|H", &height, &opts);
+    mrb_get_args(mrb, "o|H", &height_val, &opts);
+    double height = value_to_double(mrb, height_val);
 
     double twist_deg = 0.0;
     double scale = 1.0;
@@ -1312,14 +1351,14 @@ static mrb_value mrb_rrcad_shape_extrude(mrb_state* mrb, mrb_value self) {
 
     /* draft: keyword routes to BRepOffsetAPI_DraftAngle path. */
     if (draft_deg != 0.0) {
-        void* result = rrcad_shape_extrude_draft(ptr, (double)height, draft_deg, &err);
+        void* result = rrcad_shape_extrude_draft(ptr, height, draft_deg, &err);
         if (err)
             mrb_raise(mrb, E_RUNTIME_ERROR, err);
         return shape_from_ptr(mrb, result);
     }
 
     /* rrcad_shape_extrude_ex falls back to MakePrism when twist≈0 and scale≈1 */
-    void* result = rrcad_shape_extrude_ex(ptr, (double)height, twist_deg, scale, &err);
+    void* result = rrcad_shape_extrude_ex(ptr, height, twist_deg, scale, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
@@ -1378,12 +1417,13 @@ static mrb_value mrb_rrcad_loft(mrb_state* mrb, mrb_value self) {
 
 /* .shell(thickness) — hollow out the solid, removing the top face. */
 static mrb_value mrb_rrcad_shape_shell(mrb_state* mrb, mrb_value self) {
-    mrb_float thickness;
-    mrb_get_args(mrb, "f", &thickness);
+    mrb_value thickness_val;
+    mrb_get_args(mrb, "o", &thickness_val);
+    double thickness = value_to_double(mrb, thickness_val);
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
     const char* err = NULL;
-    void* result = rrcad_shape_shell(ptr, (double)thickness, &err);
+    void* result = rrcad_shape_shell(ptr, thickness, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
@@ -1391,12 +1431,13 @@ static mrb_value mrb_rrcad_shape_shell(mrb_state* mrb, mrb_value self) {
 
 /* .offset(distance) — inflate (>0) or deflate (<0) the solid uniformly. */
 static mrb_value mrb_rrcad_shape_offset(mrb_state* mrb, mrb_value self) {
-    mrb_float distance;
-    mrb_get_args(mrb, "f", &distance);
+    mrb_value distance_val;
+    mrb_get_args(mrb, "o", &distance_val);
+    double distance = value_to_double(mrb, distance_val);
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
     const char* err = NULL;
-    void* result = rrcad_shape_offset(ptr, (double)distance, &err);
+    void* result = rrcad_shape_offset(ptr, distance, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
@@ -1404,12 +1445,13 @@ static mrb_value mrb_rrcad_shape_offset(mrb_state* mrb, mrb_value self) {
 
 /* .offset_2d(distance) — offset a Wire or Face inward (<0) or outward (>0) in its own plane. */
 static mrb_value mrb_rrcad_shape_offset_2d(mrb_state* mrb, mrb_value self) {
-    mrb_float distance;
-    mrb_get_args(mrb, "f", &distance);
+    mrb_value distance_val;
+    mrb_get_args(mrb, "o", &distance_val);
+    double distance = value_to_double(mrb, distance_val);
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
     const char* err = NULL;
-    void* result = rrcad_shape_offset_2d(ptr, (double)distance, &err);
+    void* result = rrcad_shape_offset_2d(ptr, distance, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
@@ -1418,24 +1460,26 @@ static mrb_value mrb_rrcad_shape_offset_2d(mrb_state* mrb, mrb_value self) {
 /* .simplify(min_feature_size) — remove small holes/fillets via defeaturing.
    Faces with area < min_feature_size² are passed to BRepAlgoAPI_Defeaturing. */
 static mrb_value mrb_rrcad_shape_simplify(mrb_state* mrb, mrb_value self) {
-    mrb_float min_size;
-    mrb_get_args(mrb, "f", &min_size);
+    mrb_value min_size_val;
+    mrb_get_args(mrb, "o", &min_size_val);
+    double min_size = value_to_double(mrb, min_size_val);
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
     const char* err = NULL;
-    void* result = rrcad_shape_simplify(ptr, (double)min_size, &err);
+    void* result = rrcad_shape_simplify(ptr, min_size, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
 }
 
 static mrb_value mrb_rrcad_shape_revolve(mrb_state* mrb, mrb_value self) {
-    mrb_float angle = 360.0;
-    mrb_get_args(mrb, "|f", &angle);
+    mrb_value angle_val = mrb_float_value(mrb, 360.0);
+    mrb_get_args(mrb, "|o", &angle_val);
+    double angle = value_to_double(mrb, angle_val);
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
     const char* err = NULL;
-    void* result = rrcad_shape_revolve(ptr, (double)angle, &err);
+    void* result = rrcad_shape_revolve(ptr, angle, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
@@ -1658,10 +1702,12 @@ static mrb_value mrb_rrcad_polygon(mrb_state* mrb, mrb_value self) {
 
 static mrb_value mrb_rrcad_ellipse(mrb_state* mrb, mrb_value self) {
     (void)self;
-    mrb_float rx, ry;
-    mrb_get_args(mrb, "ff", &rx, &ry);
+    mrb_value rx_val, ry_val;
+    mrb_get_args(mrb, "oo", &rx_val, &ry_val);
+    double rx = value_to_double(mrb, rx_val);
+    double ry = value_to_double(mrb, ry_val);
     const char* err = NULL;
-    void* ptr = rrcad_make_ellipse_face((double)rx, (double)ry, &err);
+    void* ptr = rrcad_make_ellipse_face(rx, ry, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, ptr);
@@ -1669,10 +1715,13 @@ static mrb_value mrb_rrcad_ellipse(mrb_state* mrb, mrb_value self) {
 
 static mrb_value mrb_rrcad_arc(mrb_state* mrb, mrb_value self) {
     (void)self;
-    mrb_float r, start_deg, end_deg;
-    mrb_get_args(mrb, "fff", &r, &start_deg, &end_deg);
+    mrb_value r_val, start_val, end_val;
+    mrb_get_args(mrb, "ooo", &r_val, &start_val, &end_val);
+    double r = value_to_double(mrb, r_val);
+    double start_deg = value_to_double(mrb, start_val);
+    double end_deg = value_to_double(mrb, end_val);
     const char* err = NULL;
-    void* ptr = rrcad_make_arc((double)r, (double)start_deg, (double)end_deg, &err);
+    void* ptr = rrcad_make_arc(r, start_deg, end_deg, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, ptr);
@@ -1934,14 +1983,15 @@ static mrb_value mrb_rrcad_polar_pattern(mrb_state* mrb, mrb_value self) {
     (void)self;
     mrb_value shape_val;
     mrb_int n;
-    mrb_float angle_deg;
-    mrb_get_args(mrb, "oif", &shape_val, &n, &angle_deg);
+    mrb_value angle_val;
+    mrb_get_args(mrb, "oio", &shape_val, &n, &angle_val);
+    double angle_deg = value_to_double(mrb, angle_val);
 
     void* ptr = shape_ptr(mrb, shape_val);
     require_native_ptr(mrb, ptr);
 
     const char* err = NULL;
-    void* result = rrcad_shape_polar_pattern(ptr, (int)n, (double)angle_deg, &err);
+    void* result = rrcad_shape_polar_pattern(ptr, (int)n, angle_deg, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
@@ -1964,14 +2014,16 @@ static mrb_value mrb_rrcad_grid_pattern(mrb_state* mrb, mrb_value self) {
     (void)self;
     mrb_value shape_val;
     mrb_int nx, ny;
-    mrb_float dx, dy;
-    mrb_get_args(mrb, "oiiff", &shape_val, &nx, &ny, &dx, &dy);
+    mrb_value dx_val, dy_val;
+    mrb_get_args(mrb, "oiioo", &shape_val, &nx, &ny, &dx_val, &dy_val);
+    double dx = value_to_double(mrb, dx_val);
+    double dy = value_to_double(mrb, dy_val);
 
     void* ptr = shape_ptr(mrb, shape_val);
     require_native_ptr(mrb, ptr);
 
     const char* err = NULL;
-    void* result = rrcad_shape_grid_pattern(ptr, (int)nx, (int)ny, (double)dx, (double)dy, &err);
+    void* result = rrcad_shape_grid_pattern(ptr, (int)nx, (int)ny, dx, dy, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
@@ -2496,11 +2548,12 @@ static mrb_value mrb_rrcad_shape_fillet_wire(mrb_state* mrb, mrb_value self) {
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
 
-    mrb_float radius;
-    mrb_get_args(mrb, "f", &radius);
+    mrb_value radius_val;
+    mrb_get_args(mrb, "o", &radius_val);
+    double radius = value_to_double(mrb, radius_val);
 
     const char* err = NULL;
-    void* result = rrcad_shape_fillet_wire(ptr, (double)radius, &err);
+    void* result = rrcad_shape_fillet_wire(ptr, radius, &err);
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
