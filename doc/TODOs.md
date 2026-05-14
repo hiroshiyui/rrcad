@@ -189,9 +189,7 @@ end_deg)`, constrained `rectangle(origin, width, height)` /
 `slot_between(a, b, radius)` profiles. Solver diagnostics name the
 involved points and report actual vs expected values for conflicting
 constraints, and the "did not converge" failure lists every unresolved
-point with its missing coordinates. Future work beyond the MVP: a real
-DOF-counting analyser for redundant-constraint detection before solving,
-and a richer 2-D drawing/preview layer to visualise the sketch graph.
+point with its missing coordinates.
 
 **Feature history / parametric model tree:** Represent modeling operations as a
 regeneratable feature graph instead of only immutable shape results. This would
@@ -220,9 +218,7 @@ missing/unreadable files) also carry an actionable one-line hint
 prefixed with `hint:`. Sample message:
 `fillet(r=10) on solid failed: ...\n  hint: radius likely exceeds the
 smallest adjacent face/edge; try a smaller value or use fillet_sel with
-an edge selector`. Future work: debug exports of failing intermediate
-geometry, and richer hints driven by inspecting operand bounding-box
-extents.
+an edge selector`.
 
 **Assembly constraints beyond `mate` ◐ STARTED:** Added transform-based
 helpers that cover most of the planned constraint set without introducing a
@@ -232,13 +228,10 @@ concentric / axis-alignment by point-pair axes); `Assembly#angle_mate(...,
 angle:, pivot:, axis_dir:)` (mate + extra rotation about a chosen axis for
 rotation-lock); and `Shape#rotate_about(point, axis_dir, angle_deg)` as a
 general primitive. Coincident-plane is the existing `mate(..., offset: 0)`.
-Remaining work: a proper multi-body constraint solver that resolves
-under-constrained poses iteratively (large effort).
 
 **Units system ✓ COMPLETE:** Initial `Numeric` helpers are implemented in the
 Ruby prelude: `1.6.mm`, `2.inch`, `1.cm`, `0.5.m`, `15.deg`, and
-`Math::PI.rad`. Future work can add richer unit-aware values if dimensional
-analysis becomes necessary.
+`Math::PI.rad`.
 
 **Tolerance and manufacturing profiles ✓ COMPLETE (initial scope):**
 Hole tools: `clearance_hole`, `tap_drill`, `heat_set_insert`,
@@ -247,9 +240,7 @@ Hole tools: `clearance_hole`, `tap_drill`, `heat_set_insert`,
 `:b6000`/`:b6001` with `:press`/`:slip` fit. Shaft fits: `shaft(diameter,
 length:, fit:)` with `:nominal`/`:press`/`:slip`/`:running`. Standard
 fasteners: `screw(size, length:, style:)` for `:m2`–`:m5` in `:socket`
-(ISO 4762), `:button` (ISO 7380), and `:flat` (ISO 10642) styles. Future
-work can extend to imperial sizes, washer/nut bodies, and richer
-dimensional unit-aware values if needed.
+(ISO 4762), `:button` (ISO 7380), and `:flat` (ISO 10642) styles.
 
 **Preview inspection UX:** Upgrade the browser preview with face/edge hover IDs,
 click-to-print selectors, bounding box / volume / surface-area display, section
@@ -279,8 +270,31 @@ faces. Minimum wall thickness is already available via
 radius for `GeomAbs_Cylinder` faces); the `Shape#cylinder_axis` accessor
 returns `{origin:, axis:, radius:}`, and the `hole_axes(part, orientation:
 :vertical | :horizontal)` DSL helper enumerates and filters cylindrical
-faces by axis direction. Remaining work: unsupported islands (slice-based
-connectivity).
+faces by axis direction.
+
+---
+
+## Future Works
+
+Open items deferred from completed or partially-complete tracks above.
+These are not blocking and can be picked up when the use cases become
+important.
+
+- **Sketch — DOF-counting analyser** for redundant-constraint detection
+  before solving, and a richer 2-D drawing/preview layer to visualise
+  the sketch graph. (Extends *Constraint-based sketching*.)
+- **Diagnostics — failure debug exports** of intermediate geometry, and
+  richer hints driven by inspecting operand bounding-box extents.
+  (Extends *Better diagnostics*.)
+- **Assembly — full constraint solver** that resolves under-constrained
+  poses iteratively, in addition to the transform-based helpers already
+  shipped. (Extends *Assembly constraints beyond `mate`*.)
+- **Units — dimensional analysis** with richer unit-aware values,
+  beyond the current `Numeric` helpers. (Extends *Units system*.)
+- **Hardware helpers — imperial sizes** and washer/nut bodies.
+  (Extends *Tolerance and manufacturing profiles*.)
+- **CAM — unsupported islands** via slice-based connectivity analysis.
+  (Extends *CAM / 3-D printing checks*.)
 
 ---
 
