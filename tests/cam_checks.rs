@@ -307,3 +307,140 @@ fn draft_faces_rejects_out_of_range_threshold() {
         "expected range error, got: {err}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Shape#cylinder_axis & hole_axes
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cylinder_axis_reports_axis_and_radius() {
+    // cylinder(r=5, h=10) builds along +Z; its side face is cylindrical.
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "info = cylinder(5, 10).faces(:side).first.cylinder_axis
+             \"#{info[:axis][0]} #{info[:axis][1]} #{info[:axis][2]} #{info[:radius]}\"",
+        )
+        .unwrap();
+    let stripped = result.trim().trim_matches('"');
+    let parts: Vec<f64> = stripped
+        .split_whitespace()
+        .map(|s| s.parse().expect("number"))
+        .collect();
+    assert!(parts[0].abs() < 1e-6, "ax ≈ 0, got {}", parts[0]);
+    assert!(parts[1].abs() < 1e-6, "ay ≈ 0, got {}", parts[1]);
+    assert!(
+        (parts[2].abs() - 1.0).abs() < 1e-6,
+        "|az| ≈ 1, got {}",
+        parts[2]
+    );
+    assert!(
+        (parts[3] - 5.0).abs() < 0.01,
+        "radius ≈ 5, got {}",
+        parts[3]
+    );
+}
+
+#[test]
+fn cylinder_axis_rejects_non_cylindrical_face() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval("box(10, 10, 10).faces(:top).first.cylinder_axis")
+        .unwrap_err();
+    assert!(
+        err.contains("not a cylindrical"),
+        "expected cylindricity error, got: {err}"
+    );
+}
+
+#[test]
+fn cylinder_axis_rejects_non_face() {
+    let mut vm = MrubyVm::new();
+    let err = vm.eval("box(10, 10, 10).cylinder_axis").unwrap_err();
+    assert!(
+        err.contains("not a face"),
+        "expected face error, got: {err}"
+    );
+}
+
+#[test]
+fn hole_axes_finds_vertical_hole_in_plate() {
+    // A plate with a vertical (+Z) cylindrical bore drilled through it.
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "plate = box(40, 40, 10)
+             drill = cylinder(3, 12).translate(20, 20, -1)
+             part  = plate.cut(drill)
+             hole_axes(part).length",
+        )
+        .unwrap();
+    let n: i32 = result.trim().parse().expect("number");
+    assert!(n >= 1, "expected at least one cylindrical face, got {n}");
+}
+
+#[test]
+fn hole_axes_filters_by_orientation() {
+    // Same drilled plate as above, but filter to vertical only — should find
+    // the bore (Z-axis). Filter to horizontal — none.
+    let mut vm = MrubyVm::new();
+    let vert = vm
+        .eval(
+            "plate = box(40, 40, 10)
+             drill = cylinder(3, 12).translate(20, 20, -1)
+             hole_axes(plate.cut(drill), orientation: :vertical).length",
+        )
+        .unwrap();
+    assert!(
+        vert.trim().parse::<i32>().unwrap() >= 1,
+        "expected ≥1 vertical bore, got {vert}"
+    );
+
+    let mut vm2 = MrubyVm::new();
+    let horiz = vm2
+        .eval(
+            "plate = box(40, 40, 10)
+             drill = cylinder(3, 12).translate(20, 20, -1)
+             hole_axes(plate.cut(drill), orientation: :horizontal).length",
+        )
+        .unwrap();
+    assert_eq!(
+        horiz.trim(),
+        "0",
+        "expected 0 horizontal bores, got {horiz}"
+    );
+}
+
+#[test]
+fn hole_axes_reports_radius() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "plate = box(40, 40, 10)
+             drill = cylinder(3, 12).translate(20, 20, -1)
+             part  = plate.cut(drill)
+             hole_axes(part).first[:radius]",
+        )
+        .unwrap();
+    let r: f64 = result.trim().parse().expect("number");
+    assert!((r - 3.0).abs() < 0.01, "expected radius ≈ 3, got {r}");
+}
+
+#[test]
+fn hole_axes_empty_for_plain_box() {
+    let mut vm = MrubyVm::new();
+    let result = vm.eval("hole_axes(box(10, 10, 10)).length").unwrap();
+    assert_eq!(result.trim(), "0", "no cylinders on a plain box");
+}
+
+#[test]
+fn hole_axes_rejects_bad_orientation() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval("hole_axes(box(10, 10, 10), orientation: :diagonal)")
+        .unwrap_err();
+    assert!(
+        err.contains("orientation"),
+        "expected orientation error, got: {err}"
+    );
+}

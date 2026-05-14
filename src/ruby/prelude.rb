@@ -1186,6 +1186,15 @@ class Shape
     raise NotImplementedError, "Shape#normal is not yet implemented (Phase 10)"
   end
 
+  # For a cylindrical face, return its axis information:
+  #   { origin: [ox, oy, oz], axis: [ax, ay, az], radius: r }
+  # The origin is a point on the axis; the axis vector is a unit direction.
+  # Raises if the shape isn't a face or the underlying surface isn't a
+  # cylinder.  Use #face_type or rescue the error to test for cylindricity.
+  def cylinder_axis
+    raise NotImplementedError, "Shape#cylinder_axis is not yet implemented (Phase 10)"
+  end
+
   # Fillet all corner vertices of a 2D Wire or Face profile.
   # Uses BRepFilletAPI_MakeFillet2d; non-corner vertices are silently skipped.
   #
@@ -1651,6 +1660,48 @@ module Kernel
       nz = face.normal[2]
       nz < -sin_limit
     end
+  end
+
+  # hole_axes(part, orientation: nil, tolerance_deg: 5.0) — enumerate the
+  # cylindrical-surface "holes" of +part+.  Returns an Array of Hashes:
+  #   { origin: [ox, oy, oz], axis: [ax, ay, az], radius: r }
+  # produced by `Shape#cylinder_axis` for every face whose underlying
+  # surface is cylindrical (so external bosses and internal holes both
+  # match — the radius alone doesn't distinguish them).
+  #
+  # When +orientation+ is given the result is filtered:
+  #   :vertical   — axis is within +tolerance_deg+ of the world Z axis
+  #   :horizontal — axis is within +tolerance_deg+ of the XY plane
+  # The axis vector is always a unit direction; both +axis+ and −axis count
+  # as the same orientation.
+  def hole_axes(part, orientation: nil, tolerance_deg: 5.0)
+    unless [nil, :vertical, :horizontal].include?(orientation)
+      raise ArgumentError, "hole_axes orientation must be :vertical, :horizontal, or nil"
+    end
+    unless tolerance_deg.is_a?(Numeric) && tolerance_deg >= 0 && tolerance_deg <= 90
+      raise ArgumentError, "hole_axes tolerance_deg must be in [0, 90]"
+    end
+    sin_tol = Math.sin(tolerance_deg * Math::PI / 180.0)
+    cos_tol = Math.cos(tolerance_deg * Math::PI / 180.0)
+
+    results = []
+    part.faces("all").each do |face|
+      begin
+        info = face.cylinder_axis
+      rescue RuntimeError
+        next  # non-cylindrical face — skip
+      end
+      ax = info[:axis]
+      az_abs = ax[2].abs
+
+      keep = case orientation
+             when :vertical   then az_abs >= cos_tol
+             when :horizontal then az_abs <= sin_tol
+             else true
+             end
+      results << info if keep
+    end
+    results
   end
 
   # draft_faces(part, axis: [0, 0, 1], min_draft_deg: 1.0) — list faces with

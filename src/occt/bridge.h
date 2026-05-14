@@ -331,6 +331,11 @@ void shape_centroid(const OcctShape& shape, rust::Slice<double> out);
 // when TopAbs_REVERSED) so the vector points out of the solid. Throws if
 // the shape is not a face or the normal is undefined at the sample point.
 void shape_face_normal(const OcctShape& face, rust::Slice<double> out);
+// Fills out[0..7] with [ox, oy, oz, ax, ay, az, radius] for a cylindrical
+// face: the axis origin (a point on the axis), unit axis direction, and
+// the cylinder radius. Throws if the shape is not a face or the
+// underlying surface is not a cylinder.
+void shape_cylinder_axis(const OcctShape& face, rust::Slice<double> out);
 // True if the shape has no free (boundary) edges — i.e., every edge is
 // shared by at least two faces.  Implies the shape is a closed manifold
 // when combined with is_manifold.

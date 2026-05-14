@@ -1450,6 +1450,23 @@ pub unsafe extern "C" fn rrcad_shape_face_normal(
     }
 }
 
+/// Fill `out[0..7]` with `[ox, oy, oz, ax, ay, az, radius]` for a
+/// cylindrical face. `out` must point to a caller-allocated array of at
+/// least 7 doubles.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_cylinder_axis(
+    ptr: *mut c_void,
+    out: *mut f64,
+    error_out: *mut *const c_char,
+) {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    match shape.cylinder_axis() {
+        Ok(arr) => unsafe { std::ptr::copy_nonoverlapping(arr.as_ptr(), out, 7) },
+        Err(e) => unsafe { set_err(error_out, &e) },
+    }
+}
+
 /// Returns 1 if the shape is closed (every edge shared by ≥2 faces), 0 otherwise.
 /// Returns -1 and sets *error_out on error.
 #[unsafe(no_mangle)]

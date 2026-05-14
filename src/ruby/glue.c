@@ -183,6 +183,7 @@ extern void* rrcad_shape_cut_all(void* base, const void** ptrs, size_t n, const 
 extern const char* rrcad_shape_type_name(void* ptr, const char** error_out);
 extern void rrcad_shape_centroid(void* ptr, double* out, const char** error_out);
 extern void rrcad_shape_face_normal(void* ptr, double* out, const char** error_out);
+extern void rrcad_shape_cylinder_axis(void* ptr, double* out, const char** error_out);
 extern int rrcad_shape_is_closed(void* ptr, const char** error_out);
 extern int rrcad_shape_is_manifold(void* ptr, const char** error_out);
 extern const char* rrcad_shape_validate(void* ptr, const char** error_out);
@@ -1641,6 +1642,36 @@ static mrb_value mrb_rrcad_shape_face_normal(mrb_state* mrb, mrb_value self) {
     return ary;
 }
 
+/* face.cylinder_axis  → {origin: [x,y,z], axis: [ax,ay,az], radius: r}
+ * Errors when the shape is not a cylindrical face. */
+static mrb_value mrb_rrcad_shape_cylinder_axis(mrb_state* mrb, mrb_value self) {
+    void* ptr = shape_ptr(mrb, self);
+    require_native_ptr(mrb, ptr);
+
+    double out[7] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+    const char* err = NULL;
+    rrcad_shape_cylinder_axis(ptr, out, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+
+    mrb_value origin = mrb_ary_new_capa(mrb, 3);
+    mrb_ary_push(mrb, origin, mrb_float_value(mrb, (mrb_float)out[0]));
+    mrb_ary_push(mrb, origin, mrb_float_value(mrb, (mrb_float)out[1]));
+    mrb_ary_push(mrb, origin, mrb_float_value(mrb, (mrb_float)out[2]));
+
+    mrb_value axis = mrb_ary_new_capa(mrb, 3);
+    mrb_ary_push(mrb, axis, mrb_float_value(mrb, (mrb_float)out[3]));
+    mrb_ary_push(mrb, axis, mrb_float_value(mrb, (mrb_float)out[4]));
+    mrb_ary_push(mrb, axis, mrb_float_value(mrb, (mrb_float)out[5]));
+
+    mrb_value hash = mrb_hash_new(mrb);
+    mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_lit(mrb, "origin")), origin);
+    mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_lit(mrb, "axis")), axis);
+    mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_lit(mrb, "radius")),
+                 mrb_float_value(mrb, (mrb_float)out[6]));
+    return hash;
+}
+
 /* shape.closed?  → true/false */
 static mrb_value mrb_rrcad_shape_closed(mrb_state* mrb, mrb_value self) {
     void* ptr = shape_ptr(mrb, self);
@@ -2246,6 +2277,8 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     mrb_define_method(mrb, shape_class, "shape_type", mrb_rrcad_shape_type, MRB_ARGS_NONE());
     mrb_define_method(mrb, shape_class, "centroid", mrb_rrcad_shape_centroid, MRB_ARGS_NONE());
     mrb_define_method(mrb, shape_class, "normal", mrb_rrcad_shape_face_normal, MRB_ARGS_NONE());
+    mrb_define_method(mrb, shape_class, "cylinder_axis", mrb_rrcad_shape_cylinder_axis,
+                      MRB_ARGS_NONE());
     mrb_define_method(mrb, shape_class, "closed?", mrb_rrcad_shape_closed, MRB_ARGS_NONE());
     mrb_define_method(mrb, shape_class, "manifold?", mrb_rrcad_shape_manifold, MRB_ARGS_NONE());
     mrb_define_method(mrb, shape_class, "validate", mrb_rrcad_shape_validate, MRB_ARGS_NONE());

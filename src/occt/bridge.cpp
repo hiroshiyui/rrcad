@@ -2040,6 +2040,38 @@ rust::String shape_type_str(const OcctShape& shape) {
 
 // Centroid of the shape.  Uses VolumeProperties for solids and compounds;
 // SurfaceProperties for shells/faces; LinearProperties for wires/edges.
+void shape_cylinder_axis(const OcctShape& face_shape, rust::Slice<double> out) {
+    try {
+        if (out.size() < 7)
+            throw std::runtime_error("cylinder_axis: output slice must have at least 7 elements");
+        const TopoDS_Shape& s = face_shape.get();
+        if (s.ShapeType() != TopAbs_FACE)
+            throw std::runtime_error("cylinder_axis: shape is not a face");
+
+        const TopoDS_Face& face = TopoDS::Face(s);
+        BRepAdaptor_Surface surf(face);
+        if (surf.GetType() != GeomAbs_Cylinder)
+            throw std::runtime_error("cylinder_axis: face is not a cylindrical surface");
+
+        gp_Cylinder cyl = surf.Cylinder();
+        const gp_Ax1& axis = cyl.Axis();
+        gp_Pnt loc = axis.Location();
+        gp_Dir dir = axis.Direction();
+
+        out[0] = loc.X();
+        out[1] = loc.Y();
+        out[2] = loc.Z();
+        out[3] = dir.X();
+        out[4] = dir.Y();
+        out[5] = dir.Z();
+        out[6] = cyl.Radius();
+    } catch (const Standard_Failure& e) {
+        throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
+    } catch (const std::exception&) {
+        throw;
+    }
+}
+
 void shape_face_normal(const OcctShape& face_shape, rust::Slice<double> out) {
     try {
         if (out.size() < 3)

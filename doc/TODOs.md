@@ -258,8 +258,13 @@ primitive `Shape#normal` is exposed by a new OCCT bridge call
 (`shape_face_normal`) using `BRepLProp_SLProps` at the face's
 parameter-space midpoint, with the normal flipped for `TopAbs_REVERSED`
 faces. Minimum wall thickness is already available via
-`Shape#min_thickness`. Remaining work: unsupported islands (slice-based
-connectivity) and hole orientation (cylindrical-axis extraction).
+`Shape#min_thickness`. Hole orientation is now supported through a new
+`shape_cylinder_axis` bridge call (extracting `gp_Cylinder::Axis()` and
+radius for `GeomAbs_Cylinder` faces); the `Shape#cylinder_axis` accessor
+returns `{origin:, axis:, radius:}`, and the `hole_axes(part, orientation:
+:vertical | :horizontal)` DSL helper enumerates and filters cylindrical
+faces by axis direction. Remaining work: unsupported islands (slice-based
+connectivity).
 
 ---
 

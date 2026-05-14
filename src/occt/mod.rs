@@ -207,6 +207,7 @@ mod ffi {
         fn shape_type_str(shape: &OcctShape) -> Result<String>;
         fn shape_centroid(shape: &OcctShape, out: &mut [f64]) -> Result<()>;
         fn shape_face_normal(face: &OcctShape, out: &mut [f64]) -> Result<()>;
+        fn shape_cylinder_axis(face: &OcctShape, out: &mut [f64]) -> Result<()>;
         fn shape_is_closed(shape: &OcctShape) -> Result<bool>;
         fn shape_is_manifold(shape: &OcctShape) -> Result<bool>;
         fn shape_validate_str(shape: &OcctShape) -> Result<String>;
@@ -735,6 +736,14 @@ impl Shape {
     pub fn face_normal(&self) -> Result<[f64; 3], String> {
         let mut out = [0f64; 3];
         ffi::shape_face_normal(&self.inner, &mut out).map_err(|e| e.to_string())?;
+        Ok(out)
+    }
+
+    /// Cylindrical face axis as `[ox, oy, oz, ax, ay, az, radius]`.
+    /// Errors if the shape is not a face or its surface is not a cylinder.
+    pub fn cylinder_axis(&self) -> Result<[f64; 7], String> {
+        let mut out = [0f64; 7];
+        ffi::shape_cylinder_axis(&self.inner, &mut out).map_err(|e| e.to_string())?;
         Ok(out)
     }
 
