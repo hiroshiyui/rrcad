@@ -648,7 +648,7 @@ impl FeatureOp {
         }
     }
 
-    fn parents_required(&self) -> usize {
+    fn parents_are_valid(&self, count: usize) -> bool {
         match self {
             FeatureOp::Box { .. }
             | FeatureOp::Cylinder { .. }
@@ -670,7 +670,7 @@ impl FeatureOp {
             | FeatureOp::DatumPlane { .. }
             | FeatureOp::BezierPatch { .. }
             | FeatureOp::RuledSurface
-            | FeatureOp::FillSurface => 0,
+            | FeatureOp::FillSurface => count == 0,
             FeatureOp::Translate { .. }
             | FeatureOp::Rotate { .. }
             | FeatureOp::Scale { .. }
@@ -694,19 +694,18 @@ impl FeatureOp {
             | FeatureOp::ChamferAsymSel { .. }
             | FeatureOp::FilletWire { .. }
             | FeatureOp::ExtrudeDraft { .. }
-            => 1,
-            FeatureOp::Fuse | FeatureOp::Cut | FeatureOp::Common
-            | FeatureOp::Loft { .. }
             | FeatureOp::PatternLinear { .. }
-            | FeatureOp::PatternPolar { .. }
-            | FeatureOp::PathPattern { .. }
-            | FeatureOp::Sweep
-            | FeatureOp::SweepGuide
-            | FeatureOp::Pad { .. }
-            | FeatureOp::Pocket { .. }
-            | FeatureOp::FragmentAll { .. }
-            | FeatureOp::Sew { .. }
-            | FeatureOp::SweepSections { .. } => 0,
+            | FeatureOp::PatternPolar { .. } => count == 1,
+            FeatureOp::Fuse | FeatureOp::Cut | FeatureOp::Common | FeatureOp::PathPattern { .. } => {
+                count == 2
+            }
+            FeatureOp::Sweep => count == 2,
+            FeatureOp::SweepGuide | FeatureOp::Pad { .. } | FeatureOp::Pocket { .. } => {
+                count == 3
+            }
+            FeatureOp::Loft { .. } => count >= 2,
+            FeatureOp::FragmentAll { .. } | FeatureOp::Sew { .. } => count >= 1,
+            FeatureOp::SweepSections { .. } => count >= 3,
         }
     }
 }
@@ -723,9 +722,8 @@ static FEATURE_NODE_SEQ: AtomicU64 = AtomicU64::new(1);
 
 impl FeatureNode {
     fn new(op: FeatureOp, parents: Vec<Arc<FeatureNode>>, history_entry: String) -> Arc<Self> {
-        let expected = op.parents_required();
         debug_assert!(
-            parents.len() == expected || expected == 0,
+            op.parents_are_valid(parents.len()),
             "feature node parent arity mismatch"
         );
         Arc::new(Self {
@@ -2970,7 +2968,7 @@ impl Shape {
     pub fn ruled_surface(wire_a: &Shape, wire_b: &Shape) -> Result<Shape, String> {
         ffi::shape_ruled_surface(&wire_a.inner, &wire_b.inner)
             .map(|p| {
-                Shape::fresh_with_feature(
+                Shape::fresh_with_feature_parents(
                     p,
                     FeatureOp::RuledSurface,
                     format!(
@@ -2978,6 +2976,7 @@ impl Shape {
                         summarize(wire_a),
                         summarize(wire_b)
                     ),
+                    vec![wire_a.feature.clone(), wire_b.feature.clone()],
                 )
             })
             .map_err(|e| e.to_string())
@@ -2988,10 +2987,11 @@ impl Shape {
     pub fn fill_surface(boundary_wire: &Shape) -> Result<Shape, String> {
         ffi::shape_fill_surface(&boundary_wire.inner)
             .map(|p| {
-                Shape::fresh_with_feature(
+                Shape::fresh_with_feature_parents(
                     p,
                     FeatureOp::FillSurface,
                     format!("fill_surface(boundary_wire={})", summarize(boundary_wire)),
+                    vec![boundary_wire.feature.clone()],
                 )
             })
             .map_err(|e| e.to_string())
