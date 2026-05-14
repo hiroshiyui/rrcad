@@ -14,6 +14,7 @@ use axum::{
     response::{Html, IntoResponse, Response},
     routing::get,
 };
+use std::path::Path;
 use tokio::sync::broadcast;
 
 const VIEWER_HTML: &str = include_str!("viewer.html");
@@ -55,10 +56,7 @@ async fn handler_model() -> Response {
         None => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
     };
 
-    match tokio::fs::read(&state.glb_path).await {
-        Ok(bytes) => ([(header::CONTENT_TYPE, "model/gltf-binary")], bytes).into_response(),
-        Err(_) => StatusCode::NOT_FOUND.into_response(),
-    }
+    preview_file_response(&state.glb_path, "model/gltf-binary").await
 }
 
 async fn handler_metadata() -> Response {
@@ -68,10 +66,7 @@ async fn handler_metadata() -> Response {
     };
 
     let path = crate::preview::metadata_path_for_glb(&state.glb_path);
-    match tokio::fs::read(path).await {
-        Ok(bytes) => ([(header::CONTENT_TYPE, "application/json")], bytes).into_response(),
-        Err(_) => StatusCode::NOT_FOUND.into_response(),
-    }
+    preview_file_response(&path, "application/json").await
 }
 
 async fn handler_logo() -> Response {
@@ -80,6 +75,13 @@ async fn handler_logo() -> Response {
 
 async fn handler_ws(ws: WebSocketUpgrade) -> Response {
     ws.on_upgrade(handle_socket)
+}
+
+async fn preview_file_response(path: &Path, content_type: &'static str) -> Response {
+    match tokio::fs::read(path).await {
+        Ok(bytes) => ([(header::CONTENT_TYPE, content_type)], bytes).into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 async fn handle_socket(mut socket: WebSocket) {

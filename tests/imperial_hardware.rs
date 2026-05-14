@@ -118,7 +118,10 @@ fn imperial_hardware_sizes() {
         .trim()
         .parse()
         .expect("number");
-    assert!((dz - 1.2).abs() < 0.1, "expected washer thickness ~1.2 mm, got {dz}");
+    assert!(
+        (dz - 1.2).abs() < 0.1,
+        "expected washer thickness ~1.2 mm, got {dz}"
+    );
 
     let dx: f64 = vm
         .eval("nut(:\"1/4-20\", thickness: 5.0).bounding_box[:dx]")
@@ -167,7 +170,10 @@ fn imperial_hardware_sizes() {
         .trim()
         .parse()
         .expect("number");
-    assert!((dz - 5.0).abs() < 0.1, "expected flange nut thickness ~5.0 mm, got {dz}");
+    assert!(
+        (dz - 5.0).abs() < 0.1,
+        "expected flange nut thickness ~5.0 mm, got {dz}"
+    );
 
     let dx: f64 = vm
         .eval("nut(:\"1/4-20\", thickness: 5.0, style: :nyloc).bounding_box[:dx]")
@@ -186,7 +192,10 @@ fn imperial_hardware_sizes() {
         .trim()
         .parse()
         .expect("number");
-    assert!((dz - 5.0).abs() < 0.1, "expected nyloc thickness ~5.0 mm, got {dz}");
+    assert!(
+        (dz - 5.0).abs() < 0.1,
+        "expected nyloc thickness ~5.0 mm, got {dz}"
+    );
 
     let dz: f64 = vm
         .eval("nut(:\"1/4-20\", thickness: 5.0).bounding_box[:dz]")
@@ -194,7 +203,10 @@ fn imperial_hardware_sizes() {
         .trim()
         .parse()
         .expect("number");
-    assert!((dz - 5.0).abs() < 0.1, "expected nut thickness ~5.0 mm, got {dz}");
+    assert!(
+        (dz - 5.0).abs() < 0.1,
+        "expected nut thickness ~5.0 mm, got {dz}"
+    );
 
     let result = vm
         .eval(

@@ -57,16 +57,20 @@ fn feature_graph_records_dependencies() {
     let box_id = lines[0].split('\t').next().unwrap();
     let translate_fields: Vec<&str> = lines[1].split('\t').collect();
     let scale_fields: Vec<&str> = lines[2].split('\t').collect();
-    assert!(translate_fields[2].contains("translate("), "missing translate node: {lines:?}");
-    assert!(scale_fields[2].contains("scale("), "missing scale node: {lines:?}");
+    assert!(
+        translate_fields[2].contains("translate("),
+        "missing translate node: {lines:?}"
+    );
+    assert!(
+        scale_fields[2].contains("scale("),
+        "missing scale node: {lines:?}"
+    );
     assert_eq!(
-        translate_fields[1],
-        box_id,
+        translate_fields[1], box_id,
         "translate node should point at the box parent"
     );
     assert_eq!(
-        scale_fields[1],
-        translate_fields[0],
+        scale_fields[1], translate_fields[0],
         "scale node should point at the translate parent"
     );
 }
@@ -80,7 +84,10 @@ fn feature_rebuild_round_trips_geometry() {
         .scale(2.0)
         .unwrap();
     let rebuilt = shape.rebuild().expect("rebuild failed");
-    assert_eq!(shape.shape_type_name().unwrap(), rebuilt.shape_type_name().unwrap());
+    assert_eq!(
+        shape.shape_type_name().unwrap(),
+        rebuilt.shape_type_name().unwrap()
+    );
     let a = shape.bounding_box().unwrap();
     let b = rebuilt.bounding_box().unwrap();
     for (lhs, rhs) in a.iter().zip(b.iter()) {

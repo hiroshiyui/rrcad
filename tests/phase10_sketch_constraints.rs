@@ -304,7 +304,10 @@ fn slot_between_supports_diagonal_points() {
              end.shape_type",
         )
         .unwrap();
-    assert_eq!(ty, ":face", "expected diagonal slot profile to build a face");
+    assert_eq!(
+        ty, ":face",
+        "expected diagonal slot profile to build a face"
+    );
 
     let volume = vm
         .eval(
