@@ -376,6 +376,7 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
     ptr: *mut c_void,
     path: *const c_char,
     view: *const c_char,
+    scale: f64,
     error_out: *mut *const c_char,
 ) {
     unsafe { *error_out = std::ptr::null() };
@@ -389,7 +390,7 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
     let view_str = unsafe { std::ffi::CStr::from_ptr(view) }
         .to_str()
         .unwrap_or("top");
-    if let Err(e) = shape.export_dxf(&safe_str, view_str) {
+    if let Err(e) = shape.export_dxf(&safe_str, view_str, scale) {
         unsafe { set_err(error_out, &e) };
     }
 }

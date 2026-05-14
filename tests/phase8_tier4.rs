@@ -20,6 +20,19 @@ fn svg_width(path: &std::path::Path) -> f64 {
     content[start..end].parse().expect("numeric SVG width")
 }
 
+fn dxf_max_abs_xy(path: &std::path::Path) -> f64 {
+    let content = std::fs::read_to_string(path).unwrap();
+    let lines: Vec<&str> = content.lines().collect();
+    let mut max: f64 = 0.0;
+    for pair in lines.windows(2) {
+        if matches!(pair[0].trim(), "10" | "11" | "20" | "21") {
+            let value: f64 = pair[1].trim().parse().expect("numeric DXF coordinate");
+            max = max.max(value.abs());
+        }
+    }
+    max
+}
+
 // ---------------------------------------------------------------------------
 // SVG export
 // ---------------------------------------------------------------------------
@@ -184,4 +197,42 @@ fn dxf_ends_with_eof_marker() {
     vm.eval(&code).unwrap();
     let content = std::fs::read_to_string(&out).unwrap();
     assert!(content.contains("EOF"), "DXF must end with EOF marker");
+}
+
+#[test]
+fn dxf_scale_expands_output_geometry() {
+    let mut vm = MrubyVm::new();
+    let normal = tmp("rrcad_test_scale_1.dxf");
+    let scaled = tmp("rrcad_test_scale_2.dxf");
+    vm.eval(&format!(
+        "box(10,10,10).export('{}', scale: 1.0)",
+        normal.display()
+    ))
+    .unwrap();
+    vm.eval(&format!(
+        "box(10,10,10).export('{}', scale: 2.0)",
+        scaled.display()
+    ))
+    .unwrap();
+
+    assert!(
+        dxf_max_abs_xy(&scaled) > dxf_max_abs_xy(&normal),
+        "scale: 2.0 should increase DXF drawing coordinates"
+    );
+}
+
+#[test]
+fn dxf_rejects_non_positive_scale() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_bad_scale.dxf");
+    let err = vm
+        .eval(&format!(
+            "box(10,10,10).export('{}', scale: 0)",
+            out.display()
+        ))
+        .expect_err("scale: 0 should fail");
+    assert!(
+        err.contains("scale") && err.contains("positive"),
+        "expected actionable scale error, got: {err}"
+    );
 }

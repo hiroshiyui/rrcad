@@ -439,9 +439,10 @@ void export_obj(const OcctShape& shape, rust::Str path, double linear_deflection
 //
 // SVG uses Y-down coordinates (standard for SVG/HTML). `scale` multiplies
 // projected drawing geometry; `1.0` preserves model units.
-// DXF uses Y-up coordinates (standard CAD convention).
+// DXF uses Y-up coordinates (standard CAD convention). `scale` has the same
+// meaning as SVG scale.
 void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double scale);
-void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view);
+void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double scale);
 
 // --- Phase 8 Tier 5: Advanced composition ---
 

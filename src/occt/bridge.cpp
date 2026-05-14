@@ -3190,12 +3190,21 @@ void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double s
 // Each polyline segment is written as a LINE entity.  DXF uses Y-up
 // coordinates (standard math / CAD convention) so no Y-flip is applied.
 // ---------------------------------------------------------------------------
-void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view) {
+void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double scale) {
     try {
         std::string path_str(path.data(), path.size());
         std::string view_str(view.data(), view.size());
+        if (!(scale > 0.0) || !std::isfinite(scale)) {
+            throw std::runtime_error("export_dxf: scale must be positive and finite");
+        }
 
         auto polylines = hlr_project(shape, view_str);
+        for (auto& pl : polylines) {
+            for (auto& [x, y] : pl) {
+                x *= scale;
+                y *= scale;
+            }
+        }
 
         std::ofstream f(path_str);
         if (!f.is_open())
