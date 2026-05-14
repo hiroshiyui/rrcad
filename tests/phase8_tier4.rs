@@ -258,6 +258,35 @@ fn svg_center_marks_off_by_default() {
 }
 
 #[test]
+fn svg_callouts_adds_callout_group() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_callouts.svg");
+    vm.eval(&format!(
+        "cylinder(5,20).export('{}', callouts: true)",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("class=\"callouts\"") && content.contains("⌀10"),
+        "callouts: true should add a callouts group with diameter text"
+    );
+}
+
+#[test]
+fn svg_callouts_off_by_default() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_no_callouts.svg");
+    vm.eval(&format!("cylinder(5,20).export('{}')", out.display()))
+        .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        !content.contains("class=\"callouts\""),
+        "default SVG export should not include callouts"
+    );
+}
+
+#[test]
 fn svg_dimensions_adds_dimension_group() {
     let mut vm = MrubyVm::new();
     let out = tmp("rrcad_test_dimensions.svg");
@@ -455,6 +484,35 @@ fn dxf_center_marks_off_by_default() {
     assert!(
         !content.contains("\nCENTER\n"),
         "default DXF export should not include center marks"
+    );
+}
+
+#[test]
+fn dxf_callouts_adds_callout_layer() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_callouts.dxf");
+    vm.eval(&format!(
+        "cylinder(5,20).export('{}', callouts: true)",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("\nCALLOUT\n") && content.contains("⌀10"),
+        "callouts: true should add a CALLOUT layer with diameter text"
+    );
+}
+
+#[test]
+fn dxf_callouts_off_by_default() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_no_callouts.dxf");
+    vm.eval(&format!("cylinder(5,20).export('{}')", out.display()))
+        .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        !content.contains("\nCALLOUT\n"),
+        "default DXF export should not include callouts"
     );
 }
 

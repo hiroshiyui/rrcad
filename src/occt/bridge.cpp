@@ -3059,11 +3059,20 @@ struct DrawingMark {
     double size;
 };
 
+struct DrawingCallout {
+    double x;
+    double y;
+    double leader_x;
+    double leader_y;
+    std::string text;
+};
+
 struct DrawingViewData {
     std::string name;
     DrawingPolylines visible;
     DrawingPolylines hidden;
     std::vector<DrawingMark> marks;
+    std::vector<DrawingCallout> callouts;
     double geom_xmin = 0.0;
     double geom_xmax = 0.0;
     double geom_ymin = 0.0;
@@ -3180,11 +3189,49 @@ static std::vector<DrawingMark> collect_center_marks(const OcctShape& shape,
     return marks;
 }
 
+static std::vector<DrawingCallout> collect_callouts(const OcctShape& shape,
+                                                    const std::string& view) {
+    std::vector<DrawingCallout> callouts;
+    const gp_Dir draw_dir = view_direction(view);
+
+    for (TopExp_Explorer exp(shape.get(), TopAbs_FACE); exp.More(); exp.Next()) {
+        const TopoDS_Face& face = TopoDS::Face(exp.Current());
+        BRepAdaptor_Surface surf(face);
+        if (surf.GetType() != GeomAbs_Cylinder)
+            continue;
+
+        gp_Cylinder cyl = surf.Cylinder();
+        const gp_Dir& axis = cyl.Axis().Direction();
+        if (std::abs(axis.Dot(draw_dir)) < 0.98)
+            continue;
+
+        gp_Pnt loc = cyl.Axis().Location();
+        auto [x, y] = project_point(view, loc);
+        double radius = cyl.Radius();
+        double size = std::max(radius * 0.35, 1.5);
+        std::string text = std::string("\xE2\x8C\x80") + format_measurement(2.0 * radius);
+        double leader_x = x + size * 2.8;
+        double leader_y = y + size * 1.6;
+        bool duplicate = false;
+        for (const auto& callout : callouts) {
+            if (std::abs(callout.x - x) < 1e-6 && std::abs(callout.y - y) < 1e-6 &&
+                callout.text == text) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate)
+            callouts.push_back({x, y, leader_x, leader_y, text});
+    }
+
+    return callouts;
+}
+
 static HlrProjection hlr_project(const OcctShape& shape, const std::string& view);
 
 static DrawingViewData build_drawing_view(const OcctShape& shape, const std::string& view,
                                           double scale, bool hidden, bool center_marks,
-                                          bool dimensions) {
+                                          bool dimensions, bool callouts) {
     auto projection = hlr_project(shape, view);
     scale_polylines(projection.visible, scale);
     scale_polylines(projection.hidden, scale);
@@ -3194,6 +3241,14 @@ static DrawingViewData build_drawing_view(const OcctShape& shape, const std::str
         mark.x *= scale;
         mark.y *= scale;
         mark.size *= scale;
+    }
+
+    auto callout_list = callouts ? collect_callouts(shape, view) : std::vector<DrawingCallout>{};
+    for (auto& callout : callout_list) {
+        callout.x *= scale;
+        callout.y *= scale;
+        callout.leader_x *= scale;
+        callout.leader_y *= scale;
     }
 
     double geom_xmin = 1e30, geom_xmax = -1e30, geom_ymin = 1e30, geom_ymax = -1e30;
@@ -3216,6 +3271,14 @@ static DrawingViewData build_drawing_view(const OcctShape& shape, const std::str
         geom_ymin = std::min(geom_ymin, mark.y - mark.size);
         geom_ymax = std::max(geom_ymax, mark.y + mark.size);
     }
+    for (const auto& callout : callout_list) {
+        geom_xmin = std::min(geom_xmin, std::min(callout.x, callout.leader_x));
+        geom_xmax = std::max(geom_xmax, std::max(callout.x, callout.leader_x));
+        geom_ymin = std::min(geom_ymin, std::min(callout.y, callout.leader_y));
+        geom_ymax = std::max(geom_ymax, std::max(callout.y, callout.leader_y));
+        geom_xmax = std::max(geom_xmax, callout.leader_x + callout.text.size() * 1.8);
+        geom_ymax = std::max(geom_ymax, callout.leader_y + 2.0);
+    }
     if (geom_xmin == 1e30)
         throw std::runtime_error("export_svg/dxf: no drawing edges found after projection");
 
@@ -3235,6 +3298,7 @@ static DrawingViewData build_drawing_view(const OcctShape& shape, const std::str
     view_data.visible = std::move(projection.visible);
     view_data.hidden = std::move(projection.hidden);
     view_data.marks = std::move(marks);
+    view_data.callouts = std::move(callout_list);
     view_data.geom_xmin = geom_xmin;
     view_data.geom_xmax = geom_xmax;
     view_data.geom_ymin = geom_ymin;
@@ -3259,7 +3323,7 @@ static void include_placed_bounds(double& xmin, double& xmax, double& ymin, doub
 
 static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double offset_x,
                            double offset_y, bool hidden, bool center_marks, bool dimensions,
-                           bool sheet_mode, const char* width_axis = nullptr,
+                           bool callouts, bool sheet_mode, const char* width_axis = nullptr,
                            const char* height_axis = nullptr, double tolerance = 0.0) {
     auto write_polyline_points = [&](const DrawingPolyline& polyline) {
         for (auto& [x, y] : polyline) {
@@ -3379,11 +3443,33 @@ static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double
         f << "</text>\n";
         f << "  </g>\n";
     }
+    if (callouts && !view.callouts.empty()) {
+        if (sheet_mode) {
+            f << "  <g class=\"view view-" << view.name
+              << " callouts\" stroke=\"#b45309\" stroke-width=\"0.25\" fill=\"none\"";
+        } else {
+            f << "  <g class=\"callouts\" stroke=\"#b45309\" stroke-width=\"0.25\" fill=\"none\"";
+        }
+        f << " stroke-linecap=\"round\" stroke-linejoin=\"round\" font-family=\"monospace\"";
+        f << " font-size=\"3.0\">\n";
+        for (const auto& callout : view.callouts) {
+            const double x = callout.x + offset_x;
+            const double y = callout.y + offset_y;
+            const double lx = callout.leader_x + offset_x;
+            const double ly = callout.leader_y + offset_y;
+            f << "    <line x1=\"" << x << "\" y1=\"" << (-y) << "\" x2=\"" << lx
+              << "\" y2=\"" << (-ly) << "\"/>\n";
+            f << "    <text x=\"" << (lx + 2.0) << "\" y=\"" << (-ly)
+              << "\" fill=\"#b45309\">";
+            f << callout.text << "</text>\n";
+        }
+        f << "  </g>\n";
+    }
 }
 
 static void write_dxf_view(std::ofstream& f, const DrawingViewData& view, double offset_x,
                            double offset_y, bool hidden, bool center_marks, bool dimensions,
-                           bool sheet_mode, const char* width_axis = nullptr,
+                           bool callouts, bool sheet_mode, const char* width_axis = nullptr,
                            const char* height_axis = nullptr, double tolerance = 0.0) {
     auto write_lines = [&](const DrawingPolylines& polylines, const char* layer) {
         for (auto& pts : polylines) {
@@ -3527,6 +3613,32 @@ static void write_dxf_view(std::ofstream& f, const DrawingViewData& view, double
             height_label = std::string(height_axis) + " " + height_label;
         write_text(dim_x - label_offset, hy, height_label, -90.0);
     }
+    if (callouts && !view.callouts.empty()) {
+        auto write_text = [&](double x, double y, const std::string& text) {
+            f << "  0\nTEXT\n";
+            f << "  8\nCALLOUT\n";
+            f << " 10\n" << x << "\n";
+            f << " 20\n" << y << "\n";
+            f << " 30\n0.0\n";
+            f << " 40\n3.0\n";
+            f << "  1\n" << text << "\n";
+        };
+        for (const auto& callout : view.callouts) {
+            const double x = callout.x + offset_x;
+            const double y = callout.y + offset_y;
+            const double lx = callout.leader_x + offset_x;
+            const double ly = callout.leader_y + offset_y;
+            f << "  0\nLINE\n";
+            f << "  8\nCALLOUT\n";
+            f << " 10\n" << x << "\n";
+            f << " 20\n" << y << "\n";
+            f << " 30\n0.0\n";
+            f << " 11\n" << lx << "\n";
+            f << " 21\n" << ly << "\n";
+            f << " 31\n0.0\n";
+            write_text(lx + 2.0, ly, callout.text);
+        }
+    }
 }
 
 static void write_svg_title_block(std::ofstream& f, const DrawingCanvasBounds& canvas,
@@ -3654,6 +3766,7 @@ void export_svg(const OcctShape& shape,
                 bool center_marks,
                 bool dimensions,
                 bool title_block,
+                bool callouts,
                 double tolerance) {
     try {
         std::string path_str(path.data(), path.size());
@@ -3668,11 +3781,11 @@ void export_svg(const OcctShape& shape,
 
         if (sheet_mode) {
             auto top_view = build_drawing_view(shape, "top", scale, hidden, center_marks,
-                                               dimensions);
+                                               dimensions, callouts);
             auto front_view = build_drawing_view(shape, "front", scale, hidden, center_marks,
-                                                 dimensions);
+                                                 dimensions, callouts);
             auto side_view = build_drawing_view(shape, "side", scale, hidden, center_marks,
-                                                dimensions);
+                                                dimensions, callouts);
 
             const double top_dx = (front_view.geom_xmin + front_view.geom_xmax) * 0.5 -
                                   (top_view.geom_xmin + top_view.geom_xmax) * 0.5;
@@ -3704,11 +3817,13 @@ void export_svg(const OcctShape& shape,
             f << " width=\"" << w << "\" height=\"" << h << "\"";
             f << " viewBox=\"" << vb_x << " " << vb_y << " " << w << " " << h << "\">\n";
             f << "  <!-- Generated by rrcad — sheet view, scale: " << scale << " -->\n";
-            write_svg_view(f, top_view, top_dx, top_dy, hidden, center_marks, dimensions, true,
+            write_svg_view(f, top_view, top_dx, top_dy, hidden, center_marks, dimensions,
+                           callouts, true,
                            "X", "Y", tolerance);
             write_svg_view(f, front_view, front_dx, front_dy, hidden, center_marks, dimensions,
-                           true, "X", "Z", tolerance);
-            write_svg_view(f, side_view, side_dx, side_dy, hidden, center_marks, dimensions, true,
+                           callouts, true, "X", "Z", tolerance);
+            write_svg_view(f, side_view, side_dx, side_dy, hidden, center_marks, dimensions,
+                           callouts, true,
                            "Y", "Z", tolerance);
             if (title_block)
                 write_svg_title_block(f, canvas, "sheet", view_str, true, scale, tolerance);
@@ -3719,7 +3834,8 @@ void export_svg(const OcctShape& shape,
         }
 
         auto single_view =
-            build_drawing_view(shape, view_str, scale, hidden, center_marks, dimensions);
+            build_drawing_view(shape, view_str, scale, hidden, center_marks, dimensions,
+                               callouts);
         const double w = (single_view.xmax - single_view.xmin) + 2.0 * margin;
         const double h = (single_view.ymax - single_view.ymin) + 2.0 * margin;
         const double vb_x = single_view.xmin - margin;
@@ -3738,7 +3854,8 @@ void export_svg(const OcctShape& shape,
         f << " viewBox=\"" << vb_x << " " << vb_y << " " << w << " " << h << "\">\n";
         f << "  <!-- Generated by rrcad — view: " << view_str << ", scale: " << scale
           << " -->\n";
-        write_svg_view(f, single_view, 0.0, 0.0, hidden, center_marks, dimensions, false,
+        write_svg_view(f, single_view, 0.0, 0.0, hidden, center_marks, dimensions, callouts,
+                       false,
                        nullptr, nullptr, tolerance);
         if (title_block)
             write_svg_title_block(f, canvas, "sheet", view_str, false, scale, tolerance);
@@ -3766,6 +3883,7 @@ void export_dxf(const OcctShape& shape,
                 bool center_marks,
                 bool dimensions,
                 bool title_block,
+                bool callouts,
                 double tolerance) {
     try {
         std::string path_str(path.data(), path.size());
@@ -3778,11 +3896,14 @@ void export_dxf(const OcctShape& shape,
             const double sheet_gap = 16.0;
 
             auto top_view =
-                build_drawing_view(shape, "top", scale, hidden, center_marks, dimensions);
+                build_drawing_view(shape, "top", scale, hidden, center_marks, dimensions,
+                                   callouts);
             auto front_view =
-                build_drawing_view(shape, "front", scale, hidden, center_marks, dimensions);
+                build_drawing_view(shape, "front", scale, hidden, center_marks, dimensions,
+                                   callouts);
             auto side_view =
-                build_drawing_view(shape, "side", scale, hidden, center_marks, dimensions);
+                build_drawing_view(shape, "side", scale, hidden, center_marks, dimensions,
+                                   callouts);
 
             const double top_dx = (front_view.geom_xmin + front_view.geom_xmax) * 0.5 -
                                   (top_view.geom_xmin + top_view.geom_xmax) * 0.5;
@@ -3809,11 +3930,13 @@ void export_dxf(const OcctShape& shape,
             f << "  0\nENDSEC\n";
             f << "  0\nSECTION\n  2\nENTITIES\n";
 
-            write_dxf_view(f, top_view, top_dx, top_dy, hidden, center_marks, dimensions, true,
+            write_dxf_view(f, top_view, top_dx, top_dy, hidden, center_marks, dimensions,
+                           callouts, true,
                            "X", "Y", tolerance);
             write_dxf_view(f, front_view, front_dx, front_dy, hidden, center_marks, dimensions,
-                           true, "X", "Z", tolerance);
-            write_dxf_view(f, side_view, side_dx, side_dy, hidden, center_marks, dimensions, true,
+                           callouts, true, "X", "Z", tolerance);
+            write_dxf_view(f, side_view, side_dx, side_dy, hidden, center_marks, dimensions,
+                           callouts, true,
                            "Y", "Z", tolerance);
             if (title_block)
                 write_dxf_title_block(f, canvas, "sheet", view_str, true, scale, tolerance);
@@ -3824,41 +3947,11 @@ void export_dxf(const OcctShape& shape,
             return;
         }
 
-        auto projection = hlr_project(shape, view_str);
-        scale_polylines(projection.visible, scale);
-        scale_polylines(projection.hidden, scale);
-        auto marks = center_marks ? collect_center_marks(shape, view_str) : std::vector<DrawingMark>{};
-        for (auto& mark : marks) {
-            mark.x *= scale;
-            mark.y *= scale;
-            mark.size *= scale;
-        }
-
-        double geom_xmin = 1e30, geom_xmax = -1e30, geom_ymin = 1e30, geom_ymax = -1e30;
-        auto include_bounds = [&](const DrawingPolylines& polylines) {
-            for (auto& pl : polylines) {
-                for (auto& [x, y] : pl) {
-                    geom_xmin = std::min(geom_xmin, x);
-                    geom_xmax = std::max(geom_xmax, x);
-                    geom_ymin = std::min(geom_ymin, y);
-                    geom_ymax = std::max(geom_ymax, y);
-                }
-            }
-        };
-        include_bounds(projection.visible);
-        if (hidden)
-            include_bounds(projection.hidden);
-        for (const auto& mark : marks) {
-            geom_xmin = std::min(geom_xmin, mark.x - mark.size);
-            geom_xmax = std::max(geom_xmax, mark.x + mark.size);
-            geom_ymin = std::min(geom_ymin, mark.y - mark.size);
-            geom_ymax = std::max(geom_ymax, mark.y + mark.size);
-        }
-        if (geom_xmin == 1e30)
-            throw std::runtime_error("export_dxf: no drawing edges found after projection");
-        double width = geom_xmax - geom_xmin;
-        double height = geom_ymax - geom_ymin;
-        const DrawingCanvasBounds canvas{geom_xmin, geom_xmax, geom_ymin, geom_ymax};
+        auto single_view =
+            build_drawing_view(shape, view_str, scale, hidden, center_marks, dimensions,
+                               callouts);
+        const DrawingCanvasBounds canvas{single_view.geom_xmin, single_view.geom_xmax,
+                                         single_view.geom_ymin, single_view.geom_ymax};
 
         std::ofstream f(path_str);
         if (!f.is_open())
@@ -3874,132 +3967,8 @@ void export_dxf(const OcctShape& shape,
         // ENTITIES section: one LINE entity per polyline segment.
         f << "  0\nSECTION\n  2\nENTITIES\n";
 
-        auto write_lines = [&](const DrawingPolylines& polylines, const char* layer) {
-            for (auto& pts : polylines) {
-                for (std::size_t i = 0; i + 1 < pts.size(); ++i) {
-                    auto [x1, y1] = pts[i];
-                    auto [x2, y2] = pts[i + 1];
-                    // Skip zero-length degenerate segments.
-                    if (std::abs(x2 - x1) < 1e-9 && std::abs(y2 - y1) < 1e-9)
-                        continue;
-                    f << "  0\nLINE\n";
-                    f << "  8\n" << layer << "\n";
-                    f << " 10\n" << x1 << "\n";
-                    f << " 20\n" << y1 << "\n";
-                    f << " 30\n0.0\n"; // Z1 = 0
-                    f << " 11\n" << x2 << "\n";
-                    f << " 21\n" << y2 << "\n";
-                    f << " 31\n0.0\n"; // Z2 = 0
-                }
-            }
-        };
-
-        write_lines(projection.visible, "0");
-        if (hidden)
-            write_lines(projection.hidden, "HIDDEN");
-        if (center_marks && !marks.empty()) {
-            auto write_center_lines = [&](const DrawingMark& mark) {
-                f << "  0\nLINE\n";
-                f << "  8\nCENTER\n";
-                f << " 10\n" << (mark.x - mark.size) << "\n";
-                f << " 20\n" << mark.y << "\n";
-                f << " 30\n0.0\n";
-                f << " 11\n" << (mark.x + mark.size) << "\n";
-                f << " 21\n" << mark.y << "\n";
-                f << " 31\n0.0\n";
-                f << "  0\nLINE\n";
-                f << "  8\nCENTER\n";
-                f << " 10\n" << mark.x << "\n";
-                f << " 20\n" << (mark.y - mark.size) << "\n";
-                f << " 30\n0.0\n";
-                f << " 11\n" << mark.x << "\n";
-                f << " 21\n" << (mark.y + mark.size) << "\n";
-                f << " 31\n0.0\n";
-            };
-            for (const auto& mark : marks)
-                write_center_lines(mark);
-        }
-        if (dimensions) {
-            const double dim_gap = 8.0;
-            const double tick = 1.5;
-            const double label_offset = 3.5;
-            const double font_size = 3.0;
-            const double dim_xmin = geom_xmin;
-            const double dim_xmax = geom_xmax;
-            const double dim_ymin = geom_ymin;
-            const double dim_ymax = geom_ymax;
-            const double hx = (dim_xmin + dim_xmax) * 0.5;
-            const double hy = (dim_ymin + dim_ymax) * 0.5;
-            const double dim_y = dim_ymin - dim_gap;
-            const double dim_x = dim_xmin - dim_gap;
-
-            auto write_text = [&](double x, double y, const std::string& text, double rotation) {
-                f << "  0\nTEXT\n";
-                f << "  8\nDIMENSION\n";
-                f << " 10\n" << x << "\n";
-                f << " 20\n" << y << "\n";
-                f << " 30\n0.0\n";
-                f << " 40\n" << font_size << "\n";
-                f << "  1\n" << text << "\n";
-                if (rotation != 0.0)
-                    f << " 50\n" << rotation << "\n";
-            };
-
-            f << "  0\nLINE\n";
-            f << "  8\nDIMENSION\n";
-            f << " 10\n" << dim_xmin << "\n";
-            f << " 20\n" << dim_y << "\n";
-            f << " 30\n0.0\n";
-            f << " 11\n" << dim_xmax << "\n";
-            f << " 21\n" << dim_y << "\n";
-            f << " 31\n0.0\n";
-            f << "  0\nLINE\n";
-            f << "  8\nDIMENSION\n";
-            f << " 10\n" << dim_x << "\n";
-            f << " 20\n" << dim_ymin << "\n";
-            f << " 30\n0.0\n";
-            f << " 11\n" << dim_x << "\n";
-            f << " 21\n" << dim_ymax << "\n";
-            f << " 31\n0.0\n";
-
-            f << "  0\nLINE\n";
-            f << "  8\nDIMENSION\n";
-            f << " 10\n" << (dim_xmin + tick) << "\n";
-            f << " 20\n" << (dim_y - tick) << "\n";
-            f << " 30\n0.0\n";
-            f << " 11\n" << (dim_xmin - tick) << "\n";
-            f << " 21\n" << (dim_y + tick) << "\n";
-            f << " 31\n0.0\n";
-            f << "  0\nLINE\n";
-            f << "  8\nDIMENSION\n";
-            f << " 10\n" << (dim_xmax + tick) << "\n";
-            f << " 20\n" << (dim_y - tick) << "\n";
-            f << " 30\n0.0\n";
-            f << " 11\n" << (dim_xmax - tick) << "\n";
-            f << " 21\n" << (dim_y + tick) << "\n";
-            f << " 31\n0.0\n";
-
-            write_text(hx, dim_y - label_offset, std::to_string(width), 0.0);
-
-            f << "  0\nLINE\n";
-            f << "  8\nDIMENSION\n";
-            f << " 10\n" << (dim_x - tick) << "\n";
-            f << " 20\n" << (dim_ymin + tick) << "\n";
-            f << " 30\n0.0\n";
-            f << " 11\n" << (dim_x + tick) << "\n";
-            f << " 21\n" << (dim_ymin - tick) << "\n";
-            f << " 31\n0.0\n";
-            f << "  0\nLINE\n";
-            f << "  8\nDIMENSION\n";
-            f << " 10\n" << (dim_x - tick) << "\n";
-            f << " 20\n" << (dim_ymax + tick) << "\n";
-            f << " 30\n0.0\n";
-            f << " 11\n" << (dim_x + tick) << "\n";
-            f << " 21\n" << (dim_ymax - tick) << "\n";
-            f << " 31\n0.0\n";
-
-            write_text(dim_x - label_offset, hy, std::to_string(height), -90.0);
-        }
+        write_dxf_view(f, single_view, 0.0, 0.0, hidden, center_marks, dimensions, callouts,
+                       false, nullptr, nullptr, tolerance);
         if (title_block)
         write_dxf_title_block(f, canvas, "sheet", view_str, false, scale, tolerance);
 

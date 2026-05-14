@@ -162,11 +162,12 @@ extern void rrcad_shape_export_obj(void* ptr, const char* path, const char** err
 /* Phase 8 Tier 4 — SVG / DXF 2-D drawing output */
 extern void rrcad_shape_export_svg(void* ptr, const char* path, const char* view,
                                    double scale, int hidden, int center_marks, int dimensions,
-                                   int title_block, double tolerance,
+                                   int title_block, int callouts, double tolerance,
                                    const char** error_out);
 extern void rrcad_shape_export_dxf(void* ptr, const char* path, const char* view,
                                    double scale, int hidden, int center_marks,
-                                   int dimensions, int title_block, double tolerance,
+                                   int dimensions, int title_block, int callouts,
+                                   double tolerance,
                                    const char** error_out);
 
 /* Phase 7 — Bézier patch and sewing */
@@ -349,7 +350,7 @@ static mrb_value mrb_rrcad_shape_inspect(mrb_state* mrb, mrb_value self) {
     return mrb_str_new_cstr(mrb, "#<Shape>");
 }
 
-/* .export("path" [, view: :top|:front|:side, scale: 1.0, hidden: false, center_marks: false, dimensions: false, title_block: false, tolerance: 0.0]) — dispatches by file extension:
+/* .export("path" [, view: :top|:front|:side, scale: 1.0, hidden: false, center_marks: false, dimensions: false, title_block: false, callouts: false, tolerance: 0.0]) — dispatches by file extension:
  *   .step / .stp  → STEP AP203
  *   .stl          → ASCII STL
  *   .glb          → binary glTF (GLB)
@@ -378,6 +379,7 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     int center_marks = 0;
     int dimensions = 0;
     int title_block = 0;
+    int callouts = 0;
     double tolerance = 0.0;
     if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
         mrb_value vv = mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "view")),
@@ -405,6 +407,10 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
             mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "title_block")),
                            mrb_false_value());
         title_block = mrb_test(tv) ? 1 : 0;
+        mrb_value dv2 =
+            mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "callouts")),
+                           mrb_false_value());
+        callouts = mrb_test(dv2) ? 1 : 0;
         mrb_value tv2 =
             mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "tolerance")),
                            mrb_float_value(mrb, 0.0));
@@ -428,10 +434,10 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
         rrcad_shape_export_obj(ptr, path, &err);
     } else if (dot && (strcasecmp(dot, ".svg") == 0)) {
         rrcad_shape_export_svg(ptr, path, view, scale, hidden, center_marks, dimensions,
-                               title_block, tolerance, &err);
+                               title_block, callouts, tolerance, &err);
     } else if (dot && (strcasecmp(dot, ".dxf") == 0)) {
         rrcad_shape_export_dxf(ptr, path, view, scale, hidden, center_marks, dimensions,
-                               title_block, tolerance, &err);
+                               title_block, callouts, tolerance, &err);
     } else {
         /* Default: STEP (.step, .stp, or unknown extension) */
         rrcad_shape_export_step(ptr, path, &err);
