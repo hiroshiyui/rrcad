@@ -3192,7 +3192,8 @@ void export_svg(const OcctShape& shape,
                 rust::Str view,
                 double scale,
                 bool hidden,
-                bool center_marks) {
+                bool center_marks,
+                bool dimensions) {
     try {
         std::string path_str(path.data(), path.size());
         std::string view_str(view.data(), view.size());
@@ -3212,13 +3213,14 @@ void export_svg(const OcctShape& shape,
 
         // Compute axis-aligned bounding box in drawing coordinates.
         double xmin = 1e30, xmax = -1e30, ymin = 1e30, ymax = -1e30;
+        double geom_xmin = 1e30, geom_xmax = -1e30, geom_ymin = 1e30, geom_ymax = -1e30;
         auto include_bounds = [&](const DrawingPolylines& polylines) {
             for (auto& pl : polylines) {
                 for (auto& [x, y] : pl) {
-                    xmin = std::min(xmin, x);
-                    xmax = std::max(xmax, x);
-                    ymin = std::min(ymin, y);
-                    ymax = std::max(ymax, y);
+                    geom_xmin = std::min(geom_xmin, x);
+                    geom_xmax = std::max(geom_xmax, x);
+                    geom_ymin = std::min(geom_ymin, y);
+                    geom_ymax = std::max(geom_ymax, y);
                 }
             }
         };
@@ -3226,13 +3228,33 @@ void export_svg(const OcctShape& shape,
         if (hidden)
             include_bounds(projection.hidden);
         for (const auto& mark : marks) {
-            xmin = std::min(xmin, mark.x - mark.size);
-            xmax = std::max(xmax, mark.x + mark.size);
-            ymin = std::min(ymin, mark.y - mark.size);
-            ymax = std::max(ymax, mark.y + mark.size);
+            geom_xmin = std::min(geom_xmin, mark.x - mark.size);
+            geom_xmax = std::max(geom_xmax, mark.x + mark.size);
+            geom_ymin = std::min(geom_ymin, mark.y - mark.size);
+            geom_ymax = std::max(geom_ymax, mark.y + mark.size);
         }
-        if (xmin == 1e30)
+        if (geom_xmin == 1e30)
             throw std::runtime_error("export_svg: no drawing edges found after projection");
+
+        xmin = geom_xmin;
+        xmax = geom_xmax;
+        ymin = geom_ymin;
+        ymax = geom_ymax;
+
+        double dim_xmin = geom_xmin;
+        double dim_xmax = geom_xmax;
+        double dim_ymin = geom_ymin;
+        double dim_ymax = geom_ymax;
+        double width = geom_xmax - geom_xmin;
+        double height = geom_ymax - geom_ymin;
+        if (dimensions) {
+            const double dim_gap = 8.0;
+            const double dim_pad = 14.0;
+            xmin -= dim_pad;
+            xmax += dim_pad;
+            ymin -= dim_pad;
+            ymax += dim_pad * 0.5;
+        }
 
         const double margin = 5.0;
         double w = (xmax - xmin) + 2.0 * margin;
@@ -3284,7 +3306,7 @@ void export_svg(const OcctShape& shape,
             f << "  </g>\n";
         }
         if (center_marks && !marks.empty()) {
-            f << "  <g class=\"center-marks\" stroke=\"#6b7280\" stroke-width=\"0.25\" fill=\"none\"";
+        f << "  <g class=\"center-marks\" stroke=\"#6b7280\" stroke-width=\"0.25\" fill=\"none\"";
             f << " stroke-linecap=\"round\">\n";
             for (const auto& mark : marks) {
                 f << "    <line x1=\"" << (mark.x - mark.size) << "\" y1=\"" << (-mark.y)
@@ -3294,6 +3316,41 @@ void export_svg(const OcctShape& shape,
                   << "\" x2=\"" << mark.x << "\" y2=\"" << (-(mark.y + mark.size))
                   << "\"/>\n";
             }
+            f << "  </g>\n";
+        }
+        if (dimensions) {
+            const double dim_gap = 8.0;
+            const double tick = 1.5;
+            const double label_offset = 3.5;
+            const double font_size = 3.0;
+            const double hx = (dim_xmin + dim_xmax) * 0.5;
+            const double hy = (dim_ymin + dim_ymax) * 0.5;
+            const double dim_y = dim_ymin - dim_gap;
+            const double dim_x = dim_xmin - dim_gap;
+            f << "  <g class=\"dimensions\" stroke=\"#9ca3af\" stroke-width=\"0.25\" fill=\"none\"";
+            f << " stroke-linecap=\"round\" stroke-linejoin=\"round\" font-family=\"monospace\"";
+            f << " font-size=\"" << font_size << "\">\n";
+            f << "    <line x1=\"" << dim_xmin << "\" y1=\"" << dim_y << "\" x2=\"" << dim_xmax
+              << "\" y2=\"" << dim_y << "\"/>\n";
+            f << "    <line x1=\"" << dim_xmin << "\" y1=\"" << dim_y << "\" x2=\"" << dim_xmin
+              << "\" y2=\"" << dim_ymin << "\"/>\n";
+            f << "    <line x1=\"" << dim_xmax << "\" y1=\"" << dim_y << "\" x2=\"" << dim_xmax
+              << "\" y2=\"" << dim_ymin << "\"/>\n";
+            f << "    <line x1=\"" << (dim_xmin + tick) << "\" y1=\"" << (dim_y - tick)
+              << "\" x2=\"" << (dim_xmin - tick) << "\" y2=\"" << (dim_y + tick) << "\"/>\n";
+            f << "    <line x1=\"" << (dim_xmax + tick) << "\" y1=\"" << (dim_y - tick)
+              << "\" x2=\"" << (dim_xmax - tick) << "\" y2=\"" << (dim_y + tick) << "\"/>\n";
+            f << "    <text x=\"" << hx << "\" y=\"" << (dim_y - label_offset)
+              << "\" text-anchor=\"middle\" fill=\"#6b7280\">" << width << "</text>\n";
+            f << "    <line x1=\"" << dim_x << "\" y1=\"" << dim_ymin << "\" x2=\"" << dim_x
+              << "\" y2=\"" << dim_ymax << "\"/>\n";
+            f << "    <line x1=\"" << (dim_x - tick) << "\" y1=\"" << (dim_ymin + tick)
+              << "\" x2=\"" << (dim_x + tick) << "\" y2=\"" << (dim_ymin - tick) << "\"/>\n";
+            f << "    <line x1=\"" << (dim_x - tick) << "\" y1=\"" << (dim_ymax + tick)
+              << "\" x2=\"" << (dim_x + tick) << "\" y2=\"" << (dim_ymax - tick) << "\"/>\n";
+            f << "    <text x=\"" << (dim_x - label_offset) << "\" y=\"" << hy
+              << "\" text-anchor=\"middle\" fill=\"#6b7280\" transform=\"rotate(-90 "
+              << (dim_x - label_offset) << " " << hy << ")\">" << height << "</text>\n";
             f << "  </g>\n";
         }
         f << "</svg>\n";

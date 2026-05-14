@@ -275,6 +275,7 @@ mod ffi {
             scale: f64,
             hidden: bool,
             center_marks: bool,
+            dimensions: bool,
         ) -> Result<()>;
         fn export_dxf(
             shape: &OcctShape,
@@ -1226,6 +1227,7 @@ impl Shape {
     /// `scale` multiplies drawing geometry; `1.0` preserves model units.
     /// `hidden` includes hidden HLR edges as dashed secondary geometry.
     /// `center_marks` adds crosshair marks for cylindrical faces aligned to the view axis.
+    /// `dimensions` adds overall width and height annotations.
     pub fn export_svg(
         &self,
         path: &str,
@@ -1233,10 +1235,20 @@ impl Shape {
         scale: f64,
         hidden: bool,
         center_marks: bool,
+        dimensions: bool,
     ) -> Result<(), String> {
-        ffi::export_svg(&self.inner, path, view, scale, hidden, center_marks).map_err(|e| {
+        ffi::export_svg(
+            &self.inner,
+            path,
+            view,
+            scale,
+            hidden,
+            center_marks,
+            dimensions,
+        )
+        .map_err(|e| {
             format!(
-                "export_svg({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}) on {} failed: {e}",
+                "export_svg({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}) on {} failed: {e}",
                 summarize(self)
             )
         })

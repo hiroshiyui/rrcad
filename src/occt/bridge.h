@@ -440,7 +440,8 @@ void export_obj(const OcctShape& shape, rust::Str path, double linear_deflection
 // SVG uses Y-down coordinates (standard for SVG/HTML). `scale` multiplies
 // projected drawing geometry; `1.0` preserves model units. `hidden` includes
 // hidden HLR edges as dashed secondary geometry. `center_marks` adds crosshair
-// marks for cylindrical faces aligned to the view axis.
+// marks for cylindrical faces aligned to the view axis. `dimensions` adds
+// overall width/height annotations.
 // DXF uses Y-up coordinates (standard CAD convention). `scale`, `hidden`,
 // and `center_marks` have the same meaning as SVG scale / hidden / centre marks.
 void export_svg(const OcctShape& shape,
@@ -448,7 +449,8 @@ void export_svg(const OcctShape& shape,
                 rust::Str view,
                 double scale,
                 bool hidden,
-                bool center_marks);
+                bool center_marks,
+                bool dimensions);
 void export_dxf(const OcctShape& shape,
                 rust::Str path,
                 rust::Str view,

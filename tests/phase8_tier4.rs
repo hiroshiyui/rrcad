@@ -201,6 +201,35 @@ fn svg_center_marks_off_by_default() {
     );
 }
 
+#[test]
+fn svg_dimensions_adds_dimension_group() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_dimensions.svg");
+    vm.eval(&format!(
+        "box(20,10,5).export('{}', dimensions: true)",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("class=\"dimensions\"") && content.contains(">20"),
+        "dimensions: true should add a dimensions group with width text"
+    );
+}
+
+#[test]
+fn svg_dimensions_off_by_default() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_no_dimensions.svg");
+    vm.eval(&format!("box(20,10,5).export('{}')", out.display()))
+        .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        !content.contains("class=\"dimensions\""),
+        "default SVG export should not include dimension annotations"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // DXF export
 // ---------------------------------------------------------------------------

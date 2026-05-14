@@ -355,6 +355,7 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
     scale: f64,
     hidden: i32,
     center_marks: i32,
+    dimensions: i32,
     error_out: *mut *const c_char,
 ) {
     unsafe { *error_out = std::ptr::null() };
@@ -368,7 +369,14 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
     let view_str = unsafe { std::ffi::CStr::from_ptr(view) }
         .to_str()
         .unwrap_or("top");
-    if let Err(e) = shape.export_svg(&safe_str, view_str, scale, hidden != 0, center_marks != 0) {
+    if let Err(e) = shape.export_svg(
+        &safe_str,
+        view_str,
+        scale,
+        hidden != 0,
+        center_marks != 0,
+        dimensions != 0,
+    ) {
         unsafe { set_err(error_out, &e) };
     }
 }

@@ -256,10 +256,10 @@ for failed operations.
 
 **2-D drawing improvements ◐ STARTED:** SVG and DXF output now accept explicit
 `scale:` selection for projected drawing geometry. Both support
-`center_marks: true` cylinder centres; SVG also supports `hidden: true` dashed
-hidden-line output and DXF writes hidden edges on a `HIDDEN` layer. Remaining
-work: dimensions, multiple views on a sheet, title-block metadata, and richer
-scale selection.
+`center_marks: true` cylinder centres; SVG now also supports `hidden: true`
+dashed hidden-line output and `dimensions: true` width/height labels, while DXF
+writes hidden edges on a `HIDDEN` layer. Remaining work: multi-view sheets,
+title-block metadata, and richer dimensioning.
 
 **CAM / 3-D printing checks ◐ STARTED:** Additive helpers landed in the
 Ruby prelude: `mass_estimate(part, density:)` computes a rough mass in
