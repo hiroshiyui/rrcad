@@ -444,6 +444,14 @@ Lightweight manufacturability helpers that build on the inspection methods above
 | `overhang_faces(part, max_angle_deg: 45)` | Faces whose outward normal tips downward more than the threshold (assumes the part is +Z-up) |
 | `draft_faces(part, axis: [0, 0, 1], min_draft_deg: 1.0)` | Faces with insufficient mould draft along the pull axis (`asin(|n·axis|) < min_draft_deg`); top/bottom faces are naturally excluded |
 | `hole_axes(part, orientation: nil, tolerance_deg: 5.0)` | Enumerate cylindrical faces as `{origin:, axis:, radius:}`. Filter with `orientation:` `:vertical` (axis ‖ Z) or `:horizontal` (axis ⊥ Z) within `tolerance_deg` |
+| `unsupported_islands(part, layer_height: 0.2, axis: :z, min_area: 0.0, tolerance: 0.05)` | Slice the part by layers and report disconnected footprints that do not overlap the previous layer. Returns layer hashes with `:offset`, `:components`, and `:unsupported`; each unsupported component includes `:area`, `:centroid`, and `:bbox`. `axis:` accepts `:x`, `:y`, `:z`, or an axis-aligned 3-element vector. |
+
+```ruby
+report = unsupported_islands(part, layer_height: 0.2, axis: :z)
+report.each do |layer|
+  puts "#{layer[:offset]}: #{layer[:unsupported].length} unsupported islands"
+end
+```
 
 ### Import / Export
 

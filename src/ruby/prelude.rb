@@ -1843,6 +1843,241 @@ module Kernel
     }
   end
 
+  def _cam_axis_spec(axis)
+    case axis
+    when :x
+      [:yz, :x, 0, :x]
+    when :y
+      [:xz, :y, 1, :y]
+    when :z
+      [:xy, :z, 2, :z]
+    when Array
+      unless axis.length == 3
+        raise ArgumentError,
+              "unsupported_islands axis must be :x, :y, :z, or a 3-element numeric array"
+      end
+      i = 0
+      while i < 3
+        unless axis[i].is_a?(Numeric)
+          raise ArgumentError,
+                "unsupported_islands axis must be :x, :y, :z, or a 3-element numeric array"
+        end
+        i += 1
+      end
+      idx = 0
+      max_abs = axis[0].abs
+      i = 1
+      while i < 3
+        abs = axis[i].abs
+        if abs > max_abs
+          max_abs = abs
+          idx = i
+        end
+        i += 1
+      end
+      raise ArgumentError, "unsupported_islands axis must be non-zero" if max_abs < 1.0e-12
+      i = 0
+      while i < 3
+        if i != idx && axis[i].abs > 1.0e-12
+          raise ArgumentError, "unsupported_islands axis must be aligned to X, Y, or Z"
+        end
+        i += 1
+      end
+      case idx
+      when 0
+        [:yz, :x, 0, :x]
+      when 1
+        [:xz, :y, 1, :y]
+      when 2
+        [:xy, :z, 2, :z]
+      end
+    else
+      raise ArgumentError,
+            "unsupported_islands axis must be :x, :y, :z, or a 3-element numeric array"
+    end
+  end
+
+  def _cam_inflate_point(point2d, plane, offset)
+    case plane
+    when :xy
+      [point2d[0], point2d[1], offset]
+    when :xz
+      [point2d[0], offset, point2d[1]]
+    when :yz
+      [offset, point2d[0], point2d[1]]
+    else
+      raise ArgumentError, "unsupported_islands plane must be :xy, :xz, or :yz"
+    end
+  end
+
+  def _cam_edge_bbox_2d(edge, plane)
+    bb = edge.bounding_box
+    case plane
+    when :xy
+      [bb[:x], bb[:y], bb[:x] + bb[:dx], bb[:y] + bb[:dy]]
+    when :xz
+      [bb[:x], bb[:z], bb[:x] + bb[:dx], bb[:z] + bb[:dz]]
+    when :yz
+      [bb[:y], bb[:z], bb[:y] + bb[:dy], bb[:z] + bb[:dz]]
+    else
+      raise ArgumentError, "unsupported_islands plane must be :xy, :xz, or :yz"
+    end
+  end
+
+  def _cam_bbox_union(a, b)
+    [
+      [a[0], b[0]].min,
+      [a[1], b[1]].min,
+      [a[2], b[2]].max,
+      [a[3], b[3]].max,
+    ]
+  end
+
+  def _cam_bbox_center(bbox)
+    [
+      (bbox[0] + bbox[2]) / 2.0,
+      (bbox[1] + bbox[3]) / 2.0,
+    ]
+  end
+
+  def _cam_bbox_area(bbox)
+    width = [bbox[2] - bbox[0], 0.0].max
+    height = [bbox[3] - bbox[1], 0.0].max
+    width * height
+  end
+
+  def _cam_bbox_intersects?(a, b, tolerance)
+    a[0] <= b[2] + tolerance &&
+      a[2] + tolerance >= b[0] &&
+      a[1] <= b[3] + tolerance &&
+      a[3] + tolerance >= b[1]
+  end
+
+  def _cam_component_reports(section, plane, offset, tolerance, min_area)
+    edges = section.edges("all")
+    return [] if edges.empty?
+
+    edge_boxes = edges.map { |edge| _cam_edge_bbox_2d(edge, plane) }
+    adjacency = Hash.new { |h, k| h[k] = [] }
+
+    edge_boxes.each_index do |i|
+      ((i + 1)...edge_boxes.length).each do |j|
+        next unless _cam_bbox_intersects?(edge_boxes[i], edge_boxes[j], tolerance)
+
+        adjacency[i] << j
+        adjacency[j] << i
+      end
+    end
+    edge_boxes.each_index { |i| adjacency[i] ||= [] }
+
+    visited = {}
+    components = []
+    adjacency.keys.sort.each do |start|
+      next if visited[start]
+
+      stack = [start]
+      edge_ids = []
+      until stack.empty?
+        v = stack.pop
+        next if visited[v]
+
+        visited[v] = true
+        edge_ids << v
+        adjacency[v].each { |n| stack << n unless visited[n] }
+      end
+
+      bbox = edge_ids.map { |edge_id| edge_boxes[edge_id] }.reduce do |memo, edge_box|
+        _cam_bbox_union(memo, edge_box)
+      end
+      area = _cam_bbox_area(bbox)
+      next if area < min_area
+
+      centroid_2d = _cam_bbox_center(bbox)
+      components << {
+        area: area,
+        centroid: _cam_inflate_point(centroid_2d, plane, offset),
+        bbox: bbox,
+      }
+    end
+
+    components.sort_by { |c| [-c[:area], c[:centroid][0], c[:centroid][1], c[:centroid][2]] }
+  end
+
+  def _cam_unsupported_islands(part, layer_height: 0.2, axis: [0, 0, 1], min_area: 0.0, tolerance: 0.05)
+    plane, offset_key, axis_index, axis_name = _cam_axis_spec(axis)
+
+    unless layer_height.is_a?(Numeric) && layer_height > 0
+      raise ArgumentError, "unsupported_islands layer_height must be > 0"
+    end
+    unless min_area.is_a?(Numeric) && min_area >= 0
+      raise ArgumentError, "unsupported_islands min_area must be >= 0"
+    end
+    unless tolerance.is_a?(Numeric) && tolerance >= 0
+      raise ArgumentError, "unsupported_islands tolerance must be >= 0"
+    end
+
+    bb = part.bounding_box
+    min_coord = bb[axis_index == 0 ? :x : axis_index == 1 ? :y : :z]
+    max_coord = min_coord + bb[axis_index == 0 ? :dx : axis_index == 1 ? :dy : :dz]
+
+    report = []
+    previous = []
+    seen_any_layer = false
+    offset = min_coord
+    limit = max_coord + (layer_height * 1.0e-9)
+
+    while offset <= limit
+      section = part.slice(**{ plane: plane, offset_key => offset })
+      current = _cam_component_reports(section, plane, offset, tolerance, min_area)
+
+      if current.empty?
+        previous = []
+        offset += layer_height
+        next
+      end
+
+      if seen_any_layer
+        current.each do |component|
+          component[:supported] = previous.any? do |prev|
+            _cam_bbox_intersects?(component[:bbox], prev[:bbox], tolerance)
+          end
+        end
+      else
+        current.each { |component| component[:supported] = true }
+      end
+
+      report << {
+        axis: axis_name,
+        plane: plane,
+        offset: offset,
+        components: current,
+        unsupported: current.select { |component| !component[:supported] },
+      }
+
+      previous = current
+      seen_any_layer = true
+      offset += layer_height
+    end
+
+    report
+  end
+
+  # unsupported_islands(part, layer_height: 0.2, axis: [0, 0, 1], min_area: 0.0,
+  #                     tolerance: 0.05) — slice the part into layers and
+  # report connected footprints that have no overlap with the previous layer.
+  # Returns an Array of layer Hashes:
+  #   { axis:, plane:, offset:, components:, unsupported: [...] }
+  # where each unsupported component includes `:area`, `:centroid`, and `:bbox`.
+  def unsupported_islands(part, layer_height: 0.2, axis: [0, 0, 1], min_area: 0.0, tolerance: 0.05)
+    _cam_unsupported_islands(
+      part,
+      layer_height: layer_height,
+      axis: axis,
+      min_area: min_area,
+      tolerance: tolerance,
+    )
+  end
+
   def hardware_diameter(size, table, label)
     if size.is_a?(Numeric)
       validate_positive_dimension(size, "#{label} diameter")

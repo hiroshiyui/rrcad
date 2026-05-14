@@ -270,26 +270,17 @@ are now available, and simple framed `datum:` / `feature_control:` annotations
 now render in SVG and DXF. Datum labels can be attached to actual faces, and
 feature-control frames accept datum lists for richer geometric tolerancing.
 
-**CAM / 3-D printing checks ◐ STARTED:** Additive helpers landed in the
-Ruby prelude: `mass_estimate(part, density:)` computes a rough mass in
-grams from `part.volume × density / 1000` (PLA default 1.24 g/cm³);
-`print_volume_check(part, x:, y:, z:)` reports `fits` plus per-axis
-overflow against a rectangular build volume by comparing `bounding_box`
-extents; and `overhang_faces(part, max_angle_deg:)` returns faces whose
-outward normal tips downward more than the threshold (assumes the part is
-+Z-up); `draft_faces(part, axis:, min_draft_deg:)` lists faces with
-insufficient mould-draft along a chosen pull axis (`asin(|n·axis|) <
-min_draft_deg`, naturally excluding top/bottom faces). The underlying
-primitive `Shape#normal` is exposed by a new OCCT bridge call
-(`shape_face_normal`) using `BRepLProp_SLProps` at the face's
-parameter-space midpoint, with the normal flipped for `TopAbs_REVERSED`
-faces. Minimum wall thickness is already available via
-`Shape#min_thickness`. Hole orientation is now supported through a new
-`shape_cylinder_axis` bridge call (extracting `gp_Cylinder::Axis()` and
-radius for `GeomAbs_Cylinder` faces); the `Shape#cylinder_axis` accessor
-returns `{origin:, axis:, radius:}`, and the `hole_axes(part, orientation:
-:vertical | :horizontal)` DSL helper enumerates and filters cylindrical
-faces by axis direction.
+**CAM / 3-D printing checks ✓ COMPLETE:** Additive helpers now include
+`mass_estimate(part, density:)` for rough mass from `part.volume × density /
+1000` (PLA default 1.24 g/cm³), `print_volume_check(part, x:, y:, z:)` for
+rectangular bed fit checks, `overhang_faces(part, max_angle_deg:)` for
+downward-facing overhangs on +Z-up parts, `draft_faces(part, axis:,
+min_draft_deg:)` for mould draft along an arbitrary pull axis, and
+`hole_axes(part, orientation:, tolerance_deg:)` for cylindrical face
+enumeration. The underlying `Shape#normal` and `Shape#cylinder_axis`
+inspection primitives remain available, and `unsupported_islands(part, ...)`
+now scans slices layer-by-layer to report disconnected footprints that do not
+overlap the previous layer.
 
 ---
 
@@ -314,9 +305,6 @@ important.
   3/8-16) are now supported across `clearance_hole`, `tap_drill`,
   `heat_set_insert`, `socket_head_cbore`, `flat_head_csink`, and `screw`.
   (Extends *Tolerance and manufacturing profiles*.)
-- **CAM — unsupported islands** via slice-based connectivity analysis.
-  (Extends *CAM / 3-D printing checks*.)
-
 ---
 
 ## Architecture Notes

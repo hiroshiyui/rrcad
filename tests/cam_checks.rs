@@ -3,6 +3,7 @@
 // Tests for top-level pure-Ruby DSL helpers:
 //   mass_estimate(part, density:)       → Float (grams)
 //   print_volume_check(part, x:, y:, z:) → Hash with :fits and overflow info
+//   unsupported_islands(part, ...)      → Array of layer reports
 
 use rrcad::ruby::vm::MrubyVm;
 
@@ -442,5 +443,105 @@ fn hole_axes_rejects_bad_orientation() {
     assert!(
         err.contains("orientation"),
         "expected orientation error, got: {err}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// unsupported_islands
+// ---------------------------------------------------------------------------
+
+#[test]
+fn unsupported_islands_plain_box_has_no_islands() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "unsupported_islands(box(20, 20, 20), layer_height: 5)
+             .flat_map { |layer| layer[:unsupported] }
+             .length",
+        )
+        .unwrap();
+    assert_eq!(result.trim(), "0", "plain box should have no unsupported islands");
+}
+
+#[test]
+fn unsupported_islands_detects_floating_component() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "part = box(20, 20, 10).fuse(box(8, 8, 10).translate(30, 0, 10))
+             islands = unsupported_islands(part, layer_height: 5)
+                         .flat_map { |layer| layer[:unsupported] }
+             \"#{islands.length} #{islands.first[:area] > 0} #{islands.first[:centroid].length}\"",
+        )
+        .unwrap();
+    let stripped = result.trim().trim_matches('"');
+    let parts: Vec<&str> = stripped.split_whitespace().collect();
+    let count: i32 = parts[0].parse().expect("count");
+    assert!(
+        count >= 1,
+        "expected at least one unsupported island, got {count}"
+    );
+    assert_eq!(parts[1], "true", "unsupported island should report an area");
+    assert_eq!(parts[2], "3", "unsupported island centroid should be 3-D");
+}
+
+#[test]
+fn unsupported_islands_accepts_axis_overrides() {
+    let mut vm = MrubyVm::new();
+    let x_axis = vm
+        .eval(
+            "part = box(10, 10, 10).fuse(box(8, 8, 10).translate(20, 12, 0))
+             unsupported_islands(part, axis: :x, layer_height: 5)
+               .flat_map { |layer| layer[:unsupported] }
+               .length",
+        )
+        .unwrap();
+    assert!(
+        x_axis.trim().parse::<i32>().unwrap() >= 1,
+        "expected unsupported islands along the X build axis"
+    );
+
+    let mut vm2 = MrubyVm::new();
+    let y_axis = vm2
+        .eval(
+            "part = box(10, 10, 10).fuse(box(8, 8, 10).translate(20, 12, 20))
+             unsupported_islands(part, axis: [0, 1, 0], layer_height: 5)
+               .flat_map { |layer| layer[:unsupported] }
+               .length",
+        )
+        .unwrap();
+    assert!(
+        y_axis.trim().parse::<i32>().unwrap() >= 1,
+        "expected unsupported islands along the Y build axis"
+    );
+}
+
+#[test]
+fn unsupported_islands_rejects_bad_inputs() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval("unsupported_islands(box(10, 10, 10), layer_height: 0)")
+        .unwrap_err();
+    assert!(
+        err.contains("layer_height"),
+        "expected layer_height validation error, got: {err}"
+    );
+
+    let mut vm2 = MrubyVm::new();
+    let err2 = vm2
+        .eval("unsupported_islands(box(10, 10, 10), axis: [0, 0])")
+        .unwrap_err();
+    assert!(
+        err2.contains("axis"),
+        "expected axis validation error, got: {err2}"
+    );
+
+    let mut vm3 = MrubyVm::new();
+    let err3 = vm3
+        .eval("unsupported_islands(box(10, 10, 10), tolerance: -1)")
+        .unwrap_err();
+    assert!(
+        err3.contains("tolerance"),
+        "expected tolerance validation error, got: {err3}"
     );
 }
