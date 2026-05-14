@@ -444,6 +444,7 @@ void export_obj(const OcctShape& shape, rust::Str path, double linear_deflection
 // overall width/height annotations.
 // DXF uses Y-up coordinates (standard CAD convention). `scale`, `hidden`,
 // and `center_marks` have the same meaning as SVG scale / hidden / centre marks.
+// `dimensions` adds overall width/height labels.
 void export_svg(const OcctShape& shape,
                 rust::Str path,
                 rust::Str view,
@@ -456,7 +457,8 @@ void export_dxf(const OcctShape& shape,
                 rust::Str view,
                 double scale,
                 bool hidden,
-                bool center_marks);
+                bool center_marks,
+                bool dimensions);
 
 // --- Phase 8 Tier 5: Advanced composition ---
 

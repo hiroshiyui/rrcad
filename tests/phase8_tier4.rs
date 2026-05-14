@@ -354,6 +354,35 @@ fn dxf_center_marks_off_by_default() {
 }
 
 #[test]
+fn dxf_dimensions_adds_dimension_layer() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_dimensions.dxf");
+    vm.eval(&format!(
+        "box(20,10,5).export('{}', dimensions: true)",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("\nDIMENSION\n") && content.contains("\nTEXT\n"),
+        "dimensions: true should add a DIMENSION layer with text"
+    );
+}
+
+#[test]
+fn dxf_dimensions_off_by_default() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_no_dimensions.dxf");
+    vm.eval(&format!("box(20,10,5).export('{}')", out.display()))
+        .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        !content.contains("\nDIMENSION\n"),
+        "default DXF export should not include dimension annotations"
+    );
+}
+
+#[test]
 fn dxf_hidden_option_adds_hidden_layer() {
     let mut vm = MrubyVm::new();
     let out = tmp("rrcad_test_hidden.dxf");

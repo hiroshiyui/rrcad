@@ -165,6 +165,7 @@ extern void rrcad_shape_export_svg(void* ptr, const char* path, const char* view
                                    const char** error_out);
 extern void rrcad_shape_export_dxf(void* ptr, const char* path, const char* view,
                                    double scale, int hidden, int center_marks,
+                                   int dimensions,
                                    const char** error_out);
 
 /* Phase 7 — Bézier patch and sewing */
@@ -414,7 +415,8 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     } else if (dot && (strcasecmp(dot, ".svg") == 0)) {
         rrcad_shape_export_svg(ptr, path, view, scale, hidden, center_marks, dimensions, &err);
     } else if (dot && (strcasecmp(dot, ".dxf") == 0)) {
-        rrcad_shape_export_dxf(ptr, path, view, scale, hidden, center_marks, &err);
+        rrcad_shape_export_dxf(ptr, path, view, scale, hidden, center_marks, dimensions,
+                               &err);
     } else {
         /* Default: STEP (.step, .stp, or unknown extension) */
         rrcad_shape_export_step(ptr, path, &err);

@@ -3374,7 +3374,8 @@ void export_dxf(const OcctShape& shape,
                 rust::Str view,
                 double scale,
                 bool hidden,
-                bool center_marks) {
+                bool center_marks,
+                bool dimensions) {
     try {
         std::string path_str(path.data(), path.size());
         std::string view_str(view.data(), view.size());
@@ -3391,6 +3392,31 @@ void export_dxf(const OcctShape& shape,
             mark.y *= scale;
             mark.size *= scale;
         }
+
+        double geom_xmin = 1e30, geom_xmax = -1e30, geom_ymin = 1e30, geom_ymax = -1e30;
+        auto include_bounds = [&](const DrawingPolylines& polylines) {
+            for (auto& pl : polylines) {
+                for (auto& [x, y] : pl) {
+                    geom_xmin = std::min(geom_xmin, x);
+                    geom_xmax = std::max(geom_xmax, x);
+                    geom_ymin = std::min(geom_ymin, y);
+                    geom_ymax = std::max(geom_ymax, y);
+                }
+            }
+        };
+        include_bounds(projection.visible);
+        if (hidden)
+            include_bounds(projection.hidden);
+        for (const auto& mark : marks) {
+            geom_xmin = std::min(geom_xmin, mark.x - mark.size);
+            geom_xmax = std::max(geom_xmax, mark.x + mark.size);
+            geom_ymin = std::min(geom_ymin, mark.y - mark.size);
+            geom_ymax = std::max(geom_ymax, mark.y + mark.size);
+        }
+        if (geom_xmin == 1e30)
+            throw std::runtime_error("export_dxf: no drawing edges found after projection");
+        double width = geom_xmax - geom_xmin;
+        double height = geom_ymax - geom_ymin;
 
         std::ofstream f(path_str);
         if (!f.is_open())
@@ -3450,6 +3476,87 @@ void export_dxf(const OcctShape& shape,
             };
             for (const auto& mark : marks)
                 write_center_lines(mark);
+        }
+        if (dimensions) {
+            const double dim_gap = 8.0;
+            const double tick = 1.5;
+            const double label_offset = 3.5;
+            const double font_size = 3.0;
+            const double dim_xmin = geom_xmin;
+            const double dim_xmax = geom_xmax;
+            const double dim_ymin = geom_ymin;
+            const double dim_ymax = geom_ymax;
+            const double hx = (dim_xmin + dim_xmax) * 0.5;
+            const double hy = (dim_ymin + dim_ymax) * 0.5;
+            const double dim_y = dim_ymin - dim_gap;
+            const double dim_x = dim_xmin - dim_gap;
+
+            auto write_text = [&](double x, double y, const std::string& text, double rotation) {
+                f << "  0\nTEXT\n";
+                f << "  8\nDIMENSION\n";
+                f << " 10\n" << x << "\n";
+                f << " 20\n" << y << "\n";
+                f << " 30\n0.0\n";
+                f << " 40\n" << font_size << "\n";
+                f << "  1\n" << text << "\n";
+                if (rotation != 0.0)
+                    f << " 50\n" << rotation << "\n";
+            };
+
+            f << "  0\nLINE\n";
+            f << "  8\nDIMENSION\n";
+            f << " 10\n" << dim_xmin << "\n";
+            f << " 20\n" << dim_y << "\n";
+            f << " 30\n0.0\n";
+            f << " 11\n" << dim_xmax << "\n";
+            f << " 21\n" << dim_y << "\n";
+            f << " 31\n0.0\n";
+            f << "  0\nLINE\n";
+            f << "  8\nDIMENSION\n";
+            f << " 10\n" << dim_x << "\n";
+            f << " 20\n" << dim_ymin << "\n";
+            f << " 30\n0.0\n";
+            f << " 11\n" << dim_x << "\n";
+            f << " 21\n" << dim_ymax << "\n";
+            f << " 31\n0.0\n";
+
+            f << "  0\nLINE\n";
+            f << "  8\nDIMENSION\n";
+            f << " 10\n" << (dim_xmin + tick) << "\n";
+            f << " 20\n" << (dim_y - tick) << "\n";
+            f << " 30\n0.0\n";
+            f << " 11\n" << (dim_xmin - tick) << "\n";
+            f << " 21\n" << (dim_y + tick) << "\n";
+            f << " 31\n0.0\n";
+            f << "  0\nLINE\n";
+            f << "  8\nDIMENSION\n";
+            f << " 10\n" << (dim_xmax + tick) << "\n";
+            f << " 20\n" << (dim_y - tick) << "\n";
+            f << " 30\n0.0\n";
+            f << " 11\n" << (dim_xmax - tick) << "\n";
+            f << " 21\n" << (dim_y + tick) << "\n";
+            f << " 31\n0.0\n";
+
+            write_text(hx, dim_y - label_offset, std::to_string(width), 0.0);
+
+            f << "  0\nLINE\n";
+            f << "  8\nDIMENSION\n";
+            f << " 10\n" << (dim_x - tick) << "\n";
+            f << " 20\n" << (dim_ymin + tick) << "\n";
+            f << " 30\n0.0\n";
+            f << " 11\n" << (dim_x + tick) << "\n";
+            f << " 21\n" << (dim_ymin - tick) << "\n";
+            f << " 31\n0.0\n";
+            f << "  0\nLINE\n";
+            f << "  8\nDIMENSION\n";
+            f << " 10\n" << (dim_x - tick) << "\n";
+            f << " 20\n" << (dim_ymax + tick) << "\n";
+            f << " 30\n0.0\n";
+            f << " 11\n" << (dim_x + tick) << "\n";
+            f << " 21\n" << (dim_ymax - tick) << "\n";
+            f << " 31\n0.0\n";
+
+            write_text(dim_x - label_offset, hy, std::to_string(height), -90.0);
         }
 
         f << "  0\nENDSEC\n  0\nEOF\n";

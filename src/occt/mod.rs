@@ -284,6 +284,7 @@ mod ffi {
             scale: f64,
             hidden: bool,
             center_marks: bool,
+            dimensions: bool,
         ) -> Result<()>;
 
         // Phase 8 Tier 5: Advanced composition.
@@ -1259,6 +1260,7 @@ impl Shape {
     /// `scale` multiplies drawing geometry; `1.0` preserves model units.
     /// `hidden` includes hidden HLR edges on a `HIDDEN` layer.
     /// `center_marks` adds crosshair marks on a `CENTER` layer.
+    /// `dimensions` adds overall width/height labels.
     pub fn export_dxf(
         &self,
         path: &str,
@@ -1266,10 +1268,20 @@ impl Shape {
         scale: f64,
         hidden: bool,
         center_marks: bool,
+        dimensions: bool,
     ) -> Result<(), String> {
-        ffi::export_dxf(&self.inner, path, view, scale, hidden, center_marks).map_err(|e| {
+        ffi::export_dxf(
+            &self.inner,
+            path,
+            view,
+            scale,
+            hidden,
+            center_marks,
+            dimensions,
+        )
+        .map_err(|e| {
             format!(
-                "export_dxf({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}) on {} failed: {e}",
+                "export_dxf({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}) on {} failed: {e}",
                 summarize(self)
             )
         })
