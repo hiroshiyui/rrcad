@@ -560,6 +560,7 @@ The browser viewer has a hamburger menu (top-right corner) and keyboard shortcut
 | **F** | Toggle flat-line view (white flat-shaded surfaces + gray edge lines) |
 | **A** | Toggle axes helper |
 | **M** | Toggle measurement mode |
+| **Esc** | Clear the active measurement; press again to exit measurement mode |
 
 The hamburger menu exposes the same toggles plus a **Scene** selector:
 
