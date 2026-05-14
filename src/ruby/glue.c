@@ -86,6 +86,18 @@ extern void rrcad_shape_name_edge(void* ptr, const char* name, const char* selec
 extern void rrcad_shape_datum(void* ptr, const char* name, void* datum_ptr,
                               const char** error_out);
 extern void* rrcad_shape_ref(void* ptr, const char* name, const char** error_out);
+extern void rrcad_shape_gdt_apply(void* ptr, const char* standard, const char* datum_label,
+                                  const char* datum_selector, int datum_anchor_valid,
+                                  double datum_anchor_x, double datum_anchor_y,
+                                  double datum_anchor_z, const char* feature_control_text,
+                                  const char* feature_control_selector,
+                                  int feature_control_anchor_valid,
+                                  double feature_control_anchor_x,
+                                  double feature_control_anchor_y,
+                                  double feature_control_anchor_z,
+                                  const char* feature_control_datums,
+                                  const char* feature_control_modifiers,
+                                  const char** error_out);
 
 /* Phase 2 */
 extern void* rrcad_shape_translate(void* ptr, double dx, double dy, double dz,
@@ -172,8 +184,12 @@ extern void rrcad_shape_export_svg(void* ptr, const char* path, const char* view
                                    int title_block, int callouts, const char* datum,
                                    int datum_anchor_valid, double datum_anchor_x,
                                    double datum_anchor_y, double datum_anchor_z,
-                                   const char* feature_control, double tolerance_plus,
-                                   double tolerance_minus,
+                                   const char* feature_control,
+                                   int feature_control_anchor_valid,
+                                   double feature_control_anchor_x,
+                                   double feature_control_anchor_y,
+                                   double feature_control_anchor_z,
+                                   double tolerance_plus, double tolerance_minus,
                                    const char** error_out);
 extern void rrcad_shape_export_dxf(void* ptr, const char* path, const char* view,
                                    double scale, int hidden, int center_marks,
@@ -181,6 +197,10 @@ extern void rrcad_shape_export_dxf(void* ptr, const char* path, const char* view
                                    const char* datum, int datum_anchor_valid,
                                    double datum_anchor_x, double datum_anchor_y,
                                    double datum_anchor_z, const char* feature_control,
+                                   int feature_control_anchor_valid,
+                                   double feature_control_anchor_x,
+                                   double feature_control_anchor_y,
+                                   double feature_control_anchor_z,
                                    double tolerance_plus, double tolerance_minus,
                                    const char** error_out);
 
@@ -300,6 +320,34 @@ static mrb_value append_selector_list(mrb_state* mrb, mrb_value text, mrb_value 
                   "feature_control datums must be a Symbol, String, or Array thereof");
     if (RSTRING_LEN(text) > 0)
         mrb_str_cat_cstr(mrb, text, " | ");
+    mrb_str_cat_cstr(mrb, text, s);
+    return text;
+}
+
+static mrb_value append_joined_list(mrb_state* mrb, mrb_value text, mrb_value list,
+                                    const char* what) {
+    if (mrb_nil_p(list))
+        return text;
+
+    if (mrb_array_p(list)) {
+        mrb_int len = RARRAY_LEN(list);
+        for (mrb_int i = 0; i < len; i++) {
+            mrb_value item = mrb_ary_ref(mrb, list, i);
+            const char* s = shape_name_from_value(mrb, item);
+            if (!s)
+                mrb_raise(mrb, E_TYPE_ERROR, what);
+            if (RSTRING_LEN(text) > 0)
+                mrb_str_cat_cstr(mrb, text, ",");
+            mrb_str_cat_cstr(mrb, text, s);
+        }
+        return text;
+    }
+
+    const char* s = shape_name_from_value(mrb, list);
+    if (!s)
+        mrb_raise(mrb, E_TYPE_ERROR, what);
+    if (RSTRING_LEN(text) > 0)
+        mrb_str_cat_cstr(mrb, text, ",");
     mrb_str_cat_cstr(mrb, text, s);
     return text;
 }
@@ -465,6 +513,9 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     int datum_anchor_valid = 0;
     double datum_anchor[3] = {0.0, 0.0, 0.0};
     const char* feature_control = "";
+    mrb_value feature_control_buf = mrb_nil_value();
+    int feature_control_anchor_valid = 0;
+    double feature_control_anchor[3] = {0.0, 0.0, 0.0};
     double tolerance_plus = 0.0;
     double tolerance_minus = 0.0;
     if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
@@ -564,7 +615,8 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
                 if (!text)
                     mrb_raise(mrb, E_TYPE_ERROR,
                               "feature_control hash expects text:/frame:/value: as a Symbol or String");
-                mrb_value fc_text = mrb_str_new_cstr(mrb, text);
+                feature_control_buf = mrb_str_new_cstr(mrb, text);
+                mrb_value fc_text = feature_control_buf;
                 mrb_value datums_v =
                     mrb_hash_fetch(mrb, fc_v, mrb_symbol_value(mrb_intern_lit(mrb, "datums")),
                                    mrb_nil_value());
@@ -575,6 +627,25 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
                 }
                 fc_text = append_selector_list(mrb, fc_text, datums_v);
                 feature_control = mrb_string_value_cstr(mrb, &fc_text);
+
+                mrb_value face_v =
+                    mrb_hash_fetch(mrb, fc_v, mrb_symbol_value(mrb_intern_lit(mrb, "face")),
+                                   mrb_nil_value());
+                if (mrb_nil_p(face_v)) {
+                    face_v = mrb_hash_fetch(mrb, fc_v,
+                                            mrb_symbol_value(mrb_intern_lit(mrb, "selector")),
+                                            mrb_nil_value());
+                }
+                if (!mrb_nil_p(face_v)) {
+                    const char* anchor_err = NULL;
+                    if (!datum_anchor_from_shape_value(mrb, ptr, face_v, feature_control_anchor,
+                                                       &anchor_err)) {
+                        mrb_raise(mrb, E_RUNTIME_ERROR,
+                                  anchor_err ? anchor_err
+                                             : "failed to resolve feature_control face");
+                    }
+                    feature_control_anchor_valid = 1;
+                }
             } else if (mrb_symbol_p(fc_v)) {
                 feature_control = mrb_sym_name(mrb, mrb_symbol(fc_v));
             } else {
@@ -622,12 +693,18 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
         rrcad_shape_export_svg(ptr, path, view, scale, hidden, center_marks, dimensions,
                                title_block, callouts, datum, datum_anchor_valid,
                                datum_anchor[0], datum_anchor[1], datum_anchor[2],
-                               feature_control, tolerance_plus, tolerance_minus, &err);
+                               feature_control, feature_control_anchor_valid,
+                               feature_control_anchor[0], feature_control_anchor[1],
+                               feature_control_anchor[2], tolerance_plus, tolerance_minus,
+                               &err);
     } else if (dot && (strcasecmp(dot, ".dxf") == 0)) {
         rrcad_shape_export_dxf(ptr, path, view, scale, hidden, center_marks, dimensions,
                                title_block, callouts, datum, datum_anchor_valid,
                                datum_anchor[0], datum_anchor[1], datum_anchor[2],
-                               feature_control, tolerance_plus, tolerance_minus, &err);
+                               feature_control, feature_control_anchor_valid,
+                               feature_control_anchor[0], feature_control_anchor[1],
+                               feature_control_anchor[2], tolerance_plus, tolerance_minus,
+                               &err);
     } else {
         /* Default: STEP (.step, .stp, or unknown extension) */
         rrcad_shape_export_step(ptr, path, &err);
@@ -816,6 +893,198 @@ static mrb_value mrb_rrcad_shape_ref(mrb_state* mrb, mrb_value self) {
     if (err)
         mrb_raise(mrb, E_RUNTIME_ERROR, err);
     return shape_from_ptr(mrb, result);
+}
+
+static mrb_value mrb_rrcad_shape_gdt_apply(mrb_state* mrb, mrb_value self) {
+    mrb_value spec_v;
+    mrb_get_args(mrb, "H", &spec_v);
+
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+
+    mrb_value standard_v =
+        mrb_hash_fetch(mrb, spec_v, mrb_symbol_value(mrb_intern_lit(mrb, "standard")),
+                       mrb_symbol_value(mrb_intern_lit(mrb, "asme")));
+    const char* standard = shape_name_from_value(mrb, standard_v);
+    if (!standard)
+        mrb_raise(mrb, E_TYPE_ERROR, "gdt_apply standard must be a Symbol or String");
+
+    const char* datum_label = "";
+    mrb_value datum_label_buf = mrb_nil_value();
+    const char* datum_selector = "";
+    mrb_value datum_selector_buf = mrb_nil_value();
+    int datum_anchor_valid = 0;
+    double datum_anchor[3] = {0.0, 0.0, 0.0};
+
+    mrb_value datum_v =
+        mrb_hash_fetch(mrb, spec_v, mrb_symbol_value(mrb_intern_lit(mrb, "datum")),
+                       mrb_nil_value());
+    if (!mrb_nil_p(datum_v)) {
+        if (!mrb_hash_p(datum_v)) {
+            mrb_raise(mrb, E_TYPE_ERROR,
+                      "gdt_apply datum expects a hash with label:/face:/selector:");
+        }
+        mrb_value label_v =
+            mrb_hash_fetch(mrb, datum_v, mrb_symbol_value(mrb_intern_lit(mrb, "label")),
+                           mrb_nil_value());
+        if (mrb_nil_p(label_v)) {
+            label_v = mrb_hash_fetch(mrb, datum_v, mrb_symbol_value(mrb_intern_lit(mrb, "name")),
+                                     mrb_nil_value());
+        }
+        const char* label = shape_name_from_value(mrb, label_v);
+        if (!label)
+            mrb_raise(mrb, E_TYPE_ERROR,
+                      "gdt_apply datum hash expects label:/name: as a Symbol or String");
+        datum_label_buf = mrb_str_new_cstr(mrb, label);
+        datum_label = mrb_string_value_cstr(mrb, &datum_label_buf);
+
+        mrb_value selector_v =
+            mrb_hash_fetch(mrb, datum_v, mrb_symbol_value(mrb_intern_lit(mrb, "selector")),
+                           mrb_nil_value());
+        if (mrb_nil_p(selector_v)) {
+            selector_v = mrb_hash_fetch(mrb, datum_v,
+                                        mrb_symbol_value(mrb_intern_lit(mrb, "face")),
+                                        mrb_nil_value());
+        }
+        if (!mrb_nil_p(selector_v)) {
+            if (mrb_data_p(selector_v)) {
+                const char* anchor_err = NULL;
+                if (!datum_anchor_from_shape_value(mrb, ptr, selector_v, datum_anchor,
+                                                   &anchor_err)) {
+                    mrb_raise(mrb, E_RUNTIME_ERROR,
+                              anchor_err ? anchor_err : "failed to resolve gdt datum face");
+                }
+                datum_anchor_valid = 1;
+            } else {
+                const char* selector = shape_name_from_value(mrb, selector_v);
+                if (!selector)
+                    mrb_raise(mrb, E_TYPE_ERROR,
+                              "gdt_apply datum selector expects a Symbol, String, or Shape");
+                datum_selector_buf = mrb_str_new_cstr(mrb, selector);
+                datum_selector = mrb_string_value_cstr(mrb, &datum_selector_buf);
+                const char* anchor_err = NULL;
+                if (!datum_anchor_from_shape_value(mrb, ptr, selector_v, datum_anchor,
+                                                   &anchor_err)) {
+                    mrb_raise(mrb, E_RUNTIME_ERROR,
+                              anchor_err ? anchor_err : "failed to resolve gdt datum face");
+                }
+                datum_anchor_valid = 1;
+            }
+        }
+    }
+
+    const char* feature_control_text = "";
+    mrb_value feature_control_text_buf = mrb_nil_value();
+    const char* feature_control_selector = "";
+    mrb_value feature_control_selector_buf = mrb_nil_value();
+    int feature_control_anchor_valid = 0;
+    double feature_control_anchor[3] = {0.0, 0.0, 0.0};
+    mrb_value feature_control_datums_buf = mrb_str_new_cstr(mrb, "");
+    mrb_value feature_control_modifiers_buf = mrb_str_new_cstr(mrb, "");
+
+    mrb_value fc_v =
+        mrb_hash_fetch(mrb, spec_v, mrb_symbol_value(mrb_intern_lit(mrb, "feature_control")),
+                       mrb_nil_value());
+    if (!mrb_nil_p(fc_v)) {
+        if (!mrb_hash_p(fc_v)) {
+            mrb_raise(mrb, E_TYPE_ERROR,
+                      "gdt_apply feature_control expects a hash with text:/frame:/value:");
+        }
+        mrb_value text_v =
+            mrb_hash_fetch(mrb, fc_v, mrb_symbol_value(mrb_intern_lit(mrb, "text")),
+                           mrb_nil_value());
+        if (mrb_nil_p(text_v)) {
+            text_v = mrb_hash_fetch(mrb, fc_v, mrb_symbol_value(mrb_intern_lit(mrb, "frame")),
+                                    mrb_nil_value());
+        }
+        if (mrb_nil_p(text_v)) {
+            text_v = mrb_hash_fetch(mrb, fc_v, mrb_symbol_value(mrb_intern_lit(mrb, "value")),
+                                    mrb_nil_value());
+        }
+        const char* text = shape_name_from_value(mrb, text_v);
+        if (!text)
+            mrb_raise(mrb, E_TYPE_ERROR,
+                      "gdt_apply feature_control hash expects text:/frame:/value: as a Symbol or String");
+        feature_control_text_buf = mrb_str_new_cstr(mrb, text);
+        feature_control_text = mrb_string_value_cstr(mrb, &feature_control_text_buf);
+
+        mrb_value selector_v =
+            mrb_hash_fetch(mrb, fc_v, mrb_symbol_value(mrb_intern_lit(mrb, "selector")),
+                           mrb_nil_value());
+        if (mrb_nil_p(selector_v)) {
+            selector_v = mrb_hash_fetch(mrb, fc_v,
+                                        mrb_symbol_value(mrb_intern_lit(mrb, "face")),
+                                        mrb_nil_value());
+        }
+        if (!mrb_nil_p(selector_v)) {
+            if (mrb_data_p(selector_v)) {
+                const char* anchor_err = NULL;
+                if (!datum_anchor_from_shape_value(mrb, ptr, selector_v, feature_control_anchor,
+                                                   &anchor_err)) {
+                    mrb_raise(mrb, E_RUNTIME_ERROR,
+                              anchor_err ? anchor_err
+                                         : "failed to resolve gdt feature_control face");
+                }
+                feature_control_anchor_valid = 1;
+            } else {
+                const char* selector = shape_name_from_value(mrb, selector_v);
+                if (!selector)
+                    mrb_raise(mrb, E_TYPE_ERROR,
+                              "gdt_apply feature_control selector expects a Symbol, String, or Shape");
+                feature_control_selector_buf = mrb_str_new_cstr(mrb, selector);
+                feature_control_selector =
+                    mrb_string_value_cstr(mrb, &feature_control_selector_buf);
+                const char* anchor_err = NULL;
+                if (!datum_anchor_from_shape_value(mrb, ptr, selector_v, feature_control_anchor,
+                                                   &anchor_err)) {
+                    mrb_raise(mrb, E_RUNTIME_ERROR,
+                              anchor_err ? anchor_err
+                                         : "failed to resolve gdt feature_control face");
+                }
+                feature_control_anchor_valid = 1;
+            }
+        }
+
+        mrb_value datums_v =
+            mrb_hash_fetch(mrb, fc_v, mrb_symbol_value(mrb_intern_lit(mrb, "datums")),
+                           mrb_nil_value());
+        if (mrb_nil_p(datums_v)) {
+            datums_v =
+                mrb_hash_fetch(mrb, fc_v, mrb_symbol_value(mrb_intern_lit(mrb, "datum")),
+                               mrb_nil_value());
+        }
+        if (!mrb_nil_p(datums_v))
+            feature_control_datums_buf =
+                append_joined_list(mrb, feature_control_datums_buf, datums_v,
+                                   "gdt_apply feature_control datums must be Symbols or Strings");
+
+        mrb_value modifiers_v =
+            mrb_hash_fetch(mrb, fc_v, mrb_symbol_value(mrb_intern_lit(mrb, "modifiers")),
+                           mrb_nil_value());
+        if (!mrb_nil_p(modifiers_v))
+            feature_control_modifiers_buf =
+                append_joined_list(mrb, feature_control_modifiers_buf, modifiers_v,
+                                   "gdt_apply feature_control modifiers must be Symbols or Strings");
+    }
+
+    const char* feature_control_datums =
+        RSTRING_LEN(feature_control_datums_buf) > 0
+            ? mrb_string_value_cstr(mrb, &feature_control_datums_buf)
+            : "";
+    const char* feature_control_modifiers =
+        RSTRING_LEN(feature_control_modifiers_buf) > 0
+            ? mrb_string_value_cstr(mrb, &feature_control_modifiers_buf)
+            : "";
+    const char* err = NULL;
+    rrcad_shape_gdt_apply(ptr, standard, datum_label, datum_selector, datum_anchor_valid,
+                          datum_anchor[0], datum_anchor[1], datum_anchor[2],
+                          feature_control_text, feature_control_selector,
+                          feature_control_anchor_valid, feature_control_anchor[0],
+                          feature_control_anchor[1], feature_control_anchor[2],
+                          feature_control_datums, feature_control_modifiers, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return self;
 }
 
 /* -------------------------------------------------------------------------
@@ -2514,6 +2783,8 @@ void rrcad_register_shape_class(mrb_state* mrb) {
                       MRB_ARGS_REQ(2));
     mrb_define_method(mrb, shape_class, "datum", mrb_rrcad_shape_datum, MRB_ARGS_REQ(2));
     mrb_define_method(mrb, shape_class, "ref", mrb_rrcad_shape_ref, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "gdt_apply", mrb_rrcad_shape_gdt_apply,
+                      MRB_ARGS_REQ(1));
 
     /* Phase 2: Transforms */
     mrb_define_method(mrb, shape_class, "translate", mrb_rrcad_shape_translate, MRB_ARGS_REQ(3));

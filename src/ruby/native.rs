@@ -27,7 +27,7 @@
 use std::ffi::{CString, c_char, c_void};
 use std::path::{Path, PathBuf};
 
-use crate::occt::Shape;
+use crate::occt::{GdtDatumSpec, GdtFeatureControlSpec, GdtRenderSpec, GdtStandard, Shape};
 
 // ---------------------------------------------------------------------------
 // Path-traversal guard
@@ -151,6 +151,22 @@ unsafe fn resolve_path(path: *const c_char, error_out: *mut *const c_char) -> Op
             None
         }
     }
+}
+
+unsafe fn cstr_arg(ptr: *const c_char) -> Result<String, String> {
+    unsafe { std::ffi::CStr::from_ptr(ptr) }
+        .to_str()
+        .map(|s| s.to_string())
+        .map_err(|_| "value is not valid UTF-8".to_string())
+}
+
+fn split_csv_list(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(|item| item.trim())
+        .filter(|item| !item.is_empty())
+        .map(|item| item.to_string())
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -348,6 +364,147 @@ pub unsafe extern "C" fn rrcad_shape_export_obj(
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_gdt_apply(
+    ptr: *mut c_void,
+    standard: *const c_char,
+    datum_label: *const c_char,
+    datum_selector: *const c_char,
+    datum_anchor_valid: i32,
+    datum_anchor_x: f64,
+    datum_anchor_y: f64,
+    datum_anchor_z: f64,
+    feature_control_text: *const c_char,
+    feature_control_selector: *const c_char,
+    feature_control_anchor_valid: i32,
+    feature_control_anchor_x: f64,
+    feature_control_anchor_y: f64,
+    feature_control_anchor_z: f64,
+    feature_control_datums: *const c_char,
+    feature_control_modifiers: *const c_char,
+    error_out: *mut *const c_char,
+) {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+
+    let standard = match unsafe { cstr_arg(standard) } {
+        Ok(s) => s,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            return;
+        }
+    };
+    let standard = match GdtStandard::parse(&standard) {
+        Ok(s) => s,
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            return;
+        }
+    };
+
+    let datum = if datum_label.is_null() {
+        None
+    } else {
+        let label = match unsafe { cstr_arg(datum_label) } {
+            Ok(s) => s,
+            Err(e) => {
+                unsafe { set_err(error_out, &e) };
+                return;
+            }
+        };
+        let selector = if datum_selector.is_null() {
+            None
+        } else {
+            match unsafe { cstr_arg(datum_selector) } {
+                Ok(s) if !s.is_empty() => Some(s),
+                Ok(_) => None,
+                Err(e) => {
+                    unsafe { set_err(error_out, &e) };
+                    return;
+                }
+            }
+        };
+        let anchor = if datum_anchor_valid != 0 {
+            Some([datum_anchor_x, datum_anchor_y, datum_anchor_z])
+        } else {
+            None
+        };
+        Some(GdtDatumSpec {
+            label,
+            selector,
+            anchor,
+        })
+    };
+
+    let feature_control = if feature_control_text.is_null() {
+        None
+    } else {
+        let text = match unsafe { cstr_arg(feature_control_text) } {
+            Ok(s) => s,
+            Err(e) => {
+                unsafe { set_err(error_out, &e) };
+                return;
+            }
+        };
+        let selector = if feature_control_selector.is_null() {
+            None
+        } else {
+            match unsafe { cstr_arg(feature_control_selector) } {
+                Ok(s) if !s.is_empty() => Some(s),
+                Ok(_) => None,
+                Err(e) => {
+                    unsafe { set_err(error_out, &e) };
+                    return;
+                }
+            }
+        };
+        let anchor = if feature_control_anchor_valid != 0 {
+            Some([
+                feature_control_anchor_x,
+                feature_control_anchor_y,
+                feature_control_anchor_z,
+            ])
+        } else {
+            None
+        };
+        let datums = if feature_control_datums.is_null() {
+            Vec::new()
+        } else {
+            match unsafe { cstr_arg(feature_control_datums) } {
+                Ok(s) => split_csv_list(&s),
+                Err(e) => {
+                    unsafe { set_err(error_out, &e) };
+                    return;
+                }
+            }
+        };
+        let modifiers = if feature_control_modifiers.is_null() {
+            Vec::new()
+        } else {
+            match unsafe { cstr_arg(feature_control_modifiers) } {
+                Ok(s) => split_csv_list(&s),
+                Err(e) => {
+                    unsafe { set_err(error_out, &e) };
+                    return;
+                }
+            }
+        };
+        Some(GdtFeatureControlSpec {
+            text,
+            selector,
+            anchor,
+            datums,
+            modifiers,
+        })
+    };
+
+    shape.gdt_apply(GdtRenderSpec {
+        standard,
+        datum,
+        feature_control,
+    });
+}
+
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn rrcad_shape_export_svg(
     ptr: *mut c_void,
     path: *const c_char,
@@ -364,6 +521,10 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
     datum_anchor_y: f64,
     datum_anchor_z: f64,
     feature_control: *const c_char,
+    feature_control_anchor_valid: i32,
+    feature_control_anchor_x: f64,
+    feature_control_anchor_y: f64,
+    feature_control_anchor_z: f64,
     tolerance_plus: f64,
     tolerance_minus: f64,
     error_out: *mut *const c_char,
@@ -396,6 +557,10 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
         unsafe { std::ffi::CStr::from_ptr(feature_control) }
             .to_str()
             .unwrap_or(""),
+        feature_control_anchor_valid != 0,
+        feature_control_anchor_x,
+        feature_control_anchor_y,
+        feature_control_anchor_z,
         tolerance_plus,
         tolerance_minus,
     ) {
@@ -420,6 +585,10 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
     datum_anchor_y: f64,
     datum_anchor_z: f64,
     feature_control: *const c_char,
+    feature_control_anchor_valid: i32,
+    feature_control_anchor_x: f64,
+    feature_control_anchor_y: f64,
+    feature_control_anchor_z: f64,
     tolerance_plus: f64,
     tolerance_minus: f64,
     error_out: *mut *const c_char,
@@ -452,6 +621,10 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
         unsafe { std::ffi::CStr::from_ptr(feature_control) }
             .to_str()
             .unwrap_or(""),
+        feature_control_anchor_valid != 0,
+        feature_control_anchor_x,
+        feature_control_anchor_y,
+        feature_control_anchor_z,
         tolerance_plus,
         tolerance_minus,
     ) {

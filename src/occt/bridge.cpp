@@ -3716,7 +3716,9 @@ static void write_svg_title_block(std::ofstream& f, const DrawingCanvasBounds& c
 static void write_svg_gdt_frame(std::ofstream& f, const DrawingCanvasBounds& canvas,
                                 const std::string& datum, const std::string& feature_control,
                                 bool datum_anchor_valid, double datum_anchor_x,
-                                double datum_anchor_y) {
+                                double datum_anchor_y, bool feature_control_anchor_valid,
+                                double feature_control_anchor_x,
+                                double feature_control_anchor_y) {
     if (datum.empty() && feature_control.empty())
         return;
 
@@ -3750,6 +3752,15 @@ static void write_svg_gdt_frame(std::ofstream& f, const DrawingCanvasBounds& can
           << datum_anchor_x << "\" y2=\"" << (-datum_anchor_y) << "\"/>\n";
         f << "    <circle class=\"datum-anchor\" cx=\"" << datum_anchor_x << "\" cy=\""
           << (-datum_anchor_y) << "\" r=\"0.9\" fill=\"#111827\" stroke=\"none\"/>\n";
+    }
+    if (feature_control_anchor_valid) {
+        const double leader_x = x0;
+        const double leader_y = y0 + (has_both ? 9.0 : 3.0);
+        f << "    <line x1=\"" << leader_x << "\" y1=\"" << (-leader_y) << "\" x2=\""
+          << feature_control_anchor_x << "\" y2=\"" << (-feature_control_anchor_y) << "\"/>\n";
+        f << "    <circle class=\"feature-control-anchor\" cx=\"" << feature_control_anchor_x
+          << "\" cy=\"" << (-feature_control_anchor_y)
+          << "\" r=\"0.9\" fill=\"#111827\" stroke=\"none\"/>\n";
     }
     f << "  </g>\n";
 }
@@ -3802,7 +3813,9 @@ static void write_dxf_title_block(std::ofstream& f, const DrawingCanvasBounds& c
 static void write_dxf_gdt_frame(std::ofstream& f, const DrawingCanvasBounds& canvas,
                                 const std::string& datum, const std::string& feature_control,
                                 bool datum_anchor_valid, double datum_anchor_x,
-                                double datum_anchor_y) {
+                                double datum_anchor_y, bool feature_control_anchor_valid,
+                                double feature_control_anchor_x,
+                                double feature_control_anchor_y) {
     if (datum.empty() && feature_control.empty())
         return;
 
@@ -3851,6 +3864,17 @@ static void write_dxf_gdt_frame(std::ofstream& f, const DrawingCanvasBounds& can
         f << "  8\nGDT\n";
         f << " 10\n" << datum_anchor_x << "\n";
         f << " 20\n" << datum_anchor_y << "\n";
+        f << " 30\n0.0\n";
+        f << " 40\n0.9\n";
+    }
+    if (feature_control_anchor_valid) {
+        const double leader_x = x0;
+        const double leader_y = y0 + (has_both ? 9.0 : 3.0);
+        line(leader_x, leader_y, feature_control_anchor_x, feature_control_anchor_y);
+        f << "  0\nCIRCLE\n";
+        f << "  8\nGDT\n";
+        f << " 10\n" << feature_control_anchor_x << "\n";
+        f << " 20\n" << feature_control_anchor_y << "\n";
         f << " 30\n0.0\n";
         f << " 40\n0.9\n";
     }
@@ -3914,6 +3938,10 @@ void export_svg(const OcctShape& shape,
                 double datum_anchor_y,
                 double datum_anchor_z,
                 rust::Str feature_control,
+                bool feature_control_anchor_valid,
+                double feature_control_anchor_x,
+                double feature_control_anchor_y,
+                double feature_control_anchor_z,
                 double tolerance_plus,
                 double tolerance_minus) {
     try {
@@ -3927,9 +3955,14 @@ void export_svg(const OcctShape& shape,
         const std::string anchor_view = (view_str == "sheet") ? "top" : view_str;
         const std::pair<double, double> anchor_2d = project_point_2d(
             anchor_view, datum_anchor_x, datum_anchor_y, datum_anchor_z);
+        const std::pair<double, double> feature_anchor_2d = project_point_2d(
+            anchor_view, feature_control_anchor_x, feature_control_anchor_y,
+            feature_control_anchor_z);
         bool has_anchor = datum_anchor_valid;
         double anchor_canvas_x = 0.0;
         double anchor_canvas_y = 0.0;
+        double feature_anchor_canvas_x = feature_anchor_2d.first * scale;
+        double feature_anchor_canvas_y = feature_anchor_2d.second * scale;
 
         const bool sheet_mode = (view_str == "sheet");
         const double margin = 5.0;
@@ -3984,7 +4017,9 @@ void export_svg(const OcctShape& shape,
                 anchor_canvas_y = anchor_2d.second * scale + top_dy;
             }
             write_svg_gdt_frame(f, canvas, datum_str, feature_control_str, has_anchor,
-                                anchor_canvas_x, anchor_canvas_y);
+                                anchor_canvas_x, anchor_canvas_y, feature_control_anchor_valid,
+                                feature_anchor_canvas_x + top_dx,
+                                feature_anchor_canvas_y + top_dy);
             if (title_block)
                 write_svg_title_block(f, canvas, "sheet", view_str, true, scale, tolerance_plus,
                                       tolerance_minus);
@@ -4022,7 +4057,8 @@ void export_svg(const OcctShape& shape,
         write_svg_view(f, single_view, 0.0, 0.0, hidden, center_marks, dimensions, callouts,
                        false, nullptr, nullptr, tolerance_plus, tolerance_minus);
         write_svg_gdt_frame(f, canvas, datum_str, feature_control_str, has_anchor,
-                            anchor_canvas_x, anchor_canvas_y);
+                            anchor_canvas_x, anchor_canvas_y, feature_control_anchor_valid,
+                            feature_anchor_canvas_x, feature_anchor_canvas_y);
         if (title_block)
             write_svg_title_block(f, canvas, "sheet", view_str, false, scale, tolerance_plus,
                                   tolerance_minus);
@@ -4057,6 +4093,10 @@ void export_dxf(const OcctShape& shape,
                 double datum_anchor_y,
                 double datum_anchor_z,
                 rust::Str feature_control,
+                bool feature_control_anchor_valid,
+                double feature_control_anchor_x,
+                double feature_control_anchor_y,
+                double feature_control_anchor_z,
                 double tolerance_plus,
                 double tolerance_minus) {
     try {
@@ -4070,9 +4110,14 @@ void export_dxf(const OcctShape& shape,
         const std::string anchor_view = (view_str == "sheet") ? "top" : view_str;
         const std::pair<double, double> anchor_2d = project_point_2d(
             anchor_view, datum_anchor_x, datum_anchor_y, datum_anchor_z);
+        const std::pair<double, double> feature_anchor_2d = project_point_2d(
+            anchor_view, feature_control_anchor_x, feature_control_anchor_y,
+            feature_control_anchor_z);
         bool has_anchor = datum_anchor_valid;
         double anchor_canvas_x = 0.0;
         double anchor_canvas_y = 0.0;
+        double feature_anchor_canvas_x = feature_anchor_2d.first * scale;
+        double feature_anchor_canvas_y = feature_anchor_2d.second * scale;
 
         if (view_str == "sheet") {
             const double sheet_gap = 16.0;
@@ -4123,7 +4168,9 @@ void export_dxf(const OcctShape& shape,
                 anchor_canvas_y = anchor_2d.second * scale + top_dy;
             }
             write_dxf_gdt_frame(f, canvas, datum_str, feature_control_str, has_anchor,
-                                anchor_canvas_x, anchor_canvas_y);
+                                anchor_canvas_x, anchor_canvas_y, feature_control_anchor_valid,
+                                feature_anchor_canvas_x + top_dx,
+                                feature_anchor_canvas_y + top_dy);
             if (title_block)
                 write_dxf_title_block(f, canvas, "sheet", view_str, true, scale, tolerance_plus,
                                       tolerance_minus);
@@ -4161,7 +4208,8 @@ void export_dxf(const OcctShape& shape,
             anchor_canvas_y = anchor_2d.second * scale;
         }
         write_dxf_gdt_frame(f, canvas, datum_str, feature_control_str, has_anchor,
-                            anchor_canvas_x, anchor_canvas_y);
+                            anchor_canvas_x, anchor_canvas_y, feature_control_anchor_valid,
+                            feature_anchor_canvas_x, feature_anchor_canvas_y);
         if (title_block)
             write_dxf_title_block(f, canvas, "sheet", view_str, false, scale, tolerance_plus,
                                   tolerance_minus);

@@ -285,6 +285,10 @@ mod ffi {
             datum_anchor_y: f64,
             datum_anchor_z: f64,
             feature_control: &str,
+            feature_control_anchor_valid: bool,
+            feature_control_anchor_x: f64,
+            feature_control_anchor_y: f64,
+            feature_control_anchor_z: f64,
             tolerance_plus: f64,
             tolerance_minus: f64,
         ) -> Result<()>;
@@ -304,6 +308,10 @@ mod ffi {
             datum_anchor_y: f64,
             datum_anchor_z: f64,
             feature_control: &str,
+            feature_control_anchor_valid: bool,
+            feature_control_anchor_x: f64,
+            feature_control_anchor_y: f64,
+            feature_control_anchor_z: f64,
             tolerance_plus: f64,
             tolerance_minus: f64,
         ) -> Result<()>;
@@ -357,10 +365,58 @@ pub(crate) struct NamedRefSnapshot {
     pub normal: Option<[f64; 3]>,
 }
 
+#[derive(Clone, Debug, serde::Serialize)]
+pub(crate) enum GdtStandard {
+    Asme,
+    Iso,
+}
+
+impl GdtStandard {
+    pub(crate) fn parse(value: &str) -> Result<Self, String> {
+        match value.to_ascii_lowercase().as_str() {
+            "asme" => Ok(GdtStandard::Asme),
+            "iso" => Ok(GdtStandard::Iso),
+            other => Err(format!("unsupported GD&T standard: {other}")),
+        }
+    }
+
+    #[allow(dead_code)]
+    fn as_str(&self) -> &'static str {
+        match self {
+            GdtStandard::Asme => "asme",
+            GdtStandard::Iso => "iso",
+        }
+    }
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub(crate) struct GdtDatumSpec {
+    pub label: String,
+    pub selector: Option<String>,
+    pub anchor: Option<[f64; 3]>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub(crate) struct GdtFeatureControlSpec {
+    pub text: String,
+    pub selector: Option<String>,
+    pub anchor: Option<[f64; 3]>,
+    pub datums: Vec<String>,
+    pub modifiers: Vec<String>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub(crate) struct GdtRenderSpec {
+    pub standard: GdtStandard,
+    pub datum: Option<GdtDatumSpec>,
+    pub feature_control: Option<GdtFeatureControlSpec>,
+}
+
 /// Owned handle to a live OCCT shape.
 pub struct Shape {
     inner: UniquePtr<ffi::OcctShape>,
     named_refs: RefCell<BTreeMap<String, NamedRef>>,
+    gdt_render: RefCell<Option<GdtRenderSpec>>,
 }
 
 /// Best-effort one-word shape kind ("solid", "face", "wire", …) used to
@@ -387,6 +443,7 @@ impl Shape {
         Self {
             inner,
             named_refs: RefCell::new(BTreeMap::new()),
+            gdt_render: RefCell::new(None),
         }
     }
 
@@ -394,6 +451,7 @@ impl Shape {
         Self {
             inner,
             named_refs: RefCell::new(self.named_refs.borrow().clone()),
+            gdt_render: RefCell::new(self.gdt_render.borrow().clone()),
         }
     }
 
@@ -475,6 +533,113 @@ impl Shape {
             })
             .collect()
     }
+
+    fn gdt_render(&self) -> Option<GdtRenderSpec> {
+        self.gdt_render.borrow().clone()
+    }
+
+    fn set_gdt_render(&self, render: Option<GdtRenderSpec>) {
+        *self.gdt_render.borrow_mut() = render;
+    }
+
+    fn format_gdt_feature_control(
+        standard: &GdtStandard,
+        fc: &GdtFeatureControlSpec,
+    ) -> String {
+        let mut parts = Vec::new();
+        match standard {
+            GdtStandard::Asme => {
+                parts.push(fc.text.clone());
+                if !fc.modifiers.is_empty() {
+                    parts.push(fc.modifiers.join(" "));
+                }
+                parts.extend(fc.datums.iter().cloned());
+            }
+            GdtStandard::Iso => {
+                parts.extend(fc.datums.iter().cloned());
+                parts.push(fc.text.clone());
+                if !fc.modifiers.is_empty() {
+                    parts.push(fc.modifiers.join(" "));
+                }
+            }
+        }
+        parts.retain(|s| !s.is_empty());
+        parts.join(" | ")
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn gdt_export_inputs(
+        &self,
+        datum: &str,
+        datum_anchor_valid: bool,
+        datum_anchor_x: f64,
+        datum_anchor_y: f64,
+        datum_anchor_z: f64,
+        feature_control: &str,
+        feature_control_anchor_valid: bool,
+        feature_control_anchor_x: f64,
+        feature_control_anchor_y: f64,
+        feature_control_anchor_z: f64,
+    ) -> (
+        String,
+        bool,
+        [f64; 3],
+        String,
+        bool,
+        [f64; 3],
+    ) {
+        if let Some(render) = self.gdt_render() {
+            let datum_text = render
+                .datum
+                .as_ref()
+                .map(|datum| datum.label.clone())
+                .unwrap_or_default();
+            let datum_anchor = render
+                .datum
+                .as_ref()
+                .and_then(|datum| datum.anchor)
+                .unwrap_or([0.0, 0.0, 0.0]);
+            let fc_text = render
+                .feature_control
+                .as_ref()
+                .map(|fc| Self::format_gdt_feature_control(&render.standard, fc))
+                .unwrap_or_default();
+            let fc_anchor = render
+                .feature_control
+                .as_ref()
+                .and_then(|fc| fc.anchor)
+                .unwrap_or([0.0, 0.0, 0.0]);
+            return (
+                datum_text,
+                render
+                    .datum
+                    .as_ref()
+                    .and_then(|d| d.anchor)
+                    .is_some(),
+                datum_anchor,
+                fc_text,
+                render
+                    .feature_control
+                    .as_ref()
+                    .and_then(|fc| fc.anchor)
+                    .is_some(),
+                fc_anchor,
+            );
+        }
+
+        (
+            datum.to_string(),
+            datum_anchor_valid,
+            [datum_anchor_x, datum_anchor_y, datum_anchor_z],
+            feature_control.to_string(),
+            feature_control_anchor_valid,
+            [
+                feature_control_anchor_x,
+                feature_control_anchor_y,
+                feature_control_anchor_z,
+            ],
+        )
+    }
 }
 
 impl Clone for Shape {
@@ -483,6 +648,7 @@ impl Clone for Shape {
             inner: ffi::shape_copy(&self.inner)
                 .expect("shape_copy failed while cloning Shape"),
             named_refs: RefCell::new(self.named_refs.borrow().clone()),
+            gdt_render: RefCell::new(self.gdt_render.borrow().clone()),
         }
     }
 }
@@ -694,6 +860,7 @@ impl Shape {
     }
 
     /// Register a persistent datum/reference shape.
+    #[allow(clippy::arc_with_non_send_sync)]
     pub fn datum(&self, name: &str, shape: &Shape) -> Result<(), String> {
         self.set_named_ref(name, NamedRef::Datum(Arc::new(shape.clone())));
         Ok(())
@@ -715,6 +882,17 @@ impl Shape {
             Some(NamedRef::Datum(shape)) => Ok(shape.as_ref().clone()),
             None => Err(format!("unknown named reference: {name}")),
         }
+    }
+
+    /// Store a structured GD&T rendering spec on the shape.
+    pub(crate) fn gdt_apply(&self, spec: GdtRenderSpec) {
+        self.set_gdt_render(Some(spec));
+    }
+
+    /// Clear any stored GD&T rendering spec.
+    #[allow(dead_code)]
+    pub(crate) fn clear_gdt(&self) {
+        self.set_gdt_render(None);
     }
 
     // --- Transforms ---
@@ -1444,6 +1622,7 @@ impl Shape {
     /// `dimensions` adds overall width and height annotations.
     /// `callouts` adds diameter callouts for cylindrical faces aligned to the view axis.
     /// `datum` and `feature_control` add a simple framed GD&T annotation block.
+    #[allow(clippy::too_many_arguments)]
     pub fn export_svg(
         &self,
         path: &str,
@@ -1474,11 +1653,16 @@ impl Shape {
             0.0,
             0.0,
             feature_control,
+            false,
+            0.0,
+            0.0,
+            0.0,
             tolerance_plus,
             tolerance_minus,
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn export_svg_with_anchor(
         &self,
         path: &str,
@@ -1495,9 +1679,26 @@ impl Shape {
         datum_anchor_y: f64,
         datum_anchor_z: f64,
         feature_control: &str,
+        feature_control_anchor_valid: bool,
+        feature_control_anchor_x: f64,
+        feature_control_anchor_y: f64,
+        feature_control_anchor_z: f64,
         tolerance_plus: f64,
         tolerance_minus: f64,
     ) -> Result<(), String> {
+        let (datum, datum_anchor_valid, datum_anchor, feature_control, feature_control_anchor_valid, feature_control_anchor) =
+            self.gdt_export_inputs(
+                datum,
+                datum_anchor_valid,
+                datum_anchor_x,
+                datum_anchor_y,
+                datum_anchor_z,
+                feature_control,
+                feature_control_anchor_valid,
+                feature_control_anchor_x,
+                feature_control_anchor_y,
+                feature_control_anchor_z,
+            );
         ffi::export_svg(
             &self.inner,
             path,
@@ -1508,18 +1709,22 @@ impl Shape {
             dimensions,
             title_block,
             callouts,
-            datum,
+            &datum,
             datum_anchor_valid,
-            datum_anchor_x,
-            datum_anchor_y,
-            datum_anchor_z,
-            feature_control,
+            datum_anchor[0],
+            datum_anchor[1],
+            datum_anchor[2],
+            &feature_control,
+            feature_control_anchor_valid,
+            feature_control_anchor[0],
+            feature_control_anchor[1],
+            feature_control_anchor[2],
             tolerance_plus,
             tolerance_minus,
         )
         .map_err(|e| {
             format!(
-                "export_svg({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, datum: {datum:?}, datum_anchor_valid: {datum_anchor_valid}, feature_control: {feature_control:?}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}) on {} failed: {e}",
+                "export_svg({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, datum: {datum:?}, datum_anchor_valid: {datum_anchor_valid}, feature_control: {feature_control:?}, feature_control_anchor_valid: {feature_control_anchor_valid}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}) on {} failed: {e}",
                 summarize(self)
             )
         })
@@ -1533,6 +1738,7 @@ impl Shape {
     /// `dimensions` adds overall width/height labels.
     /// `callouts` adds diameter callouts on a `CALLOUT` layer.
     /// `datum` and `feature_control` add a simple framed GD&T annotation block.
+    #[allow(clippy::too_many_arguments)]
     pub fn export_dxf(
         &self,
         path: &str,
@@ -1563,11 +1769,16 @@ impl Shape {
             0.0,
             0.0,
             feature_control,
+            false,
+            0.0,
+            0.0,
+            0.0,
             tolerance_plus,
             tolerance_minus,
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn export_dxf_with_anchor(
         &self,
         path: &str,
@@ -1584,9 +1795,26 @@ impl Shape {
         datum_anchor_y: f64,
         datum_anchor_z: f64,
         feature_control: &str,
+        feature_control_anchor_valid: bool,
+        feature_control_anchor_x: f64,
+        feature_control_anchor_y: f64,
+        feature_control_anchor_z: f64,
         tolerance_plus: f64,
         tolerance_minus: f64,
     ) -> Result<(), String> {
+        let (datum, datum_anchor_valid, datum_anchor, feature_control, feature_control_anchor_valid, feature_control_anchor) =
+            self.gdt_export_inputs(
+                datum,
+                datum_anchor_valid,
+                datum_anchor_x,
+                datum_anchor_y,
+                datum_anchor_z,
+                feature_control,
+                feature_control_anchor_valid,
+                feature_control_anchor_x,
+                feature_control_anchor_y,
+                feature_control_anchor_z,
+            );
         ffi::export_dxf(
             &self.inner,
             path,
@@ -1597,18 +1825,22 @@ impl Shape {
             dimensions,
             title_block,
             callouts,
-            datum,
+            &datum,
             datum_anchor_valid,
-            datum_anchor_x,
-            datum_anchor_y,
-            datum_anchor_z,
-            feature_control,
+            datum_anchor[0],
+            datum_anchor[1],
+            datum_anchor[2],
+            &feature_control,
+            feature_control_anchor_valid,
+            feature_control_anchor[0],
+            feature_control_anchor[1],
+            feature_control_anchor[2],
             tolerance_plus,
             tolerance_minus,
         )
         .map_err(|e| {
             format!(
-                "export_dxf({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, datum: {datum:?}, datum_anchor_valid: {datum_anchor_valid}, feature_control: {feature_control:?}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}) on {} failed: {e}",
+                "export_dxf({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, datum: {datum:?}, datum_anchor_valid: {datum_anchor_valid}, feature_control: {feature_control:?}, feature_control_anchor_valid: {feature_control_anchor_valid}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}) on {} failed: {e}",
                 summarize(self)
             )
         })

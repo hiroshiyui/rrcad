@@ -340,6 +340,56 @@ fn svg_gdt_frame_supports_face_anchor_hash() {
 }
 
 #[test]
+fn svg_structured_gdt_builder_renders_frame() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_structured_gdt.svg");
+    vm.eval(&format!(
+        "part = box(20,10,5)\nface = part.faces(:top).first\npart.gdt do |g|\n  g.datum :A, face: face\n  g.feature_control text: \"⌀0.1\", face: face, datums: [:A, :B]\nend.export('{}')",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("class=\"gdt-frame\"")
+            && content.contains("DATUM A")
+            && content.contains("⌀0.1 | A | B"),
+        "structured gdt builder should render the canonical GD&T frame"
+    );
+}
+
+#[test]
+fn svg_structured_gdt_builder_survives_transform() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_structured_gdt_translated.svg");
+    vm.eval(&format!(
+        "part = box(20,10,5)\nface = part.faces(:top).first\npart.gdt do |g|\n  g.datum :A, face: face\n  g.feature_control text: \"⌀0.1\", face: face, datums: [:A, :B]\nend.translate(5, 0, 0).export('{}')",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("class=\"gdt-frame\"") && content.contains("DATUM A"),
+        "structured gdt should persist through transforms"
+    );
+}
+
+#[test]
+fn svg_structured_gdt_builder_supports_iso_ordering() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_structured_gdt_iso.svg");
+    vm.eval(&format!(
+        "part = box(20,10,5)\nface = part.faces(:top).first\npart.gdt(standard: :iso) do |g|\n  g.datum :A, face: face\n  g.feature_control text: \"⌀0.1\", face: face, datums: [:A, :B]\nend.export('{}')",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("A | B | ⌀0.1"),
+        "ISO structured GD&T should render datum references before the control text"
+    );
+}
+
+#[test]
 fn svg_dimensions_adds_dimension_group() {
     let mut vm = MrubyVm::new();
     let out = tmp("rrcad_test_dimensions.svg");
@@ -619,6 +669,22 @@ fn dxf_gdt_frame_supports_face_anchor_hash() {
             && content.contains("DATUM A")
             && content.contains("⌀0.1 | A | B"),
         "face-linked datum hashes should render an anchored GD&T frame in DXF"
+    );
+}
+
+#[test]
+fn dxf_structured_gdt_builder_renders_frame() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_structured_gdt.dxf");
+    vm.eval(&format!(
+        "part = box(20,10,5)\nface = part.faces(:top).first\npart.gdt do |g|\n  g.datum :A, face: face\n  g.feature_control text: \"⌀0.1\", face: face, datums: [:A, :B]\nend.export('{}')",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("GDT") && content.contains("DATUM A") && content.contains("⌀0.1 | A | B"),
+        "structured gdt builder should render the canonical GD&T frame in DXF"
     );
 }
 

@@ -1220,6 +1220,138 @@ class Shape
   def ref(_name)
     raise NotImplementedError, "Shape#ref is not yet implemented (Named faces, edges, and datums)"
   end
+
+  def gdt_apply(_spec)
+    raise NotImplementedError, "Shape#gdt_apply is not yet implemented (Standard GD&T implementation)"
+  end
+end
+
+class GdtBuilder
+  def initialize(shape, standard = :asme)
+    unless shape.is_a?(Shape)
+      raise ArgumentError, "gdt requires a Shape"
+    end
+    @shape = shape
+    @standard = normalize_standard!(standard)
+    @datum = nil
+    @feature_control = nil
+  end
+
+  def datum(label = nil, face: nil, selector: nil, name: nil)
+    label = name if label.nil?
+    label = normalize_label!(label)
+    anchor = resolve_anchor!(face, selector, "gdt datum")
+    if anchor.nil? && selector.nil?
+      raise ArgumentError, "gdt datum requires face: or selector:"
+    end
+    @datum = { label: label, selector: selector_name(selector), anchor: anchor }
+    self
+  end
+
+  def feature_control(text: nil, frame: nil, value: nil, face: nil, selector: nil, datums: [],
+                      modifiers: [])
+    feature_text = text || frame || value
+    if feature_text.nil?
+      raise ArgumentError, "gdt feature_control requires text:, frame:, or value:"
+    end
+    feature_text = normalize_label!(feature_text)
+    datums = normalize_name_list!(datums, "gdt feature_control datums")
+    modifiers = normalize_name_list!(modifiers, "gdt feature_control modifiers")
+    anchor = resolve_anchor!(face, selector, "gdt feature_control")
+    if anchor.nil? && selector.nil?
+      raise ArgumentError, "gdt feature_control requires face: or selector:"
+    end
+    @feature_control = {
+      text: feature_text,
+      selector: selector_name(selector),
+      anchor: anchor,
+      datums: datums,
+      modifiers: modifiers,
+    }
+    self
+  end
+
+  def to_h
+    spec = { standard: @standard }
+    spec[:datum] = @datum if @datum
+    spec[:feature_control] = @feature_control if @feature_control
+    spec
+  end
+
+  def commit
+    @shape.gdt_apply(to_h)
+    @shape
+  end
+
+  private
+
+  def normalize_standard!(standard)
+    standard = standard.to_sym if standard.is_a?(String)
+    unless [:asme, :iso].include?(standard)
+      raise ArgumentError, "gdt standard must be :asme or :iso"
+    end
+    standard
+  end
+
+  def normalize_label!(value)
+    unless value.is_a?(Symbol) || value.is_a?(String) || value.is_a?(Numeric)
+      raise ArgumentError, "gdt label must be a Symbol, String, or Numeric"
+    end
+    value.to_s
+  end
+
+  def normalize_name_list!(value, name)
+    values = value.is_a?(Array) ? value : [value]
+    values.map do |item|
+      unless item.is_a?(Symbol) || item.is_a?(String) || item.is_a?(Numeric)
+        raise ArgumentError, "#{name} must be Symbols or Strings"
+      end
+      item.to_s
+    end
+  end
+
+  def selector_name(selector)
+    return nil if selector.nil?
+    unless selector.is_a?(Symbol) || selector.is_a?(String)
+      raise ArgumentError, "selector must be a Symbol or String"
+    end
+    selector.to_s
+  end
+
+  def resolve_anchor!(face, selector, name)
+    if !face.nil?
+      unless face.is_a?(Shape)
+        raise ArgumentError, "#{name} face must be a Shape"
+      end
+      unless face.shape_type == :face
+        raise ArgumentError, "#{name} face must be a Face"
+      end
+      face.centroid
+    elsif !selector.nil?
+      selector = selector.to_s
+      selected = @shape.faces(selector)
+      if selected.empty?
+        raise ArgumentError, "#{name} selector matched no faces"
+      end
+      selected.first.centroid
+    else
+      nil
+    end
+  end
+end
+
+class Shape
+  def gdt(standard: :asme, &block)
+    builder = GdtBuilder.new(self, standard)
+    if block_given?
+      if block.arity == 1
+        block.call(builder)
+      else
+        builder.instance_eval(&block)
+      end
+    end
+    builder.commit
+  end
 end
 
 # ---------------------------------------------------------------------------

@@ -375,6 +375,28 @@ part.edges(:boss_edges).length
 part.ref(:fixture_plane)
 ```
 
+### Structured GD&T
+
+Use `Shape#gdt` when you want the drawing annotation to live with the model
+instead of passing `datum:` / `feature_control:` ad hoc at export time.
+
+```ruby
+part = box(20, 10, 5)
+face = part.faces(:top).first
+
+part.gdt(standard: :asme) do |g|
+  g.datum :A, face: face
+  g.feature_control text: "⌀0.1", face: face, datums: [:A, :B]
+end
+
+part.export("drawing.svg")
+part.gdt(standard: :iso) do |g|
+  g.datum :A, face: face
+  g.feature_control text: "⌀0.1", face: face, datums: [:A, :B]
+end
+part.export("drawing.svg")
+```
+
 ### Patterns
 
 | Function | Description |

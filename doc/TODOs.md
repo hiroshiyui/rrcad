@@ -270,6 +270,9 @@ annotations on dimensions, standards-style `callouts: true` diameter labels
 are now available, and simple framed `datum:` / `feature_control:` annotations
 now render in SVG and DXF. Datum labels can be attached to actual faces, and
 feature-control frames accept datum lists for richer geometric tolerancing.
+The structured `Shape#gdt(standard:)` builder now stores a canonical spec on
+the shape itself, with ASME/ISO ordering handled at export time and the
+compatibility keyword form still accepted for older scripts.
 
 **CAM / 3-D printing checks ✓ COMPLETE:** Additive helpers now include
 `mass_estimate(part, density:)` for rough mass from `part.volume × density /
