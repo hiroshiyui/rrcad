@@ -323,6 +323,7 @@ let thread  = profile.sweep(&path)?;
 | `.distance_to(other: &Shape) -> Result<f64>` | Minimum distance between two shapes via `BRepExtrema_DistShapeShape`. Returns `0.0` for overlapping or touching shapes. |
 | `.inertia() -> Result<[f64; 6]>` | Mass moments of inertia `[Ixx, Iyy, Izz, Ixy, Ixz, Iyz]` computed by `BRepGProp::VolumeProperties` → `GProp_GProps::MatrixOfInertia`. |
 | `.min_thickness() -> Result<f64>` | Minimum wall thickness of a solid or shell via ray-casting (`IntCurvesFace_ShapeIntersector`): for each face, shoots a ray inward from the UV-centre, returns the shortest non-trivial intersection distance across all faces. Raises an error for non-solid/non-shell shapes. |
+| `.face_normal() -> Result<[f64; 3]>` | Outward unit normal of a face shape, sampled at the face's parameter-space midpoint via `BRepLProp_SLProps` and flipped when `TopAbs_REVERSED` so it points out of the parent solid. Errors if the shape is not a face or the normal is undefined. |
 
 ```rust
 // Clearance check
@@ -497,6 +498,7 @@ fn shape_surface_area(shape: &OcctShape)               -> f64;
 // Validation & introspection (Phase 7 Tier 2)
 fn shape_type_str   (shape: &OcctShape)                -> Result<String>;
 fn shape_centroid   (shape: &OcctShape, out: &mut [f64]) -> Result<()>;
+fn shape_face_normal(face: &OcctShape, out: &mut [f64]) -> Result<()>;
 fn shape_is_closed  (shape: &OcctShape)                -> Result<bool>;
 fn shape_is_manifold(shape: &OcctShape)                -> Result<bool>;
 fn shape_validate_str(shape: &OcctShape)               -> Result<String>;
@@ -642,6 +644,10 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `bearing_bore(size, depth:, fit: :press)` | Outer-diameter bore for common deep-groove ball bearings (`:b608`, `:b623`, `:b624`, `:b625`, `:b626`, `:b688`, `:b695`, `:b6000`, `:b6001`, or numeric OD). `fit:` is `:press` (−0.01 mm interference) or `:slip` (+0.05 mm clearance). Pure Ruby DSL. |
 | `shaft(diameter, length:, fit: :nominal)` | Solid mating shaft cylinder at the given nominal diameter with a fit adjustment (`:nominal`, `:press` +0.02, `:slip` −0.02, `:running` −0.05 mm). Pure Ruby DSL. |
 | `screw(size, length:, style: :socket)` | Solid fastener body for `:m2`–`:m5`. `style:` is `:socket` (ISO 4762 cylindrical socket-head cap screw), `:button` (ISO 7380 low dome head), or `:flat` (ISO 10642 90° conical head). Pure Ruby DSL. |
+| `mass_estimate(part, density: 1.24)` | Rough mass in grams from `part.volume × density / 1000` (mm³ × g/cm³). Default density is PLA; pass ABS 1.04, PETG 1.27, steel 7.85, etc. Pure Ruby DSL. |
+| `print_volume_check(part, x:, y:, z:)` | Returns `{fits:, dx:, dy:, dz:, overflow_x:, overflow_y:, overflow_z:}` against a rectangular build volume. Pure Ruby DSL. |
+| `overhang_faces(part, max_angle_deg: 45)` | Array of faces whose outward normal tips more than `max_angle_deg` below horizontal (assumes the part is +Z-up). Uses `Shape#normal`. Pure Ruby DSL. |
+| `draft_faces(part, axis: [0, 0, 1], min_draft_deg: 1.0)` | Array of faces with insufficient mould draft along the pull axis: `asin(|n·axis|) < min_draft_deg`. Top/bottom faces are naturally excluded (their draft is 90°). Pure Ruby DSL. |
 | `param(:name, default: val)` | Declare a named parameter. Returns `val` unless a `--param name=x` CLI override was supplied; coerces string overrides to the default's type (Integer/Float/String). |
 | `param(:name, default: val, range: lo..hi)` | Same with range validation; raises `ArgumentError` if the value is outside the range. |
 | `solid { ... }` | Block returning its last expression |
@@ -696,6 +702,7 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `.distance_to(other)` | Minimum clearance distance to `other` shape (Float). Returns `0.0` when shapes overlap or touch. Uses `BRepExtrema_DistShapeShape`. |
 | `.inertia` | Mass moments of inertia as a Hash `{ixx:, iyy:, izz:, ixy:, ixz:, iyz:}`. Computed by `BRepGProp::VolumeProperties` + `MatrixOfInertia`. |
 | `.min_thickness` | Minimum wall thickness of a Solid or Shell (Float). Uses `IntCurvesFace_ShapeIntersector` ray-casting: shoots a ray inward from each face centroid along the face normal; returns the shortest non-trivial hit distance. Raises `ArgumentError` for non-solid/non-shell shapes. |
+| `.normal` (on a Face) | Outward unit normal as `[nx, ny, nz]`. Sampled at the face's parameter-space midpoint via `BRepLProp_SLProps` and flipped when the face orientation is `TopAbs_REVERSED` so the vector points out of the parent solid. Raises if the shape is not a face or the normal is undefined at the sample point. |
 | `.export("out.step")` | Write file; format determined by extension: `.step`/`.stp` → STEP, `.stl` → STL, `.glb` → GLB, `.gltf` → glTF, `.obj` → OBJ, `.svg` → SVG 2-D drawing, `.dxf` → DXF R12 2-D drawing |
 | `.export("out.svg", view: :top\|:front\|:side)` | SVG 2-D drawing via `HLRBRep_PolyAlgo` hidden-line removal. `:top` (default) looks down −Z; `:front` looks along −Y; `:side` looks along +X. Outputs `<polyline>` elements with Y-down SVG coordinates. |
 | `.export("out.dxf", view: :top\|:front\|:side)` | DXF R12 ASCII drawing via the same HLR pipeline. Outputs `LINE` entities with Y-up CAD coordinates. |

@@ -187,6 +187,7 @@ same entry point.
 | `construction_point(:name, x = nil, y = nil)` | Alias for a named reference point |
 | `ref(:name)` / `self[:name]` | Look up a named sketch point |
 | `midpoint(a, b)` / `midpoint(:name, a, b)` | Create a construction point halfway between two points |
+| `polar_point(center, radius, angle_deg)` / `polar_point(:name, center, radius, angle_deg)` | Construction point at polar coordinates around `center` (angle in degrees CCW from +X). Resolves once `center` resolves. Handy for bolt circles and fan patterns. |
 | `circle_at(center, radius)` | Build an exact circular profile at a resolved sketch point |
 | `arc_at(center, radius, start_deg, end_deg)` | Build an arc wire at a resolved sketch point |
 | `slot_between(a, b, radius)` | Build an axis-aligned rounded slot between two resolved points |
@@ -258,6 +259,12 @@ slot = sketch do
   slot_between a, b, 3.mm
 end
 ```
+
+When a sketch fails to solve, the error names the constraint type, the
+involved point labels, and the actual vs expected values (for example
+`conflicting dimension constraint: :a→:b length=10.0, expected 5.0`), and a
+non-convergence message lists every unresolved point with its missing
+coordinates so the offending free variable is easy to spot.
 
 ### Transforms
 
@@ -399,6 +406,18 @@ stud_grid  = grid_pattern(cylinder(2, 5), 4, 3, 10, 10)
 | `.inertia` | Hash | `{ixx:, iyy:, izz:, ixy:, ixz:, iyz:}` inertia tensor |
 | `.min_thickness` | Float | Minimum wall thickness |
 | `.distance_to(other)` | Float | Minimum distance between two shapes (0 if touching) |
+| `.normal` (on a Face) | `[nx, ny, nz]` | Outward unit normal of a planar face; raises if the shape isn't a face |
+
+### CAM / 3-D Printing Checks
+
+Lightweight manufacturability helpers that build on the inspection methods above.
+
+| Function | Description |
+|----------|-------------|
+| `mass_estimate(part, density: 1.24)` | Rough mass in grams from `part.volume × density / 1000` (mm³ × g/cm³). Default density is PLA; pass ABS 1.04, PETG 1.27, steel 7.85, etc. |
+| `print_volume_check(part, x:, y:, z:)` | Returns `{fits:, dx:, dy:, dz:, overflow_x:, overflow_y:, overflow_z:}` against a rectangular build volume |
+| `overhang_faces(part, max_angle_deg: 45)` | Faces whose outward normal tips downward more than the threshold (assumes the part is +Z-up) |
+| `draft_faces(part, axis: [0, 0, 1], min_draft_deg: 1.0)` | Faces with insufficient mould draft along the pull axis (`asin(|n·axis|) < min_draft_deg`); top/bottom faces are naturally excluded |
 
 ### Import / Export
 

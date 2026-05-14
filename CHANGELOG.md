@@ -47,6 +47,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   angle:, pivot:, axis_dir:, offset:)` mates a face flush and then rotates
   about a chosen pivot axis to lock the leftover rotational degree of
   freedom.
+- **Sketch — solver diagnostics enriched** (`src/ruby/prelude.rb`,
+  `tests/phase10_sketch_constraints.rs`): conflict messages now name the
+  involved sketch points and report the actual vs expected values
+  (`horizontal`/`vertical`/`coincident`/`dimension`/`equal_length`/
+  `tangent` and any `assign_coord`-driven constraint); the "did not
+  converge" failure lists every unresolved point with its missing
+  coordinates. The original `"conflicting X constraint"` substring is
+  preserved at the start of each message for backward-compatible matching.
+- **Sketch — polar_point construction helper** (`src/ruby/prelude.rb`,
+  `tests/phase10_sketch_constraints.rs`): `polar_point([:name,] center,
+  radius, angle_deg)` registers a construction point at polar coordinates
+  around `center`; once `center` resolves the solver derives `(cx +
+  r·cos θ, cy + r·sin θ)`. Useful for bolt circles and angular layouts.
+  Closes the constraint-based-sketching MVP entry in `doc/TODOs.md`.
+- **CAM / 3-D printing — mass and build-volume helpers**
+  (`src/ruby/prelude.rb`, `tests/cam_checks.rs`):
+  `mass_estimate(part, density: 1.24)` computes a rough mass in grams from
+  `part.volume × density / 1000`; `print_volume_check(part, x:, y:, z:)`
+  reports `{fits:, dx:, dy:, dz:, overflow_x/y/z:}` against a rectangular
+  build volume.
+- **CAM / 3-D printing — face normals exposed + overhang_faces**
+  (`src/occt/bridge.{h,cpp}`, `src/occt/mod.rs`, `src/ruby/native.rs`,
+  `src/ruby/glue.c`, `src/ruby/prelude.rb`, `tests/cam_checks.rs`): new
+  `shape_face_normal` bridge call samples the outward unit normal at the
+  face's parameter-space midpoint via `BRepLProp_SLProps`, flipping for
+  `TopAbs_REVERSED` faces; surfaced to Ruby as `Shape#normal` returning
+  `[nx, ny, nz]`. Built on top: `overhang_faces(part, max_angle_deg: 45)`
+  lists faces whose outward normal tips below a horizontal threshold
+  (assumes +Z-up build direction).
+- **CAM / 3-D printing — draft analysis** (`src/ruby/prelude.rb`,
+  `tests/cam_checks.rs`): `draft_faces(part, axis: [0, 0, 1],
+  min_draft_deg: 1.0)` lists faces with insufficient mould draft along the
+  pull axis (`asin(|n·axis|) < min_draft_deg`). Top/bottom faces are
+  naturally excluded; the pull direction is configurable so non-Z pull
+  setups work without rotation tricks.
 
 ---
 
