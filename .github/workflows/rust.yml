@@ -31,7 +31,7 @@ jobs:
           libocct-modeling-algorithms-dev \
           libocct-data-exchange-dev \
           libocct-ocaf-dev \
-          gcc make pkg-config ca-certificates
+          gcc g++ make pkg-config ca-certificates
     - name: Install Rust toolchain
       run: |
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
