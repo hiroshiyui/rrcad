@@ -277,6 +277,7 @@ let simple = part.simplify(1.0)?;   // remove features smaller than ~1 mm
 | Method | Description |
 |--------|-------------|
 | `.shape_type_name() -> Result<String>` | Returns the topological type as a string: `"solid"`, `"shell"`, `"face"`, `"wire"`, `"edge"`, `"vertex"`, `"compound"`, `"compsolid"`, or `"other"`. |
+| `.history() -> Vec<String>` | Returns the provenance chain of modeling operations that produced the shape, oldest to newest. |
 | `.centroid() -> Result<[f64; 3]>` | Centre of mass as `[x, y, z]`. Dispatches to `BRepGProp::VolumeProperties` (solids/compounds), `SurfaceProperties` (shells/faces), or `LinearProperties` (wires/edges). |
 | `.is_closed() -> Result<bool>` | `true` if every edge has at least 2 adjacent faces (no open boundary). Uses `TopTools_IndexedDataMapOfShapeListOfShape`. |
 | `.is_manifold() -> Result<bool>` | `true` if every edge has exactly 2 adjacent faces (manifold mesh). |
@@ -288,6 +289,10 @@ let c = Shape::make_box(10.0, 20.0, 30.0)?.centroid()?;
 assert!((c[0] - 5.0).abs() < 1e-6);
 assert!(Shape::make_box(10.0, 20.0, 30.0)?.is_manifold()?);
 assert_eq!(Shape::make_box(10.0, 20.0, 30.0)?.validate()?, "ok");
+assert_eq!(
+    Shape::make_box(10.0, 20.0, 30.0)?.history(),
+    vec!["box(dx=10, dy=20, dz=30)"]
+);
 ```
 
 ---

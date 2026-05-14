@@ -457,6 +457,7 @@ stud_grid  = grid_pattern(cylinder(2, 5), 4, 3, 10, 10)
 |--------|---------|-------------|
 | `.shape_type` | Symbol | `:solid`, `:shell`, `:face`, `:wire`, `:edge`, `:vertex`, `:compound`, `:compsolid` |
 | `.validate` | `"ok"` or Array | List of topology errors, or `"ok"` |
+| `.history` | Array of Strings | Provenance chain of modeling operations that produced the shape |
 | `.closed?` | Boolean | True if every edge has ≥ 2 adjacent faces |
 | `.manifold?` | Boolean | True if every edge has exactly 2 adjacent faces |
 | `.centroid` | `[x, y, z]` | Centre of mass |
@@ -484,6 +485,13 @@ report = unsupported_islands(part, layer_height: 0.2, axis: :z)
 report.each do |layer|
   puts "#{layer[:offset]}: #{layer[:unsupported].length} unsupported islands"
 end
+```
+
+You can inspect the modeling chain for any derived shape with `.history`:
+
+```ruby
+part = box(10, 20, 30).translate(5, 0, 0).scale(2)
+puts part.history.join(" -> ")
 ```
 
 ### Import / Export
