@@ -174,7 +174,9 @@ workflow.
 **Constraint-based sketching ◐ MVP STARTED:** `sketch do ... end` now builds
 closed polygon profiles from points and lines, with constraint propagation for
 `fixed`, `horizontal`, `vertical`, `coincident`, `dimension`, `equal_length`,
-`parallel`, `perpendicular`, `symmetric`, `mirror_x`, and `mirror_y`. It also
+`parallel`, `perpendicular`, `symmetric`, `mirror_x`, `mirror_y`, and
+`tangent` (line-to-circle, with `side:` keyword for axis-aligned lines and
+verification mode for fully-resolved geometry). It also
 supports named construction points via `point(:name, x, y)`,
 `construction_point(:name, x, y)`, `ref(:name)`, and `self[:name]`, plus
 `midpoint` construction points and non-profile `construction_line(a, b)`
@@ -184,7 +186,7 @@ supports exact circle profiles via
 `arc_at(center, radius, start_deg, end_deg)`. It also includes a constrained
 `rectangle(origin, width, height)` helper and `centered_rectangle(center, width,
 height)`, plus axis-aligned `slot_between(a, b, radius)` profiles. Remaining
-work: tangent, richer construction geometry, stronger solver diagnostics, and broader
+work: richer construction geometry, stronger solver diagnostics, and broader
 under/over-constrained sketch analysis.
 
 **Feature history / parametric model tree:** Represent modeling operations as a

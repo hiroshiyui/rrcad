@@ -281,6 +281,33 @@ class SketchBuilder
     [source, target]
   end
 
+  # tangent(a, b, center, radius, side: nil)
+  #
+  # Constrain that the line segment a→b is tangent to the circle of given
+  # center and radius. The constraint propagates and/or verifies depending on
+  # what is already known:
+  #
+  #   • Horizontal line + circle center known/unknown along Y: with `side:`
+  #     of `:above` (line above center) or `:below`, the unknown Y coordinate
+  #     is solved to satisfy |line.y − center.y| == radius.
+  #   • Vertical line + circle center known/unknown along X: with `side:`
+  #     of `:left` or `:right`, the unknown X coordinate is solved.
+  #   • Fully resolved line and center: verifies |distance(center, line)| ==
+  #     radius and raises on conflict (no propagation needed).
+  #
+  # When the line is at a non-axis-aligned angle the constraint acts as a
+  # verifier only; users should supply a separate angle constraint first.
+  def tangent(a, b, center, radius, side: nil)
+    require_points!(a, b, "tangent")
+    require_point!(center, "tangent")
+    require_positive_number!(radius, "tangent radius")
+    unless [nil, :above, :below, :left, :right].include?(side)
+      raise ArgumentError, "tangent: side: must be :above, :below, :left, :right, or nil"
+    end
+    @constraints << [:tangent, a, b, center, radius, side]
+    [a, b, center]
+  end
+
   def to_profile
     if @profile
       solve_constraints
@@ -425,9 +452,85 @@ class SketchBuilder
     when :mirror_y
       _type, source, target, axis_x = constraint
       apply_mirror_y(source, target, axis_x)
+    when :tangent
+      _type, a, b, center, radius, side = constraint
+      apply_tangent(a, b, center, radius, side)
     else
       false
     end
+  end
+
+  def apply_tangent(a, b, center, radius, side)
+    orient = axis_orientation(a, b) || infer_axis_from_endpoints(a, b)
+
+    if orient == :horizontal
+      apply_tangent_axis(a, b, center, radius, side, :y, :above, :below)
+    elsif orient == :vertical
+      apply_tangent_axis(a, b, center, radius, side, :x, :right, :left)
+    elsif a.resolved? && b.resolved? && center.resolved?
+      d = point_line_distance(center, a, b)
+      if (d - radius).abs > 1.0e-6
+        raise RuntimeError, "conflicting tangent constraint"
+      end
+      false
+    else
+      false
+    end
+  end
+
+  # Infer line orientation from known endpoint coordinates alone (independent
+  # of explicit horizontal/vertical constraints). If both endpoints share a
+  # known X but differ in Y, the line must be vertical (and vice versa).
+  def infer_axis_from_endpoints(a, b)
+    ax = coord_get(a, :x)
+    bx = coord_get(b, :x)
+    ay = coord_get(a, :y)
+    by = coord_get(b, :y)
+
+    if ax && bx && (ax - bx).abs > 1.0e-9
+      :horizontal
+    elsif ay && by && (ay - by).abs > 1.0e-9
+      :vertical
+    end
+  end
+
+  # Propagate a tangent constraint when the line is axis-aligned.
+  # `attr` is the perpendicular axis (:y for a horizontal line, :x for vertical).
+  # `pos_side` and `neg_side` map the `side:` keyword onto the +/-radius sign.
+  def apply_tangent_axis(a, b, center, radius, side, attr, pos_side, neg_side)
+    line_v = coord_get(a, attr) # axis-aligned ⇒ a.attr == b.attr
+    cv = coord_get(center, attr)
+
+    if line_v && cv
+      if ((line_v - cv).abs - radius).abs > 1.0e-6
+        raise RuntimeError, "conflicting tangent constraint"
+      end
+      false
+    elsif line_v.nil? && cv
+      return false if side.nil?
+      delta = (side == pos_side) ? radius : (side == neg_side ? -radius : nil)
+      return false if delta.nil?
+      changed = assign_coord(a, attr, cv + delta, "tangent")
+      assign_coord(b, attr, cv + delta, "tangent") || changed
+    elsif line_v && cv.nil?
+      return false if side.nil?
+      delta = (side == pos_side) ? -radius : (side == neg_side ? radius : nil)
+      return false if delta.nil?
+      assign_coord(center, attr, line_v + delta, "tangent")
+    else
+      false
+    end
+  end
+
+  # 2D distance from point p to the infinite line through a and b.
+  def point_line_distance(p, a, b)
+    abx = b.x - a.x
+    aby = b.y - a.y
+    apx = p.x - a.x
+    apy = p.y - a.y
+    num = (abx * apy - aby * apx).abs
+    den = Math.sqrt(abx * abx + aby * aby)
+    num / den
   end
 
   def apply_mirror_x(source, target, axis_y)

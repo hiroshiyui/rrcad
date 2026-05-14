@@ -116,7 +116,10 @@ fn centered_rectangle_helper_builds_profile_around_center() {
              [bb[:x], bb[:y], bb[:dx], bb[:dy]].inspect",
         )
         .unwrap();
-    assert!(result.contains("-10"), "expected xmin near -10, got {result}");
+    assert!(
+        result.contains("-10"),
+        "expected xmin near -10, got {result}"
+    );
     assert!(result.contains("-4"), "expected ymin near -4, got {result}");
     assert!(result.contains("20"), "expected dx near 20, got {result}");
     assert!(result.contains("8"), "expected dy near 8, got {result}");
@@ -179,7 +182,10 @@ fn circle_at_builds_exact_profile_at_resolved_center() {
         .unwrap();
     assert!(result.contains("7"), "expected xmin near 7, got {result}");
     assert!(result.contains("2"), "expected ymin near 2, got {result}");
-    assert!(result.contains("6"), "expected diameter near 6, got {result}");
+    assert!(
+        result.contains("6"),
+        "expected diameter near 6, got {result}"
+    );
 }
 
 #[test]
@@ -700,9 +706,7 @@ fn under_constrained_error_names_missing_coordinate() {
         )
         .unwrap_err();
     assert!(
-        err.contains("under-constrained")
-            && err.contains(":right")
-            && err.contains("missing y"),
+        err.contains("under-constrained") && err.contains(":right") && err.contains("missing y"),
         "expected named under-constrained point error, got: {err}"
     );
 }
@@ -808,8 +812,14 @@ fn symmetric_constraint_can_resolve_center() {
              profile.bounding_box",
         )
         .unwrap();
-    assert!(result.contains("x: -2"), "expected center-resolved circle xmin near -2, got {result}");
-    assert!(result.contains("y: -2"), "expected center-resolved circle ymin near -2, got {result}");
+    assert!(
+        result.contains("x: -2"),
+        "expected center-resolved circle xmin near -2, got {result}"
+    );
+    assert!(
+        result.contains("y: -2"),
+        "expected center-resolved circle ymin near -2, got {result}"
+    );
 }
 
 #[test]
@@ -904,5 +914,159 @@ fn conflicting_mirror_constraint_reports_error() {
     assert!(
         err.contains("conflicting mirror_x constraint"),
         "expected mirror conflict, got: {err}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Tangent constraint
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tangent_horizontal_line_resolves_y_above_center() {
+    // Horizontal line tangent to circle centered at (5, 0), r=3, side: :above
+    // → line.y must be 3. Box profile 10×3×2 ⇒ volume 60.
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               c  = point(5, 0)
+               p1 = point(0, 0)
+               p2 = point(10, 0)
+               p3 = point(10, nil)
+               p4 = point(0, nil)
+               horizontal p3, p4
+               vertical p1, p4
+               vertical p2, p3
+               tangent p3, p4, c, 3, side: :above
+               line p1, p2
+               line p2, p3
+               line p3, p4
+               line p4, p1
+             end
+             profile.extrude(2).volume",
+        )
+        .unwrap();
+    let volume: f64 = result.trim().parse().expect("expected a volume");
+    assert!(
+        (volume - 60.0).abs() < 1.0,
+        "expected 10×3×2 = 60, got {volume}"
+    );
+}
+
+#[test]
+fn tangent_vertical_line_resolves_x_to_right_of_center() {
+    // Vertical line tangent to circle centered at (0, 0), r=4, side: :right
+    // → line.x must be 4. Box profile 4×5×2 ⇒ volume 40.
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               c  = point(0, 0)
+               p1 = point(0, 0)
+               p2 = point(nil, 0)
+               p3 = point(nil, 5)
+               p4 = point(0, 5)
+               horizontal p1, p2
+               horizontal p3, p4
+               vertical p2, p3
+               tangent p2, p3, c, 4, side: :right
+               line p1, p2
+               line p2, p3
+               line p3, p4
+               line p4, p1
+             end
+             profile.extrude(2).volume",
+        )
+        .unwrap();
+    let volume: f64 = result.trim().parse().expect("expected a volume");
+    assert!(
+        (volume - 40.0).abs() < 1.0,
+        "expected 4×5×2 = 40, got {volume}"
+    );
+}
+
+#[test]
+fn tangent_constraint_verifies_resolved_geometry() {
+    // All coords known, distance matches radius — should be accepted (no error).
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               c  = point(5, 0)
+               p1 = point(0, 0)
+               p2 = point(10, 0)
+               p3 = point(10, 3)
+               p4 = point(0, 3)
+               tangent p3, p4, c, 3
+               line p1, p2
+               line p2, p3
+               line p3, p4
+               line p4, p1
+             end
+             profile.extrude(2).volume",
+        )
+        .unwrap();
+    let volume: f64 = result.trim().parse().expect("expected a volume");
+    assert!((volume - 60.0).abs() < 1.0, "got {volume}");
+}
+
+#[test]
+fn conflicting_tangent_constraint_reports_error() {
+    // Line at y=2, center at (5,0), radius 3 ⇒ distance 2 ≠ 3 ⇒ conflict.
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval(
+            "sketch do
+               c  = point(5, 0)
+               p1 = point(0, 2)
+               p2 = point(10, 2)
+               tangent p1, p2, c, 3
+               line p1, p2
+               line p2, point(10, 5)
+               line point(10, 5), p1
+             end",
+        )
+        .unwrap_err();
+    assert!(
+        err.contains("conflicting tangent constraint"),
+        "expected tangent conflict, got: {err}"
+    );
+}
+
+#[test]
+fn tangent_rejects_non_positive_radius() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval(
+            "sketch do
+               c  = point(0, 0)
+               a  = point(0, 5)
+               b  = point(10, 5)
+               tangent a, b, c, 0
+               line a, b
+               line b, point(10, 0)
+               line point(10, 0), a
+             end",
+        )
+        .unwrap_err();
+    assert!(err.contains("must be > 0"), "got: {err}");
+}
+
+#[test]
+fn tangent_rejects_invalid_side() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval(
+            "sketch do
+               c  = point(0, 0)
+               a  = point(0, 5)
+               b  = point(10, 5)
+               tangent a, b, c, 3, side: :outside
+             end",
+        )
+        .unwrap_err();
+    assert!(
+        err.contains("side:"),
+        "expected side validation error, got: {err}"
     );
 }
