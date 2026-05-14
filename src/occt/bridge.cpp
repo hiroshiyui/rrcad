@@ -107,6 +107,7 @@
 #include <cmath>
 #include <limits>
 #include <set>
+#include <sstream>
 #include <string>
 
 // --- OCCT: Bézier surface patch ---
@@ -3134,6 +3135,17 @@ static void scale_polylines(DrawingPolylines& polylines, double scale) {
     }
 }
 
+static std::string format_measurement(double value) {
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(3) << value;
+    std::string s = oss.str();
+    while (s.size() > 1 && s.find('.') != std::string::npos && s.back() == '0')
+        s.pop_back();
+    if (!s.empty() && s.back() == '.')
+        s.pop_back();
+    return s;
+}
+
 static std::vector<DrawingMark> collect_center_marks(const OcctShape& shape,
                                                      const std::string& view) {
     std::vector<DrawingMark> marks;
@@ -3248,7 +3260,7 @@ static void include_placed_bounds(double& xmin, double& xmax, double& ymin, doub
 static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double offset_x,
                            double offset_y, bool hidden, bool center_marks, bool dimensions,
                            bool sheet_mode, const char* width_axis = nullptr,
-                           const char* height_axis = nullptr) {
+                           const char* height_axis = nullptr, double tolerance = 0.0) {
     auto write_polyline_points = [&](const DrawingPolyline& polyline) {
         for (auto& [x, y] : polyline) {
             f << (x + offset_x) << "," << (-(y + offset_y)) << " ";
@@ -3346,7 +3358,10 @@ static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double
           << "\" text-anchor=\"middle\" fill=\"#6b7280\">";
         if (axis_labels)
             f << width_axis << " ";
-        f << width << "</text>\n";
+        f << format_measurement(width);
+        if (tolerance > 0.0)
+            f << " \xC2\xB1" << format_measurement(tolerance);
+        f << "</text>\n";
         f << "    <line x1=\"" << dim_x << "\" y1=\"" << dim_ymin << "\" x2=\"" << dim_x
           << "\" y2=\"" << dim_ymax << "\"/>\n";
         f << "    <line x1=\"" << (dim_x - tick) << "\" y1=\"" << (dim_ymin + tick)
@@ -3358,7 +3373,10 @@ static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double
           << (dim_x - label_offset) << " " << hy << ")\">";
         if (axis_labels)
             f << height_axis << " ";
-        f << height << "</text>\n";
+        f << format_measurement(height);
+        if (tolerance > 0.0)
+            f << " \xC2\xB1" << format_measurement(tolerance);
+        f << "</text>\n";
         f << "  </g>\n";
     }
 }
@@ -3366,7 +3384,7 @@ static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double
 static void write_dxf_view(std::ofstream& f, const DrawingViewData& view, double offset_x,
                            double offset_y, bool hidden, bool center_marks, bool dimensions,
                            bool sheet_mode, const char* width_axis = nullptr,
-                           const char* height_axis = nullptr) {
+                           const char* height_axis = nullptr, double tolerance = 0.0) {
     auto write_lines = [&](const DrawingPolylines& polylines, const char* layer) {
         for (auto& pts : polylines) {
             for (std::size_t i = 0; i + 1 < pts.size(); ++i) {
@@ -3478,10 +3496,12 @@ static void write_dxf_view(std::ofstream& f, const DrawingViewData& view, double
         f << " 31\n0.0\n";
 
         const bool axis_labels = sheet_mode && width_axis && height_axis;
-        write_text(hx, dim_y - label_offset,
-                   axis_labels ? std::string(width_axis) + " " + std::to_string(width)
-                               : std::to_string(width),
-                   0.0);
+        std::string width_label = format_measurement(width);
+        if (tolerance > 0.0)
+            width_label += std::string(" ±") + format_measurement(tolerance);
+        if (axis_labels)
+            width_label = std::string(width_axis) + " " + width_label;
+        write_text(hx, dim_y - label_offset, width_label, 0.0);
 
         f << "  0\nLINE\n";
         f << "  8\nDIMENSION\n";
@@ -3500,16 +3520,18 @@ static void write_dxf_view(std::ofstream& f, const DrawingViewData& view, double
         f << " 21\n" << (dim_ymax - tick) << "\n";
         f << " 31\n0.0\n";
 
-        write_text(dim_x - label_offset, hy,
-                   axis_labels ? std::string(height_axis) + " " + std::to_string(height)
-                               : std::to_string(height),
-                   -90.0);
+        std::string height_label = format_measurement(height);
+        if (tolerance > 0.0)
+            height_label += std::string(" ±") + format_measurement(tolerance);
+        if (axis_labels)
+            height_label = std::string(height_axis) + " " + height_label;
+        write_text(dim_x - label_offset, hy, height_label, -90.0);
     }
 }
 
 static void write_svg_title_block(std::ofstream& f, const DrawingCanvasBounds& canvas,
                                   const std::string& sheet_name, const std::string& view_name,
-                                  bool sheet_mode, double scale) {
+                                  bool sheet_mode, double scale, double tolerance) {
     const double block_w = 42.0;
     const double block_h = 18.0;
     const double x0 = canvas.xmax - block_w - 4.0;
@@ -3531,12 +3553,16 @@ static void write_svg_title_block(std::ofstream& f, const DrawingCanvasBounds& c
       << "\" fill=\"#111827\">" << (sheet_mode ? sheet_name : view_name) << "</text>\n";
     f << "    <text x=\"" << (x0 + 2.0) << "\" y=\"" << (-(y0 + 1.0))
       << "\" fill=\"#111827\">scale 1:" << (1.0 / scale) << "</text>\n";
+    if (tolerance > 0.0) {
+        f << "    <text x=\"" << (x0 + 22.0) << "\" y=\"" << (-(y0 + 1.0))
+          << "\" fill=\"#111827\">tol \xC2\xB1" << format_measurement(tolerance) << "</text>\n";
+    }
     f << "  </g>\n";
 }
 
 static void write_dxf_title_block(std::ofstream& f, const DrawingCanvasBounds& canvas,
                                   const std::string& sheet_name, const std::string& view_name,
-                                  bool sheet_mode, double scale) {
+                                  bool sheet_mode, double scale, double tolerance) {
     const double block_w = 42.0;
     const double block_h = 18.0;
     const double x0 = canvas.xmax - block_w - 4.0;
@@ -3573,6 +3599,8 @@ static void write_dxf_title_block(std::ofstream& f, const DrawingCanvasBounds& c
     text(x0 + 2.0, row2 - 1.0, "rrcad");
     text(x0 + 2.0, row1 - 1.0, sheet_mode ? sheet_name : view_name);
     text(x0 + 2.0, y0 + 1.0, std::string("scale 1:") + std::to_string(1.0 / scale));
+    if (tolerance > 0.0)
+        text(x0 + 22.0, y0 + 1.0, std::string("tol ±") + format_measurement(tolerance));
 }
 
 // Project the shape onto the chosen view plane, return visible and hidden
@@ -3625,7 +3653,8 @@ void export_svg(const OcctShape& shape,
                 bool hidden,
                 bool center_marks,
                 bool dimensions,
-                bool title_block) {
+                bool title_block,
+                double tolerance) {
     try {
         std::string path_str(path.data(), path.size());
         std::string view_str(view.data(), view.size());
@@ -3676,13 +3705,13 @@ void export_svg(const OcctShape& shape,
             f << " viewBox=\"" << vb_x << " " << vb_y << " " << w << " " << h << "\">\n";
             f << "  <!-- Generated by rrcad — sheet view, scale: " << scale << " -->\n";
             write_svg_view(f, top_view, top_dx, top_dy, hidden, center_marks, dimensions, true,
-                           "X", "Y");
+                           "X", "Y", tolerance);
             write_svg_view(f, front_view, front_dx, front_dy, hidden, center_marks, dimensions,
-                           true, "X", "Z");
+                           true, "X", "Z", tolerance);
             write_svg_view(f, side_view, side_dx, side_dy, hidden, center_marks, dimensions, true,
-                           "Y", "Z");
+                           "Y", "Z", tolerance);
             if (title_block)
-                write_svg_title_block(f, canvas, "sheet", view_str, true, scale);
+                write_svg_title_block(f, canvas, "sheet", view_str, true, scale, tolerance);
             f << "</svg>\n";
             if (!f.good())
                 throw std::runtime_error("export_svg: write error on file: " + path_str);
@@ -3709,9 +3738,10 @@ void export_svg(const OcctShape& shape,
         f << " viewBox=\"" << vb_x << " " << vb_y << " " << w << " " << h << "\">\n";
         f << "  <!-- Generated by rrcad — view: " << view_str << ", scale: " << scale
           << " -->\n";
-        write_svg_view(f, single_view, 0.0, 0.0, hidden, center_marks, dimensions, false);
+        write_svg_view(f, single_view, 0.0, 0.0, hidden, center_marks, dimensions, false,
+                       nullptr, nullptr, tolerance);
         if (title_block)
-            write_svg_title_block(f, canvas, "sheet", view_str, false, scale);
+            write_svg_title_block(f, canvas, "sheet", view_str, false, scale, tolerance);
         f << "</svg>\n";
         if (!f.good())
             throw std::runtime_error("export_svg: write error on file: " + path_str);
@@ -3735,7 +3765,8 @@ void export_dxf(const OcctShape& shape,
                 bool hidden,
                 bool center_marks,
                 bool dimensions,
-                bool title_block) {
+                bool title_block,
+                double tolerance) {
     try {
         std::string path_str(path.data(), path.size());
         std::string view_str(view.data(), view.size());
@@ -3779,13 +3810,13 @@ void export_dxf(const OcctShape& shape,
             f << "  0\nSECTION\n  2\nENTITIES\n";
 
             write_dxf_view(f, top_view, top_dx, top_dy, hidden, center_marks, dimensions, true,
-                           "X", "Y");
+                           "X", "Y", tolerance);
             write_dxf_view(f, front_view, front_dx, front_dy, hidden, center_marks, dimensions,
-                           true, "X", "Z");
+                           true, "X", "Z", tolerance);
             write_dxf_view(f, side_view, side_dx, side_dy, hidden, center_marks, dimensions, true,
-                           "Y", "Z");
+                           "Y", "Z", tolerance);
             if (title_block)
-                write_dxf_title_block(f, canvas, "sheet", view_str, true, scale);
+                write_dxf_title_block(f, canvas, "sheet", view_str, true, scale, tolerance);
 
             f << "  0\nENDSEC\n  0\nEOF\n";
             if (!f.good())
@@ -3970,7 +4001,7 @@ void export_dxf(const OcctShape& shape,
             write_text(dim_x - label_offset, hy, std::to_string(height), -90.0);
         }
         if (title_block)
-            write_dxf_title_block(f, canvas, "sheet", view_str, false, scale);
+        write_dxf_title_block(f, canvas, "sheet", view_str, false, scale, tolerance);
 
         f << "  0\nENDSEC\n  0\nEOF\n";
         if (!f.good())

@@ -139,14 +139,15 @@ fn svg_sheet_dimensions_show_axis_labels() {
     let mut vm = MrubyVm::new();
     let out = tmp("rrcad_test_sheet_dimensions.svg");
     vm.eval(&format!(
-        "box(20,10,5).export('{}', view: :sheet, dimensions: true)",
+        "box(20,10,5).export('{}', view: :sheet, dimensions: true, tolerance: 0.1)",
         out.display()
     ))
     .unwrap();
     let content = std::fs::read_to_string(&out).unwrap();
     assert!(
-        content.contains(">X ") && content.contains(">Y ") && content.contains(">Z "),
-        "sheet dimensions should label X/Y/Z axes"
+        content.contains("±0.1") && content.contains(">X ") && content.contains(">Y ")
+            && content.contains(">Z "),
+        "sheet dimensions should label X/Y/Z axes and tolerances"
     );
 }
 
@@ -368,15 +369,15 @@ fn dxf_sheet_dimensions_show_axis_labels() {
     let mut vm = MrubyVm::new();
     let out = tmp("rrcad_test_sheet_dimensions.dxf");
     vm.eval(&format!(
-        "box(20,10,5).export('{}', view: :sheet, dimensions: true)",
+        "box(20,10,5).export('{}', view: :sheet, dimensions: true, tolerance: 0.1)",
         out.display()
     ))
     .unwrap();
     let content = std::fs::read_to_string(&out).unwrap();
     assert!(
-        content.contains("\n  1\nX ") && content.contains("\n  1\nY ")
-            && content.contains("\n  1\nZ "),
-        "sheet dimensions should label X/Y/Z axes"
+        content.contains("±0.1") && content.contains("\n  1\nX ")
+            && content.contains("\n  1\nY ") && content.contains("\n  1\nZ "),
+        "sheet dimensions should label X/Y/Z axes and tolerances"
     );
 }
 

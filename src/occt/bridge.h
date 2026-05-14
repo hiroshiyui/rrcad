@@ -452,7 +452,8 @@ void export_svg(const OcctShape& shape,
                 bool hidden,
                 bool center_marks,
                 bool dimensions,
-                bool title_block);
+                bool title_block,
+                double tolerance);
 void export_dxf(const OcctShape& shape,
                 rust::Str path,
                 rust::Str view,
@@ -460,7 +461,8 @@ void export_dxf(const OcctShape& shape,
                 bool hidden,
                 bool center_marks,
                 bool dimensions,
-                bool title_block);
+                bool title_block,
+                double tolerance);
 
 // --- Phase 8 Tier 5: Advanced composition ---
 

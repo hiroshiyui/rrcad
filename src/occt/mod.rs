@@ -277,6 +277,7 @@ mod ffi {
             center_marks: bool,
             dimensions: bool,
             title_block: bool,
+            tolerance: f64,
         ) -> Result<()>;
         fn export_dxf(
             shape: &OcctShape,
@@ -287,6 +288,7 @@ mod ffi {
             center_marks: bool,
             dimensions: bool,
             title_block: bool,
+            tolerance: f64,
         ) -> Result<()>;
 
         // Phase 8 Tier 5: Advanced composition.
@@ -1240,6 +1242,7 @@ impl Shape {
         center_marks: bool,
         dimensions: bool,
         title_block: bool,
+        tolerance: f64,
     ) -> Result<(), String> {
         ffi::export_svg(
             &self.inner,
@@ -1250,10 +1253,11 @@ impl Shape {
             center_marks,
             dimensions,
             title_block,
+            tolerance,
         )
         .map_err(|e| {
             format!(
-                "export_svg({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}) on {} failed: {e}",
+                "export_svg({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, tolerance: {tolerance}) on {} failed: {e}",
                 summarize(self)
             )
         })
@@ -1274,6 +1278,7 @@ impl Shape {
         center_marks: bool,
         dimensions: bool,
         title_block: bool,
+        tolerance: f64,
     ) -> Result<(), String> {
         ffi::export_dxf(
             &self.inner,
@@ -1284,10 +1289,11 @@ impl Shape {
             center_marks,
             dimensions,
             title_block,
+            tolerance,
         )
         .map_err(|e| {
             format!(
-                "export_dxf({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}) on {} failed: {e}",
+                "export_dxf({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, tolerance: {tolerance}) on {} failed: {e}",
                 summarize(self)
             )
         })
