@@ -6,7 +6,7 @@
 
 ## Build, Test, and Development Commands
 
-Use `/bib/zsh` when invoking shell commands for this workspace.
+Use `/bin/zsh` when invoking shell commands for this workspace.
 
 - `cargo build`: builds Rust, the C shim, OCCT bridge, and `vendor/mruby` if needed.
 - `cargo run`: starts the interactive REPL.
