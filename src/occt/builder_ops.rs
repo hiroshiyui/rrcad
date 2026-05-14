@@ -115,15 +115,17 @@ impl Shape {
                     vec![self.feature.clone(), path.feature.clone()],
                 )
             })
-            .map_err(|e| self.fail_with_debug(
-                format!(
-                    "path_pattern(shape={}, path={}, n={n}) failed: {e}",
-                    summarize(self),
-                    summarize(path)
-                ),
-                "path_pattern",
-                &[("input", self), ("path", path)],
-            ))
+            .map_err(|e| {
+                self.fail_with_debug(
+                    format!(
+                        "path_pattern(shape={}, path={}, n={n}) failed: {e}",
+                        summarize(self),
+                        summarize(path)
+                    ),
+                    "path_pattern",
+                    &[("input", self), ("path", path)],
+                )
+            })
     }
 
     pub fn sweep_guide(&self, path: &Shape, guide: &Shape) -> Result<Shape, String> {
