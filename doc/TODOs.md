@@ -244,9 +244,15 @@ for failed operations.
 marks, hidden-line styles, multiple views on a sheet, title-block metadata, and
 explicit drawing scale selection.
 
-**CAM / 3-D printing checks:** Add manufacturability reports for overhangs,
-minimum wall thickness, unsupported islands, hole orientation, draft analysis,
-bounding boxes, and rough material estimates.
+**CAM / 3-D printing checks ◐ STARTED:** Initial additive helpers landed
+in the Ruby prelude: `mass_estimate(part, density:)` computes a rough mass
+in grams from `part.volume × density / 1000` (PLA default 1.24 g/cm³),
+and `print_volume_check(part, x:, y:, z:)` reports `fits` plus per-axis
+overflow against a rectangular build volume by comparing `bounding_box`
+extents. Minimum wall thickness is already exposed via `Shape#min_thickness`
+(Phase 8 Tier 3). Remaining work needing new bridge APIs: overhang faces
+(face-normal queries), unsupported islands (slice-based connectivity),
+hole orientation, and draft analysis.
 
 ---
 

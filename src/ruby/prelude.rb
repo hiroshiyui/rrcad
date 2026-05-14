@@ -1610,6 +1610,45 @@ module Kernel
     shank.fuse(head)
   end
 
+  # mass_estimate(part, density: 1.24) — rough mass estimate in grams.
+  # Volume is the OCCT solid volume in mm³; density is in g/cm³ (1 cm³ =
+  # 1000 mm³). Typical 3-D printing material densities: PLA 1.24, ABS 1.04,
+  # PETG 1.27, standard resin 1.10. Useful for material/cost estimates;
+  # ignores infill and walls (treats the part as a solid block).
+  def mass_estimate(part, density: 1.24)
+    unless density.is_a?(Numeric) && density > 0
+      raise ArgumentError, "mass_estimate density must be > 0 (g/cm³)"
+    end
+    part.volume * density / 1000.0
+  end
+
+  # print_volume_check(part, x:, y:, z:) — verify that +part+ fits within
+  # a rectangular build volume of +x+ × +y+ × +z+ millimetres.
+  # Compares bounding-box extents (orientation-insensitive); the part is
+  # assumed to be pre-oriented by the caller.
+  # Returns a Hash:
+  #   fits        → Boolean
+  #   dx, dy, dz  → part extents in mm
+  #   overflow_x, overflow_y, overflow_z → mm by which the part exceeds the
+  #                                        build volume on each axis (0 if it fits)
+  def print_volume_check(part, x:, y:, z:)
+    [[x, "x"], [y, "y"], [z, "z"]].each do |v, label|
+      unless v.is_a?(Numeric) && v > 0
+        raise ArgumentError, "print_volume_check #{label} must be > 0"
+      end
+    end
+    bb = part.bounding_box
+    dx, dy, dz = bb[:dx], bb[:dy], bb[:dz]
+    ox = [dx - x, 0.0].max
+    oy = [dy - y, 0.0].max
+    oz = [dz - z, 0.0].max
+    {
+      fits: ox.zero? && oy.zero? && oz.zero?,
+      dx: dx, dy: dy, dz: dz,
+      overflow_x: ox, overflow_y: oy, overflow_z: oz
+    }
+  end
+
   def hardware_diameter(size, table, label)
     if size.is_a?(Numeric)
       validate_positive_dimension(size, "#{label} diameter")
