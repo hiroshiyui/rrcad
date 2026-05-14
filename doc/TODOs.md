@@ -255,10 +255,11 @@ hover IDs, click-to-print selectors, exploded assembly view, and debug overlays
 for failed operations.
 
 **2-D drawing improvements ◐ STARTED:** SVG and DXF output now accept explicit
-`scale:` selection for projected drawing geometry. SVG supports `hidden: true`
-dashed hidden-line output and `center_marks: true` cylinder centres; DXF writes
-hidden edges on a `HIDDEN` layer. Remaining work: dimensions, multiple views on
-a sheet, title-block metadata, and richer scale selection.
+`scale:` selection for projected drawing geometry. Both support
+`center_marks: true` cylinder centres; SVG also supports `hidden: true` dashed
+hidden-line output and DXF writes hidden edges on a `HIDDEN` layer. Remaining
+work: dimensions, multiple views on a sheet, title-block metadata, and richer
+scale selection.
 
 **CAM / 3-D printing checks ◐ STARTED:** Additive helpers landed in the
 Ruby prelude: `mass_estimate(part, density:)` computes a rough mass in

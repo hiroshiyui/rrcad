@@ -380,6 +380,7 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
     view: *const c_char,
     scale: f64,
     hidden: i32,
+    center_marks: i32,
     error_out: *mut *const c_char,
 ) {
     unsafe { *error_out = std::ptr::null() };
@@ -393,7 +394,8 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
     let view_str = unsafe { std::ffi::CStr::from_ptr(view) }
         .to_str()
         .unwrap_or("top");
-    if let Err(e) = shape.export_dxf(&safe_str, view_str, scale, hidden != 0) {
+    if let Err(e) = shape.export_dxf(&safe_str, view_str, scale, hidden != 0, center_marks != 0)
+    {
         unsafe { set_err(error_out, &e) };
     }
 }

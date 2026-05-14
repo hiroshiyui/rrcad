@@ -521,6 +521,7 @@ part.export("drawing.svg", view: :side, scale: 2.0)   # side view at 2:1
 part.export("drawing.svg", hidden: true)              # dashed hidden lines
 part.export("drawing.svg", center_marks: true)       # cylinder centres
 part.export("drawing.dxf", scale: 0.5, hidden: true)  # DXF at 1:2 with HIDDEN layer
+part.export("drawing.dxf", center_marks: true)       # DXF centre marks
 ```
 
 **GLB / glTF / OBJ tessellation quality:**

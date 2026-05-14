@@ -296,6 +296,35 @@ fn dxf_rejects_non_positive_scale() {
 }
 
 #[test]
+fn dxf_center_marks_adds_center_layer() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_center_marks.dxf");
+    vm.eval(&format!(
+        "cylinder(5,20).export('{}', center_marks: true)",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("\nCENTER\n") && content.contains("  0\nLINE\n"),
+        "center_marks: true should add center-layer DXF lines"
+    );
+}
+
+#[test]
+fn dxf_center_marks_off_by_default() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_no_center_marks.dxf");
+    vm.eval(&format!("cylinder(5,20).export('{}')", out.display()))
+        .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        !content.contains("\nCENTER\n"),
+        "default DXF export should not include center marks"
+    );
+}
+
+#[test]
 fn dxf_hidden_option_adds_hidden_layer() {
     let mut vm = MrubyVm::new();
     let out = tmp("rrcad_test_hidden.dxf");

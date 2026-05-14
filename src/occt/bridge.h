@@ -441,8 +441,8 @@ void export_obj(const OcctShape& shape, rust::Str path, double linear_deflection
 // projected drawing geometry; `1.0` preserves model units. `hidden` includes
 // hidden HLR edges as dashed secondary geometry. `center_marks` adds crosshair
 // marks for cylindrical faces aligned to the view axis.
-// DXF uses Y-up coordinates (standard CAD convention). `scale` and `hidden`
-// have the same meaning as SVG scale / hidden.
+// DXF uses Y-up coordinates (standard CAD convention). `scale`, `hidden`,
+// and `center_marks` have the same meaning as SVG scale / hidden / centre marks.
 void export_svg(const OcctShape& shape,
                 rust::Str path,
                 rust::Str view,
@@ -453,7 +453,8 @@ void export_dxf(const OcctShape& shape,
                 rust::Str path,
                 rust::Str view,
                 double scale,
-                bool hidden);
+                bool hidden,
+                bool center_marks);
 
 // --- Phase 8 Tier 5: Advanced composition ---
 

@@ -3316,7 +3316,8 @@ void export_dxf(const OcctShape& shape,
                 rust::Str path,
                 rust::Str view,
                 double scale,
-                bool hidden) {
+                bool hidden,
+                bool center_marks) {
     try {
         std::string path_str(path.data(), path.size());
         std::string view_str(view.data(), view.size());
@@ -3327,6 +3328,12 @@ void export_dxf(const OcctShape& shape,
         auto projection = hlr_project(shape, view_str);
         scale_polylines(projection.visible, scale);
         scale_polylines(projection.hidden, scale);
+        auto marks = center_marks ? collect_center_marks(shape, view_str) : std::vector<DrawingMark>{};
+        for (auto& mark : marks) {
+            mark.x *= scale;
+            mark.y *= scale;
+            mark.size *= scale;
+        }
 
         std::ofstream f(path_str);
         if (!f.is_open())
@@ -3365,6 +3372,28 @@ void export_dxf(const OcctShape& shape,
         write_lines(projection.visible, "0");
         if (hidden)
             write_lines(projection.hidden, "HIDDEN");
+        if (center_marks && !marks.empty()) {
+            auto write_center_lines = [&](const DrawingMark& mark) {
+                f << "  0\nLINE\n";
+                f << "  8\nCENTER\n";
+                f << " 10\n" << (mark.x - mark.size) << "\n";
+                f << " 20\n" << mark.y << "\n";
+                f << " 30\n0.0\n";
+                f << " 11\n" << (mark.x + mark.size) << "\n";
+                f << " 21\n" << mark.y << "\n";
+                f << " 31\n0.0\n";
+                f << "  0\nLINE\n";
+                f << "  8\nCENTER\n";
+                f << " 10\n" << mark.x << "\n";
+                f << " 20\n" << (mark.y - mark.size) << "\n";
+                f << " 30\n0.0\n";
+                f << " 11\n" << mark.x << "\n";
+                f << " 21\n" << (mark.y + mark.size) << "\n";
+                f << " 31\n0.0\n";
+            };
+            for (const auto& mark : marks)
+                write_center_lines(mark);
+        }
 
         f << "  0\nENDSEC\n  0\nEOF\n";
         if (!f.good())
