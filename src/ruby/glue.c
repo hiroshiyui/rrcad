@@ -161,7 +161,7 @@ extern void rrcad_shape_export_obj(void* ptr, const char* path, const char** err
 
 /* Phase 8 Tier 4 — SVG / DXF 2-D drawing output */
 extern void rrcad_shape_export_svg(void* ptr, const char* path, const char* view,
-                                   const char** error_out);
+                                   double scale, const char** error_out);
 extern void rrcad_shape_export_dxf(void* ptr, const char* path, const char* view,
                                    const char** error_out);
 
@@ -345,7 +345,7 @@ static mrb_value mrb_rrcad_shape_inspect(mrb_state* mrb, mrb_value self) {
     return mrb_str_new_cstr(mrb, "#<Shape>");
 }
 
-/* .export("path" [, view: :top|:front|:side]) — dispatches by file extension:
+/* .export("path" [, view: :top|:front|:side, scale: 1.0]) — dispatches by file extension:
  *   .step / .stp  → STEP AP203
  *   .stl          → ASCII STL
  *   .glb          → binary glTF (GLB)
@@ -367,13 +367,20 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     void* ptr = DATA_PTR(self);
     require_native_ptr(mrb, ptr);
 
-    /* Extract optional view: keyword (default "top"). */
+    /* Extract optional view: keyword (default "top") and drawing scale. */
     const char* view = "top";
+    double scale = 1.0;
     if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
         mrb_value vv = mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "view")),
                                       mrb_nil_value());
         if (mrb_symbol_p(vv))
             view = mrb_sym_name(mrb, mrb_symbol(vv));
+        mrb_value sv = mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "scale")),
+                                      mrb_float_value(mrb, 1.0));
+        if (mrb_float_p(sv))
+            scale = (double)mrb_float(sv);
+        else if (mrb_integer_p(sv))
+            scale = (double)mrb_integer(sv);
     }
 
     /* Find the last '.' to determine the extension. */
@@ -389,7 +396,7 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     } else if (dot && (strcasecmp(dot, ".obj") == 0)) {
         rrcad_shape_export_obj(ptr, path, &err);
     } else if (dot && (strcasecmp(dot, ".svg") == 0)) {
-        rrcad_shape_export_svg(ptr, path, view, &err);
+        rrcad_shape_export_svg(ptr, path, view, scale, &err);
     } else if (dot && (strcasecmp(dot, ".dxf") == 0)) {
         rrcad_shape_export_dxf(ptr, path, view, &err);
     } else {

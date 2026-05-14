@@ -362,7 +362,7 @@ let section = Shape::make_box(10.0, 10.0, 10.0)?.slice("xy", 5.0)?;
 | `.export_gltf(path: &str, linear_deflection: f64) -> Result<()>` | glTF 2.0 (text JSON + companion `.bin`). `linear_deflection` controls tessellation quality (e.g. `0.1` for 0.1 mm). |
 | `.export_glb(path: &str, linear_deflection: f64) -> Result<()>` | Binary glTF (GLB). Single self-contained file; used by the live preview server. |
 | `.export_obj(path: &str, linear_deflection: f64) -> Result<()>` | Wavefront OBJ text format via `RWObj_CafWriter` (`TKDEOBJ`). Writes a companion `.mtl` material file alongside the `.obj`. |
-| `.export_svg(path: &str, view: &str) -> Result<()>` | SVG 2-D drawing. `view` is `"top"` (default), `"front"`, or `"side"`. Uses `HLRBRep_PolyAlgo` + `HLRBRep_PolyHLRToShape`. |
+| `.export_svg(path: &str, view: &str, scale: f64) -> Result<()>` | SVG 2-D drawing. `view` is `"top"` (default), `"front"`, or `"side"`; `scale` defaults to `1.0` and must be positive. Uses `HLRBRep_PolyAlgo` + `HLRBRep_PolyHLRToShape`. |
 | `.export_dxf(path: &str, view: &str) -> Result<()>` | DXF R12 ASCII drawing. Same `view` options as `export_svg`. |
 
 ### Phase 8 Tier 5 — Advanced Composition
@@ -708,7 +708,7 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `.normal` (on a Face) | Outward unit normal as `[nx, ny, nz]`. Sampled at the face's parameter-space midpoint via `BRepLProp_SLProps` and flipped when the face orientation is `TopAbs_REVERSED` so the vector points out of the parent solid. Raises if the shape is not a face or the normal is undefined at the sample point. |
 | `.cylinder_axis` (on a Face) | For a cylindrical face, returns `{origin: [ox,oy,oz], axis: [ax,ay,az], radius: r}` via `BRepAdaptor_Surface::Cylinder()`. Raises if the shape is not a face or the underlying surface is not a cylinder. |
 | `.export("out.step")` | Write file; format determined by extension: `.step`/`.stp` → STEP, `.stl` → STL, `.glb` → GLB, `.gltf` → glTF, `.obj` → OBJ, `.svg` → SVG 2-D drawing, `.dxf` → DXF R12 2-D drawing |
-| `.export("out.svg", view: :top\|:front\|:side)` | SVG 2-D drawing via `HLRBRep_PolyAlgo` hidden-line removal. `:top` (default) looks down −Z; `:front` looks along −Y; `:side` looks along +X. Outputs `<polyline>` elements with Y-down SVG coordinates. |
+| `.export("out.svg", view: :top\|:front\|:side, scale: 1.0)` | SVG 2-D drawing via `HLRBRep_PolyAlgo` hidden-line removal. `:top` (default) looks down −Z; `:front` looks along −Y; `:side` looks along +X. `scale:` multiplies drawing geometry and must be positive. Outputs `<polyline>` elements with Y-down SVG coordinates. |
 | `.export("out.dxf", view: :top\|:front\|:side)` | DXF R12 ASCII drawing via the same HLR pipeline. Outputs `LINE` entities with Y-up CAD coordinates. |
 | `fragment([a, b, c])` | General Boolean fragment: split all shapes at their mutual intersection boundaries. Returns a Compound of all non-overlapping pieces. Uses `BRepAlgoAPI_BuilderAlgo`. |
 | `.convex_hull` | 3-D convex hull of the shape's tessellated mesh vertices. Uses an incremental QuickHull algorithm; returns a BRep solid. |

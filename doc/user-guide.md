@@ -515,9 +515,9 @@ part.color(0.8, 0.3, 0.1)   # sRGB — written to glTF/GLB/OBJ
 **SVG / DXF view options:**
 
 ```ruby
-part.export("drawing.svg")                # top view (default)
-part.export("drawing.svg", view: :front)  # front view
-part.export("drawing.svg", view: :side)   # side view
+part.export("drawing.svg")                            # top view (default)
+part.export("drawing.svg", view: :front)              # front view
+part.export("drawing.svg", view: :side, scale: 2.0)   # side view at 2:1
 ```
 
 **GLB / glTF / OBJ tessellation quality:**

@@ -13,6 +13,13 @@ fn tmp(name: &str) -> std::path::PathBuf {
     dir.join(name)
 }
 
+fn svg_width(path: &std::path::Path) -> f64 {
+    let content = std::fs::read_to_string(path).unwrap();
+    let start = content.find(" width=\"").expect("SVG width attribute") + " width=\"".len();
+    let end = content[start..].find('"').expect("SVG width terminator") + start;
+    content[start..end].parse().expect("numeric SVG width")
+}
+
 // ---------------------------------------------------------------------------
 // SVG export
 // ---------------------------------------------------------------------------
@@ -83,6 +90,44 @@ fn svg_cylinder_top_view() {
     let code = format!("cylinder(5, 20).export('{}')", out.display());
     vm.eval(&code).unwrap();
     assert!(out.exists(), "cylinder SVG was not created");
+}
+
+#[test]
+fn svg_scale_expands_output_geometry() {
+    let mut vm = MrubyVm::new();
+    let normal = tmp("rrcad_test_scale_1.svg");
+    let scaled = tmp("rrcad_test_scale_2.svg");
+    vm.eval(&format!(
+        "box(10,10,10).export('{}', scale: 1.0)",
+        normal.display()
+    ))
+    .unwrap();
+    vm.eval(&format!(
+        "box(10,10,10).export('{}', scale: 2.0)",
+        scaled.display()
+    ))
+    .unwrap();
+
+    assert!(
+        svg_width(&scaled) > svg_width(&normal),
+        "scale: 2.0 should increase SVG drawing width"
+    );
+}
+
+#[test]
+fn svg_rejects_non_positive_scale() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_bad_scale.svg");
+    let err = vm
+        .eval(&format!(
+            "box(10,10,10).export('{}', scale: 0)",
+            out.display()
+        ))
+        .expect_err("scale: 0 should fail");
+    assert!(
+        err.contains("scale") && err.contains("positive"),
+        "expected actionable scale error, got: {err}"
+    );
 }
 
 // ---------------------------------------------------------------------------
