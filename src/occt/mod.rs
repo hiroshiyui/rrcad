@@ -668,9 +668,9 @@ impl FeatureOp {
             | FeatureOp::ImportStl { .. }
             | FeatureOp::Opaque { .. }
             | FeatureOp::DatumPlane { .. }
-            | FeatureOp::BezierPatch { .. }
-            | FeatureOp::RuledSurface
-            | FeatureOp::FillSurface => count == 0,
+            | FeatureOp::BezierPatch { .. } => count == 0,
+            FeatureOp::RuledSurface => count == 2,
+            FeatureOp::FillSurface => count == 1,
             FeatureOp::Translate { .. }
             | FeatureOp::Rotate { .. }
             | FeatureOp::Scale { .. }

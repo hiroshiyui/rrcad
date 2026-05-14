@@ -128,10 +128,12 @@ fn mcp_vm_file_access_methods_undefined() {
 
 #[test]
 fn mcp_vm_no_state_bleed_between_vms() {
-    // Set a global in VM #1.
-    let mut vm1 = make_mcp_vm();
-    vm1.eval("$__secret = 42").unwrap();
-    assert_eq!(vm1.eval("$__secret").unwrap(), "42");
+    {
+        // Set a global in VM #1.
+        let mut vm1 = make_mcp_vm();
+        vm1.eval("$__secret = 42").unwrap();
+        assert_eq!(vm1.eval("$__secret").unwrap(), "42");
+    }
 
     // VM #2 is fresh — the global must not carry over.
     let mut vm2 = make_mcp_vm();

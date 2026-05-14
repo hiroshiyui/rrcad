@@ -649,6 +649,7 @@ sectionOffsetInput.addEventListener('input', () => {
 
 // ── GLTF loader ───────────────────────────────────────────────────────────
 let currentModel = null;
+let loadGeneration = 0;
 const loader = new GLTFLoader();
 const status = document.getElementById('status');
 const propType = document.getElementById('prop-type');
@@ -903,14 +904,16 @@ function setPropertiesUnavailable(text) {
   };
 }
 
-async function loadMetadata() {
+async function loadMetadata(loadToken) {
   try {
     const response = await fetch('/metadata.json?' + Date.now(), { cache: 'no-store' });
+    if (loadToken !== loadGeneration) return;
     if (!response.ok) {
       setPropertiesUnavailable('n/a');
       return;
     }
     const metadata = await response.json();
+    if (loadToken !== loadGeneration) return;
     const type = queryValue(metadata.shape_type);
     const validation = queryValue(metadata.validation);
     const size = metadata.bounding_box && metadata.bounding_box.size;
@@ -930,6 +933,7 @@ async function loadMetadata() {
     propIssue.textContent = inspectionData.error ? String(inspectionData.error) : 'ok';
     document.getElementById('prop-issue').parentElement.classList.toggle('error', !!inspectionData.error);
   } catch (err) {
+    if (loadToken !== loadGeneration) return;
     console.error('rrcad: metadata load error', err);
     setPropertiesUnavailable('error');
   }
@@ -976,11 +980,13 @@ function fitCamera(object) {
 }
 
 function loadModel() {
+  const loadToken = ++loadGeneration;
   status.textContent = 'rrcad preview — loading…';
-  loadMetadata();
+  loadMetadata(loadToken);
   // Cache-bust so the browser always fetches the freshly written GLB.
   loader.load('/model.glb?' + Date.now(),
     gltf => {
+      if (loadToken !== loadGeneration) return;
       if (currentModel) {
         clearMeasurement();
         // Free GPU memory for the outgoing model.  Materials (plastic / flatMaterial /
@@ -1028,6 +1034,7 @@ function loadModel() {
     },
     undefined,
     err => {
+      if (loadToken !== loadGeneration) return;
       console.error('rrcad: GLB load error', err);
       // Surface the underlying message so users can self-diagnose; the OCCT
       // error (if any) is also printed to the rrcad terminal stderr.

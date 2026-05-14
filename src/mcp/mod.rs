@@ -498,13 +498,24 @@ fn worker_eval_json(code: &str) -> Result<Value, String> {
     let bb_clean = bb_str.trim_matches('"');
     let bb: Vec<f64> = bb_clean
         .split(',')
-        .map(|s| s.trim().parse().unwrap_or(0.0))
-        .collect();
+        .map(|s| {
+            s.trim()
+                .parse::<f64>()
+                .map_err(|e| format!("Failed to parse bounding box value '{s}': {e}"))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let volume = volume
+        .parse::<f64>()
+        .map_err(|e| format!("Failed to parse volume '{volume}': {e}"))?;
+    let surface_area = surface_area
+        .parse::<f64>()
+        .map_err(|e| format!("Failed to parse surface area '{surface_area}': {e}"))?;
 
     Ok(json!({
         "shape_type":   shape_type,
-        "volume":       volume.parse::<f64>().unwrap_or(0.0),
-        "surface_area": surface_area.parse::<f64>().unwrap_or(0.0),
+        "volume":       volume,
+        "surface_area": surface_area,
         "bounding_box": {
             "x":  bb.first()    .copied().unwrap_or(0.0),
             "y":  bb.get(1)     .copied().unwrap_or(0.0),
