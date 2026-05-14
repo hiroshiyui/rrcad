@@ -234,22 +234,24 @@ fn draft_faces_excludes_tapered_walls_above_threshold() {
     // so |n·z| = sin(5°) ≈ 0.087.  With min_draft_deg: 1, all sides pass
     // (5° > 1°) → 0 flagged faces.  With min_draft_deg: 10, sides fail
     // (5° < 10°) → 4 flagged.
-    let mut vm = MrubyVm::new();
-    let ok = vm
-        .eval(
+    let ok = {
+        let mut vm = MrubyVm::new();
+        vm.eval(
             "part = rect(20, 20).extrude(10, draft: 5)
              draft_faces(part, min_draft_deg: 1).length",
         )
-        .unwrap();
+        .unwrap()
+    };
     assert_eq!(ok.trim(), "0", "5° drafted box: no flags at 1° threshold");
 
-    let mut vm2 = MrubyVm::new();
-    let strict = vm2
-        .eval(
+    let strict = {
+        let mut vm = MrubyVm::new();
+        vm.eval(
             "part = rect(20, 20).extrude(10, draft: 5)
              draft_faces(part, min_draft_deg: 10).length",
         )
-        .unwrap();
+        .unwrap()
+    };
     assert_eq!(
         strict.trim(),
         "4",
