@@ -1463,55 +1463,89 @@ module Kernel
     solid.cut(thread_tool)
   end
 
-  # clearance_hole(size, depth:) — standard ISO close-clearance hole tool.
-  # +size+ may be a Symbol/String (`:m2`, `:m2_5`, `:m3`, `:m4`, `:m5`) or a
-  # numeric diameter in millimetres. Returns a cylindrical solid suitable for
-  # subtracting with `.cut`.
+  # clearance_hole(size, depth:) — standard close-clearance hole tool.
+  # +size+ may be a Symbol/String naming a metric (`:m2`, `:m2_5`, `:m3`,
+  # `:m4`, `:m5`) or imperial (`:"4-40"`, `:"6-32"`, `:"8-32"`, `:"10-32"`,
+  # `:"10-24"`, `:"1/4-20"`, `:"5/16-18"`, `:"3/8-16"`) fastener, or a
+  # numeric diameter in millimetres. Imperial values follow ASME B18.2.8
+  # close-fit. Returns a cylindrical solid suitable for subtracting with
+  # `.cut`.
   def clearance_hole(size, depth:)
     d = hardware_diameter(size, {
+      # Metric (ISO close-fit)
       "m2" => 2.4,
       "m2_5" => 2.9,
       "m25" => 2.9,
       "m3" => 3.4,
       "m4" => 4.5,
       "m5" => 5.5,
+      # Imperial (ASME B18.2.8 close-fit), values in mm
+      "4_40" => 2.95,
+      "6_32" => 3.66,
+      "8_32" => 4.32,
+      "10_32" => 4.98,
+      "10_24" => 4.98,
+      "1/4_20" => 6.53,
+      "5/16_18" => 8.20,
+      "3/8_16" => 9.80,
     }, "clearance_hole")
     validate_positive_dimension(depth, "clearance_hole depth")
     cylinder(d / 2.0, depth)
   end
 
-  # tap_drill(size, depth:) — standard metric coarse tap-drill hole tool.
-  # +size+ may be a Symbol/String (`:m2`, `:m2_5`, `:m3`, `:m4`, `:m5`) or a
-  # numeric drill diameter in millimetres.
+  # tap_drill(size, depth:) — standard tap-drill hole tool (75% thread).
+  # Metric coarse threads (`:m2`–`:m5`) and imperial UNC sizes (`:"4-40"`,
+  # `:"6-32"`, `:"8-32"`, `:"10-32"`, `:"10-24"`, `:"1/4-20"`, `:"5/16-18"`,
+  # `:"3/8-16"`) are supported, or pass a numeric drill diameter in
+  # millimetres directly.
   def tap_drill(size, depth:)
     d = hardware_diameter(size, {
+      # Metric coarse
       "m2" => 1.6,
       "m2_5" => 2.05,
       "m25" => 2.05,
       "m3" => 2.5,
       "m4" => 3.3,
       "m5" => 4.2,
+      # Imperial UNC/UNF, 75% thread, values in mm
+      "4_40" => 2.26,
+      "6_32" => 2.71,
+      "8_32" => 3.45,
+      "10_32" => 4.04,
+      "10_24" => 3.80,
+      "1/4_20" => 5.11,
+      "5/16_18" => 6.53,
+      "3/8_16" => 7.94,
     }, "tap_drill")
     validate_positive_dimension(depth, "tap_drill depth")
     cylinder(d / 2.0, depth)
   end
 
   # heat_set_insert(size, depth:) — pilot-hole tool for common heat-set inserts.
-  # Diameters are conservative starter values and can be overridden by passing
-  # a numeric diameter in millimetres.
+  # Metric (`:m2`, `:m2_5`, `:m3`) and imperial (`:"4-40"`, `:"6-32"`,
+  # `:"8-32"`, `:"10-32"`, `:"1/4-20"`) starter values are based on commonly
+  # carried Tappex / E-Z LOK pilots; for unusual inserts pass a numeric
+  # diameter in millimetres.
   def heat_set_insert(size, depth:)
     d = hardware_diameter(size, {
       "m2" => 3.2,
       "m2_5" => 3.8,
       "m25" => 3.8,
       "m3" => 4.6,
+      "4_40" => 4.0,
+      "6_32" => 4.5,
+      "8_32" => 5.5,
+      "10_32" => 6.0,
+      "1/4_20" => 7.9,
     }, "heat_set_insert")
     validate_positive_dimension(depth, "heat_set_insert depth")
     cylinder(d / 2.0, depth)
   end
 
   # socket_head_cbore(size, depth:, head_depth:) — counterbore tool sized for
-  # common metric socket-head screws. Use `.cut` after positioning the tool.
+  # common socket-head cap screws.  Metric ISO 4762 (`:m2`–`:m5`) and imperial
+  # ASME B18.3 inch sizes (`:"4-40"`, `:"6-32"`, `:"8-32"`, `:"10-32"`,
+  # `:"10-24"`, `:"1/4-20"`, `:"5/16-18"`, `:"3/8-16"`) are supported.
   def socket_head_cbore(size, depth:, head_depth:)
     spec = hardware_spec(size, {
       "m2" => [2.4, 4.0],
@@ -1520,6 +1554,15 @@ module Kernel
       "m3" => [3.4, 6.0],
       "m4" => [4.5, 8.0],
       "m5" => [5.5, 10.0],
+      # Imperial: [close-clearance, head OD], values in mm
+      "4_40" => [2.95, 4.65],
+      "6_32" => [3.66, 5.74],
+      "8_32" => [4.32, 6.86],
+      "10_32" => [4.98, 7.92],
+      "10_24" => [4.98, 7.92],
+      "1/4_20" => [6.53, 9.53],
+      "5/16_18" => [8.20, 11.91],
+      "3/8_16" => [9.80, 14.29],
     }, "socket_head_cbore")
     validate_positive_dimension(depth, "socket_head_cbore depth")
     validate_positive_dimension(head_depth, "socket_head_cbore head_depth")
@@ -1527,7 +1570,12 @@ module Kernel
   end
 
   # flat_head_csink(size, depth:, angle: 45.0) — countersink tool sized for
-  # common metric flat-head screws. +angle+ is the cone half-angle in degrees.
+  # common flat-head screws. +angle+ is the cone half-angle in degrees; the
+  # default (45°) matches the 90° included angle of ISO 10642 metric flat
+  # heads. Imperial flat heads (ANSI B18.3.5) use an 82° included angle —
+  # pass `angle: 41` for those.  Metric (`:m2`–`:m5`) and imperial
+  # (`:"4-40"`, `:"6-32"`, `:"8-32"`, `:"10-32"`, `:"1/4-20"`) sizes are
+  # supported.
   def flat_head_csink(size, depth:, angle: 45.0)
     spec = hardware_spec(size, {
       "m2" => [2.4, 4.4],
@@ -1536,6 +1584,12 @@ module Kernel
       "m3" => [3.4, 6.3],
       "m4" => [4.5, 9.4],
       "m5" => [5.5, 10.4],
+      # Imperial: [close-clearance, head OD], values in mm
+      "4_40" => [2.95, 5.72],
+      "6_32" => [3.66, 7.09],
+      "8_32" => [4.32, 8.43],
+      "10_32" => [4.98, 9.78],
+      "1/4_20" => [6.53, 12.88],
     }, "flat_head_csink")
     validate_positive_dimension(depth, "flat_head_csink depth")
     validate_positive_dimension(angle, "flat_head_csink angle")
@@ -1590,15 +1644,18 @@ module Kernel
   end
 
   # screw(size, length:, style: :socket) — solid fastener body for assemblies.
-  # +size+ may be `:m2`, `:m2_5`, `:m3`, `:m4`, or `:m5`. +length+ is the shank
-  # length below the head, in millimetres. +style+ may be `:socket` (ISO 4762
-  # cylindrical socket-head cap screw), `:button` (ISO 7380 low dome head), or
-  # `:flat` (ISO 10642 90° countersunk flat head).
+  # +size+ may be metric (`:m2`, `:m2_5`, `:m3`, `:m4`, `:m5`) or imperial
+  # UNC/UNF (`:"4-40"`, `:"6-32"`, `:"8-32"`, `:"10-32"`, `:"10-24"`,
+  # `:"1/4-20"`, `:"5/16-18"`, `:"3/8-16"`). +length+ is the shank length
+  # below the head, in millimetres. +style+ may be `:socket` (ISO 4762 /
+  # ASME B18.3 cylindrical socket-head cap screw), `:button` (ISO 7380 /
+  # ANSI B18.3.4 low dome head), or `:flat` (ISO 10642 90° / ANSI B18.3.5
+  # 82° countersunk flat head — the body is approximated as a 90° cone for
+  # both standards).
   #
   # Geometry: shank along +Z from z=0 to z=length; head sits above z=length.
   # For `:flat` the head is a conical frustum widening from shank_d at z=length
-  # to head_d at z=length+head_h, suitable for sitting flush in a 90°
-  # countersink.
+  # to head_d at z=length+head_h, suitable for sitting flush in a countersink.
   def screw(size, length:, style: :socket)
     spec = hardware_spec(size, {
       # [shaft_d, shcs_head_d, shcs_head_h, bhcs_head_d, bhcs_head_h, fhcs_head_d]
@@ -1608,6 +1665,15 @@ module Kernel
       "m3"   => [3.0, 5.5, 3.0, 5.7, 1.65, 6.0],
       "m4"   => [4.0, 7.0, 4.0, 7.6, 2.2, 8.0],
       "m5"   => [5.0, 8.5, 5.0, 9.5, 2.75, 10.0],
+      # Imperial UNC, values in mm (shaft = major dia)
+      "4_40"    => [2.84, 4.65, 2.84, 4.80, 1.55, 5.72],
+      "6_32"    => [3.51, 5.74, 3.51, 5.80, 1.85, 7.09],
+      "8_32"    => [4.17, 6.86, 4.17, 6.90, 2.18, 8.43],
+      "10_32"   => [4.83, 7.92, 4.83, 8.00, 2.50, 9.78],
+      "10_24"   => [4.83, 7.92, 4.83, 8.00, 2.50, 9.78],
+      "1/4_20"  => [6.35, 9.53, 6.35, 10.30, 3.30, 12.88],
+      "5/16_18" => [7.94, 11.91, 7.94, 12.70, 4.10, 16.13],
+      "3/8_16"  => [9.53, 14.29, 9.53, 15.20, 5.00, 19.35],
     }, "screw")
     shaft_d, shcs_d, shcs_h, bhcs_d, bhcs_h, fhcs_d = spec
     validate_positive_dimension(length, "screw length")

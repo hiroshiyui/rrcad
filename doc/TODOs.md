@@ -235,12 +235,15 @@ Ruby prelude: `1.6.mm`, `2.inch`, `1.cm`, `0.5.m`, `15.deg`, and
 
 **Tolerance and manufacturing profiles ✓ COMPLETE (initial scope):**
 Hole tools: `clearance_hole`, `tap_drill`, `heat_set_insert`,
-`socket_head_cbore`, `flat_head_csink` (`:m2`–`:m5`). Bearing bores:
-`bearing_bore` for `:b608`/`:b623`/`:b624`/`:b625`/`:b626`/`:b688`/`:b695`/
-`:b6000`/`:b6001` with `:press`/`:slip` fit. Shaft fits: `shaft(diameter,
-length:, fit:)` with `:nominal`/`:press`/`:slip`/`:running`. Standard
-fasteners: `screw(size, length:, style:)` for `:m2`–`:m5` in `:socket`
-(ISO 4762), `:button` (ISO 7380), and `:flat` (ISO 10642) styles.
+`socket_head_cbore`, `flat_head_csink`. Bearing bores: `bearing_bore` for
+`:b608`/`:b623`/`:b624`/`:b625`/`:b626`/`:b688`/`:b695`/`:b6000`/`:b6001`
+with `:press`/`:slip` fit. Shaft fits: `shaft(diameter, length:, fit:)`
+with `:nominal`/`:press`/`:slip`/`:running`. Standard fasteners:
+`screw(size, length:, style:)` in `:socket`/`:button`/`:flat` styles. All
+size-keyed helpers accept both metric (`:m2`–`:m5`, ISO 4762 / 7380 /
+10642) and imperial UNC/UNF (`:"4-40"`, `:"6-32"`, `:"8-32"`, `:"10-32"`,
+`:"10-24"`, `:"1/4-20"`, `:"5/16-18"`, `:"3/8-16"`, ASME B18 / ANSI B18.3)
+fastener names.
 
 **Preview inspection UX:** Upgrade the browser preview with face/edge hover IDs,
 click-to-print selectors, bounding box / volume / surface-area display, section
@@ -291,7 +294,9 @@ important.
   shipped. (Extends *Assembly constraints beyond `mate`*.)
 - **Units — dimensional analysis** with richer unit-aware values,
   beyond the current `Numeric` helpers. (Extends *Units system*.)
-- **Hardware helpers — imperial sizes** and washer/nut bodies.
+- **Hardware helpers — washer/nut bodies.** Imperial sizes (#4-40 through
+  3/8-16) are now supported across `clearance_hole`, `tap_drill`,
+  `heat_set_insert`, `socket_head_cbore`, `flat_head_csink`, and `screw`.
   (Extends *Tolerance and manufacturing profiles*.)
 - **CAM — unsupported islands** via slice-based connectivity analysis.
   (Extends *CAM / 3-D printing checks*.)
