@@ -3230,7 +3230,11 @@ void export_svg(const OcctShape& shape,
 // Each polyline segment is written as a LINE entity.  DXF uses Y-up
 // coordinates (standard math / CAD convention) so no Y-flip is applied.
 // ---------------------------------------------------------------------------
-void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double scale) {
+void export_dxf(const OcctShape& shape,
+                rust::Str path,
+                rust::Str view,
+                double scale,
+                bool hidden) {
     try {
         std::string path_str(path.data(), path.size());
         std::string view_str(view.data(), view.size());
@@ -3240,6 +3244,7 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
 
         auto projection = hlr_project(shape, view_str);
         scale_polylines(projection.visible, scale);
+        scale_polylines(projection.hidden, scale);
 
         std::ofstream f(path_str);
         if (!f.is_open())
@@ -3255,23 +3260,29 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
         // ENTITIES section: one LINE entity per polyline segment.
         f << "  0\nSECTION\n  2\nENTITIES\n";
 
-        for (auto& pts : projection.visible) {
-            for (std::size_t i = 0; i + 1 < pts.size(); ++i) {
-                auto [x1, y1] = pts[i];
-                auto [x2, y2] = pts[i + 1];
-                // Skip zero-length degenerate segments.
-                if (std::abs(x2 - x1) < 1e-9 && std::abs(y2 - y1) < 1e-9)
-                    continue;
-                f << "  0\nLINE\n";
-                f << "  8\n0\n"; // layer "0"
-                f << " 10\n" << x1 << "\n";
-                f << " 20\n" << y1 << "\n";
-                f << " 30\n0.0\n"; // Z1 = 0
-                f << " 11\n" << x2 << "\n";
-                f << " 21\n" << y2 << "\n";
-                f << " 31\n0.0\n"; // Z2 = 0
+        auto write_lines = [&](const DrawingPolylines& polylines, const char* layer) {
+            for (auto& pts : polylines) {
+                for (std::size_t i = 0; i + 1 < pts.size(); ++i) {
+                    auto [x1, y1] = pts[i];
+                    auto [x2, y2] = pts[i + 1];
+                    // Skip zero-length degenerate segments.
+                    if (std::abs(x2 - x1) < 1e-9 && std::abs(y2 - y1) < 1e-9)
+                        continue;
+                    f << "  0\nLINE\n";
+                    f << "  8\n" << layer << "\n";
+                    f << " 10\n" << x1 << "\n";
+                    f << " 20\n" << y1 << "\n";
+                    f << " 30\n0.0\n"; // Z1 = 0
+                    f << " 11\n" << x2 << "\n";
+                    f << " 21\n" << y2 << "\n";
+                    f << " 31\n0.0\n"; // Z2 = 0
+                }
             }
-        }
+        };
+
+        write_lines(projection.visible, "0");
+        if (hidden)
+            write_lines(projection.hidden, "HIDDEN");
 
         f << "  0\nENDSEC\n  0\nEOF\n";
         if (!f.good())

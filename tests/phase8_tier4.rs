@@ -265,3 +265,32 @@ fn dxf_rejects_non_positive_scale() {
         "expected actionable scale error, got: {err}"
     );
 }
+
+#[test]
+fn dxf_hidden_option_adds_hidden_layer() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_hidden.dxf");
+    vm.eval(&format!(
+        "box(10,10,10).export('{}', hidden: true)",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("\nHIDDEN\n"),
+        "hidden: true should write hidden DXF entities on a HIDDEN layer"
+    );
+}
+
+#[test]
+fn dxf_hidden_layer_is_off_by_default() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_no_hidden.dxf");
+    vm.eval(&format!("box(10,10,10).export('{}')", out.display()))
+        .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        !content.contains("\nHIDDEN\n"),
+        "default DXF export should not include hidden-line entities"
+    );
+}

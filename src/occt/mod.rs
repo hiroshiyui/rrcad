@@ -275,7 +275,13 @@ mod ffi {
             scale: f64,
             hidden: bool,
         ) -> Result<()>;
-        fn export_dxf(shape: &OcctShape, path: &str, view: &str, scale: f64) -> Result<()>;
+        fn export_dxf(
+            shape: &OcctShape,
+            path: &str,
+            view: &str,
+            scale: f64,
+            hidden: bool,
+        ) -> Result<()>;
 
         // Phase 8 Tier 5: Advanced composition.
 
@@ -1235,10 +1241,17 @@ impl Shape {
     /// Export to DXF R12 using hidden-line removal (HLRBRep_PolyAlgo).
     /// `view` is `"top"` (default), `"front"`, or `"side"`.
     /// `scale` multiplies drawing geometry; `1.0` preserves model units.
-    pub fn export_dxf(&self, path: &str, view: &str, scale: f64) -> Result<(), String> {
-        ffi::export_dxf(&self.inner, path, view, scale).map_err(|e| {
+    /// `hidden` includes hidden HLR edges on a `HIDDEN` layer.
+    pub fn export_dxf(
+        &self,
+        path: &str,
+        view: &str,
+        scale: f64,
+        hidden: bool,
+    ) -> Result<(), String> {
+        ffi::export_dxf(&self.inner, path, view, scale, hidden).map_err(|e| {
             format!(
-                "export_dxf({path:?}, view: {view:?}, scale: {scale}) on {} failed: {e}",
+                "export_dxf({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}) on {} failed: {e}",
                 summarize(self)
             )
         })

@@ -519,7 +519,7 @@ part.export("drawing.svg")                            # top view (default)
 part.export("drawing.svg", view: :front)              # front view
 part.export("drawing.svg", view: :side, scale: 2.0)   # side view at 2:1
 part.export("drawing.svg", hidden: true)              # dashed hidden lines
-part.export("drawing.dxf", scale: 0.5)                # DXF at 1:2
+part.export("drawing.dxf", scale: 0.5, hidden: true)  # DXF at 1:2 with HIDDEN layer
 ```
 
 **GLB / glTF / OBJ tessellation quality:**
