@@ -293,20 +293,33 @@ fn slot_between_can_extrude() {
 }
 
 #[test]
-fn slot_between_requires_axis_aligned_points() {
+fn slot_between_supports_diagonal_points() {
     let mut vm = MrubyVm::new();
-    let err = vm
+    let ty = vm
         .eval(
             "sketch do
                a = point(0, 0)
                b = point(20, 5)
                slot_between a, b, 3
-             end",
+             end.shape_type",
         )
-        .unwrap_err();
+        .unwrap();
+    assert_eq!(ty, ":face", "expected diagonal slot profile to build a face");
+
+    let volume = vm
+        .eval(
+            "profile = sketch do
+               a = point(0, 0)
+               b = point(20, 5)
+               slot_between a, b, 3
+             end
+             profile.extrude(1).volume",
+        )
+        .unwrap();
+    let volume: f64 = volume.trim().parse().expect("numeric volume");
     assert!(
-        err.contains("horizontal or vertical"),
-        "expected axis-aligned slot error, got: {err}"
+        (volume - 151.6456).abs() < 0.8,
+        "expected diagonal slot extrusion volume near 151.6, got {volume}"
     );
 }
 

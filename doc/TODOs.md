@@ -196,8 +196,12 @@ raises when redundant constraints are present.
 **Feature history / parametric model tree ✓ COMPLETE (provenance slice):**
 Shapes now carry a readable modeling history chain, accessible from Ruby as
 `shape.history`, and the error path includes that provenance when operations
-fail. The remaining work is a true regeneratable feature graph with dependency
-tracking and editor support.
+fail.
+
+Remaining work:
+- a true regeneratable feature graph with stable node IDs and dependency edges
+- replay/regeneration of downstream shapes when an upstream operation changes
+- editor support for inspecting and editing the feature tree
 
 **Named faces, edges, and datums ✓ COMPLETE:** Persistent names now work for
 face selectors, edge selectors, and datum reference shapes. Scripts can target
@@ -299,10 +303,6 @@ Open items deferred from completed or partially-complete tracks above.
 These are not blocking and can be picked up when the use cases become
 important.
 
-- **Hardware helpers — washer/nut bodies.** Imperial sizes (#4-40 through
-  3/8-16) are now supported across `clearance_hole`, `tap_drill`,
-  `heat_set_insert`, `socket_head_cbore`, `flat_head_csink`, and `screw`.
-  (Extends *Tolerance and manufacturing profiles*.)
 ---
 
 ## Architecture Notes

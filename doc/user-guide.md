@@ -195,7 +195,7 @@ same entry point.
 | `polar_point(center, radius, angle_deg)` / `polar_point(:name, center, radius, angle_deg)` | Construction point at polar coordinates around `center` (angle in degrees CCW from +X). Resolves once `center` resolves. Handy for bolt circles and fan patterns. |
 | `circle_at(center, radius)` | Build an exact circular profile at a resolved sketch point |
 | `arc_at(center, radius, start_deg, end_deg)` | Build an arc wire at a resolved sketch point |
-| `slot_between(a, b, radius)` | Build an axis-aligned rounded slot between two resolved points |
+| `slot_between(a, b, radius)` | Build a rounded slot between two resolved points |
 | `line(a, b)` | Add a line segment between two sketch points |
 | `construction_line(a, b)` | Reference line for constraints; does not add profile edges |
 | `rectangle(origin, width, height)` | Add a constrained rectangular line loop from an origin point |
@@ -264,6 +264,8 @@ slot = sketch do
   slot_between a, b, 3.mm
 end
 ```
+
+For a diagonal example that uses the generalized `slot_between()` path, see [samples/10_sketch_slot.rb](/home/yhh/MyProjects/rrcad/samples/10_sketch_slot.rb).
 
 When a sketch fails to solve, the error names the constraint type, the
 involved point labels, and the actual vs expected values (for example
@@ -448,6 +450,8 @@ stud_grid  = grid_pattern(cylinder(2, 5), 4, 3, 10, 10)
 | `bearing_bore(size, depth:, fit: :press)` | Outer-diameter bore for deep-groove ball bearings (`:b608`, `:b623`, `:b624`, `:b625`, `:b626`, `:b688`, `:b695`, `:b6000`, `:b6001`, or numeric OD); `fit:` is `:press` or `:slip` |
 | `shaft(diameter, length:, fit: :nominal)` | Solid mating shaft cylinder; `fit:` is `:nominal`, `:press`, `:slip`, or `:running` |
 | `screw(size, length:, style: :socket)` | Solid fastener body for `:m2`–`:m5`; `style:` is `:socket` (ISO 4762), `:button` (ISO 7380), or `:flat` (ISO 10642 90° conical head) |
+| `washer(size, thickness:)` | Plain washer body for the supported metric and imperial hardware sizes |
+| `nut(size, thickness:, style: :hex)` | Nut body with a centered through hole; `style:` supports `:hex`, `:jam`, `:square`, `:flange`, and `:nyloc` |
 | `cbore(d:, cbore_d:, cbore_h:, depth:)` | Counterbore hole tool (use with `.cut`) |
 | `csink(d:, csink_d:, csink_angle:, depth:)` | Countersink hole tool (use with `.cut`) |
 
@@ -527,6 +531,8 @@ asm = assembly("frame") do |a|
 end
 asm.export("frame.step")
 ```
+
+For a small hardware-body example using the new `washer()` and `nut()` helpers, see [samples/09_fastener_stack.rb](/home/yhh/MyProjects/rrcad/samples/09_fastener_stack.rb).
 
 For assemblies that need more than one dependent part, use the declarative
 solver. The first part is fixed by default, and later parts can be chained off

@@ -101,10 +101,128 @@ fn imperial_hardware_sizes() {
         "expected #10-32 SHCS head ~7.92 mm, got {dx}"
     );
 
+    let dx: f64 = vm
+        .eval("washer(:\"8-32\", thickness: 1.2).bounding_box[:dx]")
+        .unwrap()
+        .trim()
+        .parse()
+        .expect("number");
+    assert!(
+        (dx - 11.1).abs() < 0.3,
+        "expected #8 washer OD ~11.1 mm, got {dx}"
+    );
+
+    let dz: f64 = vm
+        .eval("washer(:\"8-32\", thickness: 1.2).bounding_box[:dz]")
+        .unwrap()
+        .trim()
+        .parse()
+        .expect("number");
+    assert!((dz - 1.2).abs() < 0.1, "expected washer thickness ~1.2 mm, got {dz}");
+
+    let dx: f64 = vm
+        .eval("nut(:\"1/4-20\", thickness: 5.0).bounding_box[:dx]")
+        .unwrap()
+        .trim()
+        .parse()
+        .expect("number");
+    assert!(
+        (dx - 11.11).abs() < 0.3,
+        "expected 1/4-20 nut AF ~11.11 mm, got {dx}"
+    );
+
+    let dx: f64 = vm
+        .eval("nut(:\"1/4-20\", thickness: 5.0, style: :square).bounding_box[:dx]")
+        .unwrap()
+        .trim()
+        .parse()
+        .expect("number");
+    assert!(
+        (dx - 11.11).abs() < 0.3,
+        "expected 1/4-20 square nut width ~11.11 mm, got {dx}"
+    );
+
+    let result = vm
+        .eval("nut(:\"1/4-20\", thickness: 5.0, style: :jam).shape_type")
+        .unwrap();
+    assert!(
+        result == ":solid" || result == ":compound",
+        "expected jam nut solid/compound, got {result}"
+    );
+
+    let dx: f64 = vm
+        .eval("nut(:\"1/4-20\", thickness: 5.0, style: :flange).bounding_box[:dx]")
+        .unwrap()
+        .trim()
+        .parse()
+        .expect("number");
+    assert!(
+        (dx - 20.0).abs() < 0.8,
+        "expected 1/4-20 flange nut width ~20 mm, got {dx}"
+    );
+
+    let dz: f64 = vm
+        .eval("nut(:\"1/4-20\", thickness: 5.0, style: :flange).bounding_box[:dz]")
+        .unwrap()
+        .trim()
+        .parse()
+        .expect("number");
+    assert!((dz - 5.0).abs() < 0.1, "expected flange nut thickness ~5.0 mm, got {dz}");
+
+    let dx: f64 = vm
+        .eval("nut(:\"1/4-20\", thickness: 5.0, style: :nyloc).bounding_box[:dx]")
+        .unwrap()
+        .trim()
+        .parse()
+        .expect("number");
+    assert!(
+        (dx - 12.78).abs() < 0.4,
+        "expected 1/4-20 nyloc width ~12.78 mm, got {dx}"
+    );
+
+    let dz: f64 = vm
+        .eval("nut(:\"1/4-20\", thickness: 5.0, style: :nyloc).bounding_box[:dz]")
+        .unwrap()
+        .trim()
+        .parse()
+        .expect("number");
+    assert!((dz - 5.0).abs() < 0.1, "expected nyloc thickness ~5.0 mm, got {dz}");
+
+    let dz: f64 = vm
+        .eval("nut(:\"1/4-20\", thickness: 5.0).bounding_box[:dz]")
+        .unwrap()
+        .trim()
+        .parse()
+        .expect("number");
+    assert!((dz - 5.0).abs() < 0.1, "expected nut thickness ~5.0 mm, got {dz}");
+
+    let result = vm
+        .eval(
+            "plate = box(40, 40, 8)
+             washer = washer(:\"8-32\", thickness: 1.2).translate(20, 20, 3.4)
+             plate.cut(washer).volume < plate.volume",
+        )
+        .unwrap();
+    assert_eq!(result.trim(), "true");
+
     let result = vm.eval("screw(:\"4-40\", length: 6).shape_type").unwrap();
     assert!(
         result == ":solid" || result == ":compound",
         "expected solid/compound, got {result}"
+    );
+
+    let err = vm.eval("nut(:\"1/2-13\", thickness: 5)").unwrap_err();
+    assert!(
+        err.contains("unsupported size"),
+        "expected unsupported-size error, got: {err}"
+    );
+
+    let err = vm
+        .eval("nut(:\"1/4-20\", thickness: 5, style: :acme)")
+        .unwrap_err();
+    assert!(
+        err.contains("unsupported style"),
+        "expected unsupported-style error, got: {err}"
     );
 
     let err = vm

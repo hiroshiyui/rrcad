@@ -981,19 +981,17 @@ class SketchBuilder
   end
 
   def slot_shape(a, b, radius)
-    if (a.y - b.y).abs <= 1.0e-9
-      left, right = a.x <= b.x ? [a, b] : [b, a]
-      pts = arc_points(right.x, right.y, radius, -90.0, 90.0, 12)
-      pts += arc_points(left.x, left.y, radius, 90.0, 270.0, 12)
-    elsif (a.x - b.x).abs <= 1.0e-9
-      bottom, top = a.y <= b.y ? [a, b] : [b, a]
-      pts = arc_points(top.x, top.y, radius, 0.0, 180.0, 12)
-      pts += arc_points(bottom.x, bottom.y, radius, 180.0, 360.0, 12)
-    else
-      raise RuntimeError, "slot_between currently requires horizontal or vertical points"
-    end
+    dx = RRCADUnits.scalar(b.x) - RRCADUnits.scalar(a.x)
+    dy = RRCADUnits.scalar(b.y) - RRCADUnits.scalar(a.y)
+    length = Math.sqrt(dx * dx + dy * dy)
+    raise RuntimeError, "slot_between requires distinct points" if length <= 1.0e-9
+
+    pts = arc_points(length, 0.0, radius, -90.0, 90.0, 12)
+    pts += arc_points(0.0, 0.0, radius, 90.0, 270.0, 12)
 
     polygon(pts)
+      .rotate(0, 0, 1, Math.atan2(dy, dx) * 180.0 / Math::PI)
+      .translate(a.x, a.y, 0)
   end
 
   def arc_points(cx, cy, radius, start_deg, end_deg, segments)
@@ -3138,6 +3136,42 @@ module Kernel
     spec
   end
 
+  def hardware_heuristic_dimension(size, label, scale)
+    validate_positive_dimension(size, "#{label} size")
+    size * scale
+  end
+
+  def nut_hex_profile(across_flats)
+    validate_positive_dimension(across_flats, "nut across flats")
+    radius = across_flats / Math.sqrt(3.0)
+    points = 6.times.map do |i|
+      angle = Math::PI / 6.0 + i * Math::PI / 3.0
+      [radius * Math.cos(angle), radius * Math.sin(angle)]
+    end
+    polygon(points)
+  end
+
+  def nut_square_profile(across_flats)
+    validate_positive_dimension(across_flats, "nut across flats")
+    half = across_flats / 2.0
+    polygon([
+      [-half, -half],
+      [half, -half],
+      [half, half],
+      [-half, half],
+    ])
+  end
+
+  def nut_flange_diameter(across_flats)
+    validate_positive_dimension(across_flats, "nut across flats")
+    across_flats * 1.8
+  end
+
+  def nut_nyloc_collar_diameter(across_flats)
+    validate_positive_dimension(across_flats, "nut across flats")
+    across_flats * 1.15
+  end
+
   def validate_positive_dimension(value, label)
     unless value.is_a?(Numeric) && value > 0
       raise ArgumentError, "#{label} must be > 0"
@@ -3163,6 +3197,125 @@ module Kernel
     clearance   = circle(d / 2.0).extrude(depth)
     counterbore = circle(cbore_d / 2.0).extrude(cbore_h)
     counterbore.fuse(clearance)
+  end
+
+  # washer(size, thickness:) — plain washer body for supported metric and
+  # imperial fastener sizes.  Returns a centered ring solid with the washer
+  # axis along +Z, sized for the same nominal screw families as the other
+  # hardware helpers.
+  def washer(size, thickness:)
+    validate_positive_dimension(thickness, "washer thickness")
+
+    outer_d = hardware_diameter(size, {
+      "m2" => 4.0,
+      "m2_5" => 5.0,
+      "m25" => 5.0,
+      "m3" => 7.0,
+      "m4" => 9.0,
+      "m5" => 10.0,
+      "4_40" => 6.4,
+      "6_32" => 9.5,
+      "8_32" => 11.1,
+      "10_32" => 14.3,
+      "10_24" => 14.3,
+      "1/4_20" => 18.6,
+      "5/16_18" => 22.2,
+      "3/8_16" => 25.4,
+    }, "washer outer diameter")
+    inner_d = hardware_diameter(size, {
+      "m2" => 2.4,
+      "m2_5" => 2.9,
+      "m25" => 2.9,
+      "m3" => 3.4,
+      "m4" => 4.5,
+      "m5" => 5.5,
+      "4_40" => 2.95,
+      "6_32" => 3.66,
+      "8_32" => 4.32,
+      "10_32" => 4.98,
+      "10_24" => 4.98,
+      "1/4_20" => 6.53,
+      "5/16_18" => 8.20,
+      "3/8_16" => 9.80,
+    }, "washer inner diameter")
+
+    if size.is_a?(Numeric)
+      outer_d = hardware_heuristic_dimension(size, "washer", 2.5)
+      inner_d = hardware_heuristic_dimension(size, "washer", 1.1)
+    end
+
+    ring = cylinder(outer_d / 2.0, thickness).cut(cylinder(inner_d / 2.0, thickness))
+    ring.translate(0, 0, -thickness / 2.0)
+  end
+
+  # nut(size, thickness:, style: :hex) — nut body for supported metric and
+  # imperial fastener families.  +style+ supports `:hex` and `:jam` (hex
+  # profiles), `:square`, `:flange`, and `:nyloc`. Returns a centered solid
+  # with a through clearance hole so it composes with the existing screw-body
+  # helper in assemblies.
+  def nut(size, thickness:, style: :hex)
+    validate_positive_dimension(thickness, "nut thickness")
+
+    across_flats = hardware_diameter(size, {
+      "m2" => 4.0,
+      "m2_5" => 5.0,
+      "m25" => 5.0,
+      "m3" => 5.5,
+      "m4" => 7.0,
+      "m5" => 8.0,
+      "4_40" => 4.76,
+      "6_32" => 7.94,
+      "8_32" => 8.73,
+      "10_32" => 9.53,
+      "10_24" => 9.53,
+      "1/4_20" => 11.11,
+      "5/16_18" => 12.70,
+      "3/8_16" => 14.29,
+    }, "nut across flats")
+    hole_d = hardware_diameter(size, {
+      "m2" => 2.4,
+      "m2_5" => 2.9,
+      "m25" => 2.9,
+      "m3" => 3.4,
+      "m4" => 4.5,
+      "m5" => 5.5,
+      "4_40" => 2.95,
+      "6_32" => 3.66,
+      "8_32" => 4.32,
+      "10_32" => 4.98,
+      "10_24" => 4.98,
+      "1/4_20" => 6.53,
+      "5/16_18" => 8.20,
+      "3/8_16" => 9.80,
+    }, "nut hole diameter")
+
+    if size.is_a?(Numeric)
+      across_flats = hardware_heuristic_dimension(size, "nut", 1.7)
+      hole_d = hardware_heuristic_dimension(size, "nut", 1.1)
+    end
+
+    body = case style
+           when :hex, :jam
+             nut_hex_profile(across_flats).extrude(thickness)
+           when :square
+             nut_square_profile(across_flats).extrude(thickness)
+           when :flange
+             flange_h = [thickness * 0.32, 1.0].max
+             body_h = [thickness - flange_h, thickness * 0.4].max
+             flange = cylinder(nut_flange_diameter(across_flats) / 2.0, flange_h)
+             hex = nut_hex_profile(across_flats).extrude(body_h).translate(0, 0, flange_h)
+             flange.fuse(hex)
+           when :nyloc
+             collar_h = [thickness * 0.35, 1.0].max
+             body_h = [thickness - collar_h, thickness * 0.45].max
+             hex = nut_hex_profile(across_flats).extrude(body_h)
+             collar = cylinder(nut_nyloc_collar_diameter(across_flats) / 2.0, collar_h).translate(0, 0, body_h)
+             hex.fuse(collar)
+           else
+             raise ArgumentError, "nut: unsupported style #{style.inspect}"
+           end
+    nut_body = body.cut(cylinder(hole_d / 2.0, thickness))
+    nut_body.translate(0, 0, -thickness / 2.0)
   end
 
   # csink(d:, csink_d:, csink_angle:, depth:) — Phase 8 Tier 2 countersink tool.
