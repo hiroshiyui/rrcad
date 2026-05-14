@@ -3058,6 +3058,23 @@ struct DrawingMark {
     double size;
 };
 
+struct DrawingViewData {
+    std::string name;
+    DrawingPolylines visible;
+    DrawingPolylines hidden;
+    std::vector<DrawingMark> marks;
+    double geom_xmin = 0.0;
+    double geom_xmax = 0.0;
+    double geom_ymin = 0.0;
+    double geom_ymax = 0.0;
+    double xmin = 0.0;
+    double xmax = 0.0;
+    double ymin = 0.0;
+    double ymax = 0.0;
+    double width = 0.0;
+    double height = 0.0;
+};
+
 struct HlrProjection {
     DrawingPolylines visible;
     DrawingPolylines hidden;
@@ -3144,6 +3161,193 @@ static std::vector<DrawingMark> collect_center_marks(const OcctShape& shape,
     return marks;
 }
 
+static HlrProjection hlr_project(const OcctShape& shape, const std::string& view);
+
+static DrawingViewData build_drawing_view(const OcctShape& shape, const std::string& view,
+                                          double scale, bool hidden, bool center_marks,
+                                          bool dimensions) {
+    auto projection = hlr_project(shape, view);
+    scale_polylines(projection.visible, scale);
+    scale_polylines(projection.hidden, scale);
+
+    auto marks = center_marks ? collect_center_marks(shape, view) : std::vector<DrawingMark>{};
+    for (auto& mark : marks) {
+        mark.x *= scale;
+        mark.y *= scale;
+        mark.size *= scale;
+    }
+
+    double geom_xmin = 1e30, geom_xmax = -1e30, geom_ymin = 1e30, geom_ymax = -1e30;
+    auto include_bounds = [&](const DrawingPolylines& polylines) {
+        for (auto& pl : polylines) {
+            for (auto& [x, y] : pl) {
+                geom_xmin = std::min(geom_xmin, x);
+                geom_xmax = std::max(geom_xmax, x);
+                geom_ymin = std::min(geom_ymin, y);
+                geom_ymax = std::max(geom_ymax, y);
+            }
+        }
+    };
+    include_bounds(projection.visible);
+    if (hidden)
+        include_bounds(projection.hidden);
+    for (const auto& mark : marks) {
+        geom_xmin = std::min(geom_xmin, mark.x - mark.size);
+        geom_xmax = std::max(geom_xmax, mark.x + mark.size);
+        geom_ymin = std::min(geom_ymin, mark.y - mark.size);
+        geom_ymax = std::max(geom_ymax, mark.y + mark.size);
+    }
+    if (geom_xmin == 1e30)
+        throw std::runtime_error("export_svg/dxf: no drawing edges found after projection");
+
+    double xmin = geom_xmin;
+    double xmax = geom_xmax;
+    double ymin = geom_ymin;
+    double ymax = geom_ymax;
+    if (dimensions) {
+        xmin -= 14.0;
+        xmax += 14.0;
+        ymin -= 14.0;
+        ymax += 7.0;
+    }
+
+    DrawingViewData view_data;
+    view_data.name = view;
+    view_data.visible = std::move(projection.visible);
+    view_data.hidden = std::move(projection.hidden);
+    view_data.marks = std::move(marks);
+    view_data.geom_xmin = geom_xmin;
+    view_data.geom_xmax = geom_xmax;
+    view_data.geom_ymin = geom_ymin;
+    view_data.geom_ymax = geom_ymax;
+    view_data.xmin = xmin;
+    view_data.xmax = xmax;
+    view_data.ymin = ymin;
+    view_data.ymax = ymax;
+    view_data.width = geom_xmax - geom_xmin;
+    view_data.height = geom_ymax - geom_ymin;
+    return view_data;
+}
+
+static void include_placed_bounds(double& xmin, double& xmax, double& ymin, double& ymax,
+                                  const DrawingViewData& view, double offset_x,
+                                  double offset_y) {
+    xmin = std::min(xmin, view.xmin + offset_x);
+    xmax = std::max(xmax, view.xmax + offset_x);
+    ymin = std::min(ymin, view.ymin + offset_y);
+    ymax = std::max(ymax, view.ymax + offset_y);
+}
+
+static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double offset_x,
+                           double offset_y, bool hidden, bool center_marks, bool dimensions,
+                           bool sheet_mode) {
+    auto write_polyline_points = [&](const DrawingPolyline& polyline) {
+        for (auto& [x, y] : polyline) {
+            f << (x + offset_x) << "," << (-(y + offset_y)) << " ";
+        }
+    };
+
+    if (sheet_mode) {
+        f << "  <g class=\"view view-" << view.name << "\"";
+        f << " stroke=\"black\" stroke-width=\"0.3\" fill=\"none\"";
+        f << " stroke-linecap=\"round\" stroke-linejoin=\"round\">\n";
+    } else {
+        f << "  <g class=\"visible\" stroke=\"black\" stroke-width=\"0.3\" fill=\"none\"";
+        f << " stroke-linecap=\"round\" stroke-linejoin=\"round\">\n";
+    }
+    for (auto& pts : view.visible) {
+        if (pts.size() < 2)
+            continue;
+        f << "    <polyline points=\"";
+        write_polyline_points(pts);
+        f << "\"/>\n";
+    }
+    f << "  </g>\n";
+    if (hidden) {
+        if (sheet_mode) {
+            f << "  <g class=\"view view-" << view.name
+              << " hidden\" stroke=\"#888\" stroke-width=\"0.25\" fill=\"none\"";
+            f << " stroke-dasharray=\"2 1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n";
+        } else {
+            f << "  <g class=\"hidden\" stroke=\"#888\" stroke-width=\"0.25\" fill=\"none\"";
+            f << " stroke-dasharray=\"2 1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n";
+        }
+        for (auto& pts : view.hidden) {
+            if (pts.size() < 2)
+                continue;
+            f << "    <polyline points=\"";
+            write_polyline_points(pts);
+            f << "\"/>\n";
+        }
+        f << "  </g>\n";
+    }
+    if (center_marks && !view.marks.empty()) {
+        if (sheet_mode) {
+            f << "  <g class=\"view view-" << view.name
+              << " center-marks\" stroke=\"#6b7280\" stroke-width=\"0.25\" fill=\"none\"";
+            f << " stroke-linecap=\"round\">\n";
+        } else {
+            f << "  <g class=\"center-marks\" stroke=\"#6b7280\" stroke-width=\"0.25\" fill=\"none\"";
+            f << " stroke-linecap=\"round\">\n";
+        }
+        for (const auto& mark : view.marks) {
+            const double x = mark.x + offset_x;
+            const double y = mark.y + offset_y;
+            f << "    <line x1=\"" << (x - mark.size) << "\" y1=\"" << (-y)
+              << "\" x2=\"" << (x + mark.size) << "\" y2=\"" << (-y) << "\"/>\n";
+            f << "    <line x1=\"" << x << "\" y1=\"" << (-(y - mark.size))
+              << "\" x2=\"" << x << "\" y2=\"" << (-(y + mark.size)) << "\"/>\n";
+        }
+        f << "  </g>\n";
+    }
+    if (dimensions) {
+        const double dim_gap = 8.0;
+        const double tick = 1.5;
+        const double label_offset = 3.5;
+        const double font_size = 3.0;
+        const double dim_xmin = view.geom_xmin + offset_x;
+        const double dim_xmax = view.geom_xmax + offset_x;
+        const double dim_ymin = view.geom_ymin + offset_y;
+        const double dim_ymax = view.geom_ymax + offset_y;
+        const double width = view.width;
+        const double height = view.height;
+        const double hx = (dim_xmin + dim_xmax) * 0.5;
+        const double hy = (dim_ymin + dim_ymax) * 0.5;
+        const double dim_y = dim_ymin - dim_gap;
+        const double dim_x = dim_xmin - dim_gap;
+        if (sheet_mode) {
+            f << "  <g class=\"view view-" << view.name
+              << " dimensions\" stroke=\"#9ca3af\" stroke-width=\"0.25\" fill=\"none\"";
+        } else {
+            f << "  <g class=\"dimensions\" stroke=\"#9ca3af\" stroke-width=\"0.25\" fill=\"none\"";
+        }
+        f << " stroke-linecap=\"round\" stroke-linejoin=\"round\" font-family=\"monospace\"";
+        f << " font-size=\"" << font_size << "\">\n";
+        f << "    <line x1=\"" << dim_xmin << "\" y1=\"" << dim_y << "\" x2=\"" << dim_xmax
+          << "\" y2=\"" << dim_y << "\"/>\n";
+        f << "    <line x1=\"" << dim_xmin << "\" y1=\"" << dim_y << "\" x2=\"" << dim_xmin
+          << "\" y2=\"" << dim_ymin << "\"/>\n";
+        f << "    <line x1=\"" << dim_xmax << "\" y1=\"" << dim_y << "\" x2=\"" << dim_xmax
+          << "\" y2=\"" << dim_ymin << "\"/>\n";
+        f << "    <line x1=\"" << (dim_xmin + tick) << "\" y1=\"" << (dim_y - tick)
+          << "\" x2=\"" << (dim_xmin - tick) << "\" y2=\"" << (dim_y + tick) << "\"/>\n";
+        f << "    <line x1=\"" << (dim_xmax + tick) << "\" y1=\"" << (dim_y - tick)
+          << "\" x2=\"" << (dim_xmax - tick) << "\" y2=\"" << (dim_y + tick) << "\"/>\n";
+        f << "    <text x=\"" << hx << "\" y=\"" << (dim_y - label_offset)
+          << "\" text-anchor=\"middle\" fill=\"#6b7280\">" << width << "</text>\n";
+        f << "    <line x1=\"" << dim_x << "\" y1=\"" << dim_ymin << "\" x2=\"" << dim_x
+          << "\" y2=\"" << dim_ymax << "\"/>\n";
+        f << "    <line x1=\"" << (dim_x - tick) << "\" y1=\"" << (dim_ymin + tick)
+          << "\" x2=\"" << (dim_x + tick) << "\" y2=\"" << (dim_ymin - tick) << "\"/>\n";
+        f << "    <line x1=\"" << (dim_x - tick) << "\" y1=\"" << (dim_ymax + tick)
+          << "\" x2=\"" << (dim_x + tick) << "\" y2=\"" << (dim_ymax - tick) << "\"/>\n";
+        f << "    <text x=\"" << (dim_x - label_offset) << "\" y=\"" << hy
+          << "\" text-anchor=\"middle\" fill=\"#6b7280\" transform=\"rotate(-90 "
+          << (dim_x - label_offset) << " " << hy << ")\">" << height << "</text>\n";
+        f << "  </g>\n";
+    }
+}
+
 // Project the shape onto the chosen view plane, return visible and hidden
 // polylines as (x, y) point lists.
 static HlrProjection hlr_project(const OcctShape& shape, const std::string& view) {
@@ -3201,68 +3405,63 @@ void export_svg(const OcctShape& shape,
             throw std::runtime_error("export_svg: scale must be positive and finite");
         }
 
-        auto projection = hlr_project(shape, view_str);
-        scale_polylines(projection.visible, scale);
-        scale_polylines(projection.hidden, scale);
-        auto marks = center_marks ? collect_center_marks(shape, view_str) : std::vector<DrawingMark>{};
-        for (auto& mark : marks) {
-            mark.x *= scale;
-            mark.y *= scale;
-            mark.size *= scale;
-        }
-
-        // Compute axis-aligned bounding box in drawing coordinates.
-        double xmin = 1e30, xmax = -1e30, ymin = 1e30, ymax = -1e30;
-        double geom_xmin = 1e30, geom_xmax = -1e30, geom_ymin = 1e30, geom_ymax = -1e30;
-        auto include_bounds = [&](const DrawingPolylines& polylines) {
-            for (auto& pl : polylines) {
-                for (auto& [x, y] : pl) {
-                    geom_xmin = std::min(geom_xmin, x);
-                    geom_xmax = std::max(geom_xmax, x);
-                    geom_ymin = std::min(geom_ymin, y);
-                    geom_ymax = std::max(geom_ymax, y);
-                }
-            }
-        };
-        include_bounds(projection.visible);
-        if (hidden)
-            include_bounds(projection.hidden);
-        for (const auto& mark : marks) {
-            geom_xmin = std::min(geom_xmin, mark.x - mark.size);
-            geom_xmax = std::max(geom_xmax, mark.x + mark.size);
-            geom_ymin = std::min(geom_ymin, mark.y - mark.size);
-            geom_ymax = std::max(geom_ymax, mark.y + mark.size);
-        }
-        if (geom_xmin == 1e30)
-            throw std::runtime_error("export_svg: no drawing edges found after projection");
-
-        xmin = geom_xmin;
-        xmax = geom_xmax;
-        ymin = geom_ymin;
-        ymax = geom_ymax;
-
-        double dim_xmin = geom_xmin;
-        double dim_xmax = geom_xmax;
-        double dim_ymin = geom_ymin;
-        double dim_ymax = geom_ymax;
-        double width = geom_xmax - geom_xmin;
-        double height = geom_ymax - geom_ymin;
-        if (dimensions) {
-            const double dim_gap = 8.0;
-            const double dim_pad = 14.0;
-            xmin -= dim_pad;
-            xmax += dim_pad;
-            ymin -= dim_pad;
-            ymax += dim_pad * 0.5;
-        }
-
+        const bool sheet_mode = (view_str == "sheet");
         const double margin = 5.0;
-        double w = (xmax - xmin) + 2.0 * margin;
-        double h = (ymax - ymin) + 2.0 * margin;
-        // SVG viewBox origin: left edge = xmin−margin, top edge = −(ymax+margin)
-        // (SVG Y increases downward; drawing Y increases upward — hence the negation).
-        double vb_x = xmin - margin;
-        double vb_y = -(ymax + margin);
+        const double sheet_gap = 16.0;
+
+        if (sheet_mode) {
+            auto top_view = build_drawing_view(shape, "top", scale, hidden, center_marks,
+                                               dimensions);
+            auto front_view = build_drawing_view(shape, "front", scale, hidden, center_marks,
+                                                 dimensions);
+            auto side_view = build_drawing_view(shape, "side", scale, hidden, center_marks,
+                                                dimensions);
+
+            const double top_dx = (front_view.geom_xmin + front_view.geom_xmax) * 0.5 -
+                                  (top_view.geom_xmin + top_view.geom_xmax) * 0.5;
+            const double top_dy = front_view.geom_ymax - top_view.geom_ymin + sheet_gap;
+            const double front_dx = 0.0;
+            const double front_dy = 0.0;
+            const double side_dx = front_view.geom_xmax - side_view.geom_xmin + sheet_gap;
+            const double side_dy = (front_view.geom_ymin + front_view.geom_ymax) * 0.5 -
+                                   (side_view.geom_ymin + side_view.geom_ymax) * 0.5;
+
+            double xmin = 1e30, xmax = -1e30, ymin = 1e30, ymax = -1e30;
+            include_placed_bounds(xmin, xmax, ymin, ymax, top_view, top_dx, top_dy);
+            include_placed_bounds(xmin, xmax, ymin, ymax, front_view, front_dx, front_dy);
+            include_placed_bounds(xmin, xmax, ymin, ymax, side_view, side_dx, side_dy);
+
+            const double w = (xmax - xmin) + 2.0 * margin;
+            const double h = (ymax - ymin) + 2.0 * margin;
+            const double vb_x = xmin - margin;
+            const double vb_y = -(ymax + margin);
+
+            std::ofstream f(path_str);
+            if (!f.is_open())
+                throw std::runtime_error("export_svg: cannot open file: " + path_str);
+
+            f << std::fixed << std::setprecision(4);
+            f << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+            f << "<svg xmlns=\"http://www.w3.org/2000/svg\"";
+            f << " width=\"" << w << "\" height=\"" << h << "\"";
+            f << " viewBox=\"" << vb_x << " " << vb_y << " " << w << " " << h << "\">\n";
+            f << "  <!-- Generated by rrcad — sheet view, scale: " << scale << " -->\n";
+            write_svg_view(f, top_view, top_dx, top_dy, hidden, center_marks, dimensions, true);
+            write_svg_view(f, front_view, front_dx, front_dy, hidden, center_marks, dimensions,
+                           true);
+            write_svg_view(f, side_view, side_dx, side_dy, hidden, center_marks, dimensions, true);
+            f << "</svg>\n";
+            if (!f.good())
+                throw std::runtime_error("export_svg: write error on file: " + path_str);
+            return;
+        }
+
+        auto single_view =
+            build_drawing_view(shape, view_str, scale, hidden, center_marks, dimensions);
+        const double w = (single_view.xmax - single_view.xmin) + 2.0 * margin;
+        const double h = (single_view.ymax - single_view.ymin) + 2.0 * margin;
+        const double vb_x = single_view.xmin - margin;
+        const double vb_y = -(single_view.ymax + margin);
 
         std::ofstream f(path_str);
         if (!f.is_open())
@@ -3273,86 +3472,9 @@ void export_svg(const OcctShape& shape,
         f << "<svg xmlns=\"http://www.w3.org/2000/svg\"";
         f << " width=\"" << w << "\" height=\"" << h << "\"";
         f << " viewBox=\"" << vb_x << " " << vb_y << " " << w << " " << h << "\">\n";
-        f << "  <!-- Generated by rrcad — view: " << view_str << ", scale: " << scale << " -->\n";
-        f << "  <g class=\"visible\" stroke=\"black\" stroke-width=\"0.3\" fill=\"none\"";
-        f << " stroke-linecap=\"round\" stroke-linejoin=\"round\">\n";
-
-        auto write_polyline_points = [&](const DrawingPolyline& polyline) {
-            for (auto& [x, y] : polyline) {
-                // Negate Y: drawing Y-up → SVG Y-down.
-                f << x << "," << -y << " ";
-            }
-        };
-
-        for (auto& pts : projection.visible) {
-            if (pts.size() < 2)
-                continue;
-            f << "    <polyline points=\"";
-            write_polyline_points(pts);
-            f << "\"/>\n";
-        }
-
-        f << "  </g>\n";
-        if (hidden) {
-            f << "  <g class=\"hidden\" stroke=\"#888\" stroke-width=\"0.25\" fill=\"none\"";
-            f << " stroke-dasharray=\"2 1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n";
-            for (auto& pts : projection.hidden) {
-                if (pts.size() < 2)
-                    continue;
-                f << "    <polyline points=\"";
-                write_polyline_points(pts);
-                f << "\"/>\n";
-            }
-            f << "  </g>\n";
-        }
-        if (center_marks && !marks.empty()) {
-        f << "  <g class=\"center-marks\" stroke=\"#6b7280\" stroke-width=\"0.25\" fill=\"none\"";
-            f << " stroke-linecap=\"round\">\n";
-            for (const auto& mark : marks) {
-                f << "    <line x1=\"" << (mark.x - mark.size) << "\" y1=\"" << (-mark.y)
-                  << "\" x2=\"" << (mark.x + mark.size) << "\" y2=\"" << (-mark.y)
-                  << "\"/>\n";
-                f << "    <line x1=\"" << mark.x << "\" y1=\"" << (-(mark.y - mark.size))
-                  << "\" x2=\"" << mark.x << "\" y2=\"" << (-(mark.y + mark.size))
-                  << "\"/>\n";
-            }
-            f << "  </g>\n";
-        }
-        if (dimensions) {
-            const double dim_gap = 8.0;
-            const double tick = 1.5;
-            const double label_offset = 3.5;
-            const double font_size = 3.0;
-            const double hx = (dim_xmin + dim_xmax) * 0.5;
-            const double hy = (dim_ymin + dim_ymax) * 0.5;
-            const double dim_y = dim_ymin - dim_gap;
-            const double dim_x = dim_xmin - dim_gap;
-            f << "  <g class=\"dimensions\" stroke=\"#9ca3af\" stroke-width=\"0.25\" fill=\"none\"";
-            f << " stroke-linecap=\"round\" stroke-linejoin=\"round\" font-family=\"monospace\"";
-            f << " font-size=\"" << font_size << "\">\n";
-            f << "    <line x1=\"" << dim_xmin << "\" y1=\"" << dim_y << "\" x2=\"" << dim_xmax
-              << "\" y2=\"" << dim_y << "\"/>\n";
-            f << "    <line x1=\"" << dim_xmin << "\" y1=\"" << dim_y << "\" x2=\"" << dim_xmin
-              << "\" y2=\"" << dim_ymin << "\"/>\n";
-            f << "    <line x1=\"" << dim_xmax << "\" y1=\"" << dim_y << "\" x2=\"" << dim_xmax
-              << "\" y2=\"" << dim_ymin << "\"/>\n";
-            f << "    <line x1=\"" << (dim_xmin + tick) << "\" y1=\"" << (dim_y - tick)
-              << "\" x2=\"" << (dim_xmin - tick) << "\" y2=\"" << (dim_y + tick) << "\"/>\n";
-            f << "    <line x1=\"" << (dim_xmax + tick) << "\" y1=\"" << (dim_y - tick)
-              << "\" x2=\"" << (dim_xmax - tick) << "\" y2=\"" << (dim_y + tick) << "\"/>\n";
-            f << "    <text x=\"" << hx << "\" y=\"" << (dim_y - label_offset)
-              << "\" text-anchor=\"middle\" fill=\"#6b7280\">" << width << "</text>\n";
-            f << "    <line x1=\"" << dim_x << "\" y1=\"" << dim_ymin << "\" x2=\"" << dim_x
-              << "\" y2=\"" << dim_ymax << "\"/>\n";
-            f << "    <line x1=\"" << (dim_x - tick) << "\" y1=\"" << (dim_ymin + tick)
-              << "\" x2=\"" << (dim_x + tick) << "\" y2=\"" << (dim_ymin - tick) << "\"/>\n";
-            f << "    <line x1=\"" << (dim_x - tick) << "\" y1=\"" << (dim_ymax + tick)
-              << "\" x2=\"" << (dim_x + tick) << "\" y2=\"" << (dim_ymax - tick) << "\"/>\n";
-            f << "    <text x=\"" << (dim_x - label_offset) << "\" y=\"" << hy
-              << "\" text-anchor=\"middle\" fill=\"#6b7280\" transform=\"rotate(-90 "
-              << (dim_x - label_offset) << " " << hy << ")\">" << height << "</text>\n";
-            f << "  </g>\n";
-        }
+        f << "  <!-- Generated by rrcad — view: " << view_str << ", scale: " << scale
+          << " -->\n";
+        write_svg_view(f, single_view, 0.0, 0.0, hidden, center_marks, dimensions, false);
         f << "</svg>\n";
         if (!f.good())
             throw std::runtime_error("export_svg: write error on file: " + path_str);

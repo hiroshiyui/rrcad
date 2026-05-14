@@ -96,6 +96,29 @@ fn svg_side_view() {
 }
 
 #[test]
+fn svg_sheet_view_renders_multiple_orthographic_views() {
+    let mut vm = MrubyVm::new();
+    let single = tmp("rrcad_test_single_view.svg");
+    let sheet = tmp("rrcad_test_sheet_view.svg");
+    vm.eval(&format!("box(20,10,5).export('{}', view: :front)", single.display()))
+        .unwrap();
+    vm.eval(&format!("box(20,10,5).export('{}', view: :sheet)", sheet.display()))
+        .unwrap();
+
+    let content = std::fs::read_to_string(&sheet).unwrap();
+    assert!(
+        content.contains("class=\"view view-top\"")
+            && content.contains("class=\"view view-front\"")
+            && content.contains("class=\"view view-side\""),
+        "sheet mode should render top, front, and side view groups"
+    );
+    assert!(
+        svg_width(&sheet) > svg_width(&single),
+        "sheet mode should produce a wider SVG canvas than a single view"
+    );
+}
+
+#[test]
 fn svg_cylinder_top_view() {
     // Curved surfaces (circles) must be discretised into smooth polylines.
     let mut vm = MrubyVm::new();
