@@ -280,6 +280,10 @@ mod ffi {
             title_block: bool,
             callouts: bool,
             datum: &str,
+            datum_anchor_valid: bool,
+            datum_anchor_x: f64,
+            datum_anchor_y: f64,
+            datum_anchor_z: f64,
             feature_control: &str,
             tolerance_plus: f64,
             tolerance_minus: f64,
@@ -295,6 +299,10 @@ mod ffi {
             title_block: bool,
             callouts: bool,
             datum: &str,
+            datum_anchor_valid: bool,
+            datum_anchor_x: f64,
+            datum_anchor_y: f64,
+            datum_anchor_z: f64,
             feature_control: &str,
             tolerance_plus: f64,
             tolerance_minus: f64,
@@ -1451,6 +1459,45 @@ impl Shape {
         tolerance_plus: f64,
         tolerance_minus: f64,
     ) -> Result<(), String> {
+        self.export_svg_with_anchor(
+            path,
+            view,
+            scale,
+            hidden,
+            center_marks,
+            dimensions,
+            title_block,
+            callouts,
+            datum,
+            false,
+            0.0,
+            0.0,
+            0.0,
+            feature_control,
+            tolerance_plus,
+            tolerance_minus,
+        )
+    }
+
+    pub(crate) fn export_svg_with_anchor(
+        &self,
+        path: &str,
+        view: &str,
+        scale: f64,
+        hidden: bool,
+        center_marks: bool,
+        dimensions: bool,
+        title_block: bool,
+        callouts: bool,
+        datum: &str,
+        datum_anchor_valid: bool,
+        datum_anchor_x: f64,
+        datum_anchor_y: f64,
+        datum_anchor_z: f64,
+        feature_control: &str,
+        tolerance_plus: f64,
+        tolerance_minus: f64,
+    ) -> Result<(), String> {
         ffi::export_svg(
             &self.inner,
             path,
@@ -1462,13 +1509,17 @@ impl Shape {
             title_block,
             callouts,
             datum,
+            datum_anchor_valid,
+            datum_anchor_x,
+            datum_anchor_y,
+            datum_anchor_z,
             feature_control,
             tolerance_plus,
             tolerance_minus,
         )
         .map_err(|e| {
             format!(
-                "export_svg({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, datum: {datum:?}, feature_control: {feature_control:?}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}) on {} failed: {e}",
+                "export_svg({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, datum: {datum:?}, datum_anchor_valid: {datum_anchor_valid}, feature_control: {feature_control:?}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}) on {} failed: {e}",
                 summarize(self)
             )
         })
@@ -1497,6 +1548,45 @@ impl Shape {
         tolerance_plus: f64,
         tolerance_minus: f64,
     ) -> Result<(), String> {
+        self.export_dxf_with_anchor(
+            path,
+            view,
+            scale,
+            hidden,
+            center_marks,
+            dimensions,
+            title_block,
+            callouts,
+            datum,
+            false,
+            0.0,
+            0.0,
+            0.0,
+            feature_control,
+            tolerance_plus,
+            tolerance_minus,
+        )
+    }
+
+    pub(crate) fn export_dxf_with_anchor(
+        &self,
+        path: &str,
+        view: &str,
+        scale: f64,
+        hidden: bool,
+        center_marks: bool,
+        dimensions: bool,
+        title_block: bool,
+        callouts: bool,
+        datum: &str,
+        datum_anchor_valid: bool,
+        datum_anchor_x: f64,
+        datum_anchor_y: f64,
+        datum_anchor_z: f64,
+        feature_control: &str,
+        tolerance_plus: f64,
+        tolerance_minus: f64,
+    ) -> Result<(), String> {
         ffi::export_dxf(
             &self.inner,
             path,
@@ -1508,13 +1598,17 @@ impl Shape {
             title_block,
             callouts,
             datum,
+            datum_anchor_valid,
+            datum_anchor_x,
+            datum_anchor_y,
+            datum_anchor_z,
             feature_control,
             tolerance_plus,
             tolerance_minus,
         )
         .map_err(|e| {
             format!(
-                "export_dxf({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, datum: {datum:?}, feature_control: {feature_control:?}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}) on {} failed: {e}",
+                "export_dxf({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, datum: {datum:?}, datum_anchor_valid: {datum_anchor_valid}, feature_control: {feature_control:?}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}) on {} failed: {e}",
                 summarize(self)
             )
         })

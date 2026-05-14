@@ -321,6 +321,25 @@ fn svg_gdt_frame_adds_frame_group() {
 }
 
 #[test]
+fn svg_gdt_frame_supports_face_anchor_hash() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_gdt_frame_anchor.svg");
+    vm.eval(&format!(
+        "part = box(20,10,5)\nface = part.faces(:top).first\npart.export('{}', datum: {{ label: :A, face: face }}, feature_control: {{ text: \"⌀0.1\", datums: [:A, :B] }})",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("class=\"gdt-frame\"")
+            && content.contains("class=\"datum-anchor\"")
+            && content.contains("DATUM A")
+            && content.contains("⌀0.1 | A | B"),
+        "face-linked datum hashes should render an anchored GD&T frame in SVG"
+    );
+}
+
+#[test]
 fn svg_dimensions_adds_dimension_group() {
     let mut vm = MrubyVm::new();
     let out = tmp("rrcad_test_dimensions.svg");
@@ -581,6 +600,25 @@ fn dxf_gdt_frame_adds_frame_layer() {
             && content.contains("DATUM A")
             && content.contains("⌀0.1 | A | B"),
         "datum and feature-control annotations should render in DXF"
+    );
+}
+
+#[test]
+fn dxf_gdt_frame_supports_face_anchor_hash() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_gdt_frame_anchor.dxf");
+    vm.eval(&format!(
+        "part = box(20,10,5)\nface = part.faces(:top).first\npart.export('{}', datum: {{ label: :A, face: face }}, feature_control: {{ text: \"⌀0.1\", datums: [:A, :B] }})",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("\nGDT\n")
+            && content.contains("\nCIRCLE\n")
+            && content.contains("DATUM A")
+            && content.contains("⌀0.1 | A | B"),
+        "face-linked datum hashes should render an anchored GD&T frame in DXF"
     );
 }
 

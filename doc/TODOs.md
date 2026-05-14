@@ -257,7 +257,7 @@ shows face/edge IDs, clicks print the best matching selector into the panel,
 an explode toggle separates top-level parts, and failed preview updates surface
 their error message in the inspector.
 
-**2-D drawing improvements ◐ STARTED:** SVG and DXF output now accept explicit
+**2-D drawing improvements ✓ COMPLETE:** SVG and DXF output now accept explicit
 `scale:` selection for projected drawing geometry. Both support
 `center_marks: true` cylinder centres; SVG now also supports `hidden: true`
 dashed hidden-line output and `dimensions: true` width/height labels, while DXF
@@ -267,8 +267,8 @@ SVG and DXF also now have `view: :sheet` for a 3-view sheet layout and
 `tolerance:` now supports both symmetric `±` and asymmetric `+.../-...`
 annotations on dimensions, standards-style `callouts: true` diameter labels
 are now available, and simple framed `datum:` / `feature_control:` annotations
-now render in SVG and DXF. Remaining work: semantic datum attachment to faces
-and fuller geometric tolerancing.
+now render in SVG and DXF. Datum labels can be attached to actual faces, and
+feature-control frames accept datum lists for richer geometric tolerancing.
 
 **CAM / 3-D printing checks ◐ STARTED:** Additive helpers landed in the
 Ruby prelude: `mass_estimate(part, density:)` computes a rough mass in

@@ -539,6 +539,7 @@ part.color(0.8, 0.3, 0.1)   # sRGB — written to glTF/GLB/OBJ
 **SVG / DXF view options:**
 
 ```ruby
+face = part.faces(:top).first
 part.export("drawing.svg")                            # top view (default)
 part.export("drawing.svg", view: :front)              # front view
 part.export("drawing.svg", view: :side, scale: 2.0)   # side view at 2:1
@@ -547,7 +548,8 @@ part.export("drawing.svg", view: :sheet, title_block: true) # sheet with title b
 part.export("drawing.svg", view: :sheet, dimensions: true)   # sheet with X/Y/Z labels
 part.export("drawing.svg", view: :sheet, dimensions: true, tolerance: 0.1) # toleranced labels
 part.export("drawing.svg", view: :sheet, dimensions: true, tolerance: { plus: 0.2, minus: 0.05 }) # asymmetric tolerances
-part.export("drawing.svg", datum: "A", feature_control: "⌀0.1 | A | B") # GD&T frame
+part.export("drawing.svg", datum: { label: :A, face: face }, feature_control: { text: "⌀0.1", datums: [:A, :B] }) # GD&T frame
+part.export("drawing.svg", datum: { label: :A, selector: :top }, feature_control: { frame: "⌀0.1", datums: [:A, :B] }) # selector / frame aliases
 part.export("drawing.svg", hidden: true)              # dashed hidden lines
 part.export("drawing.svg", center_marks: true)       # cylinder centres
 part.export("drawing.svg", callouts: true)           # cylinder diameter callouts
@@ -558,7 +560,7 @@ part.export("drawing.dxf", view: :sheet, title_block: true) # sheet with title b
 part.export("drawing.dxf", view: :sheet, dimensions: true)   # sheet with X/Y/Z labels
 part.export("drawing.dxf", view: :sheet, dimensions: true, tolerance: 0.1) # toleranced labels
 part.export("drawing.dxf", view: :sheet, dimensions: true, tolerance: { plus: 0.2, minus: 0.05 }) # asymmetric tolerances
-part.export("drawing.dxf", datum: "A", feature_control: "⌀0.1 | A | B") # DXF GD&T frame
+part.export("drawing.dxf", datum: { label: :A, face: face }, feature_control: { text: "⌀0.1", datums: [:A, :B] }) # DXF GD&T frame
 part.export("drawing.dxf", center_marks: true)       # DXF centre marks
 part.export("drawing.dxf", callouts: true)           # DXF diameter callouts
 part.export("drawing.dxf", dimensions: true)         # DXF width/height labels

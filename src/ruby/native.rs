@@ -359,6 +359,10 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
     title_block: i32,
     callouts: i32,
     datum: *const c_char,
+    datum_anchor_valid: i32,
+    datum_anchor_x: f64,
+    datum_anchor_y: f64,
+    datum_anchor_z: f64,
     feature_control: *const c_char,
     tolerance_plus: f64,
     tolerance_minus: f64,
@@ -375,7 +379,7 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
     let view_str = unsafe { std::ffi::CStr::from_ptr(view) }
         .to_str()
         .unwrap_or("top");
-    if let Err(e) = shape.export_svg(
+    if let Err(e) = shape.export_svg_with_anchor(
         &safe_str,
         view_str,
         scale,
@@ -385,6 +389,10 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
         title_block != 0,
         callouts != 0,
         unsafe { std::ffi::CStr::from_ptr(datum) }.to_str().unwrap_or(""),
+        datum_anchor_valid != 0,
+        datum_anchor_x,
+        datum_anchor_y,
+        datum_anchor_z,
         unsafe { std::ffi::CStr::from_ptr(feature_control) }
             .to_str()
             .unwrap_or(""),
@@ -407,6 +415,10 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
     title_block: i32,
     callouts: i32,
     datum: *const c_char,
+    datum_anchor_valid: i32,
+    datum_anchor_x: f64,
+    datum_anchor_y: f64,
+    datum_anchor_z: f64,
     feature_control: *const c_char,
     tolerance_plus: f64,
     tolerance_minus: f64,
@@ -423,7 +435,7 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
     let view_str = unsafe { std::ffi::CStr::from_ptr(view) }
         .to_str()
         .unwrap_or("top");
-    if let Err(e) = shape.export_dxf(
+    if let Err(e) = shape.export_dxf_with_anchor(
         &safe_str,
         view_str,
         scale,
@@ -433,6 +445,10 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
         title_block != 0,
         callouts != 0,
         unsafe { std::ffi::CStr::from_ptr(datum) }.to_str().unwrap_or(""),
+        datum_anchor_valid != 0,
+        datum_anchor_x,
+        datum_anchor_y,
+        datum_anchor_z,
         unsafe { std::ffi::CStr::from_ptr(feature_control) }
             .to_str()
             .unwrap_or(""),

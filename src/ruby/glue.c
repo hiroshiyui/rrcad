@@ -170,13 +170,17 @@ extern void rrcad_shape_export_obj(void* ptr, const char* path, const char** err
 extern void rrcad_shape_export_svg(void* ptr, const char* path, const char* view,
                                    double scale, int hidden, int center_marks, int dimensions,
                                    int title_block, int callouts, const char* datum,
+                                   int datum_anchor_valid, double datum_anchor_x,
+                                   double datum_anchor_y, double datum_anchor_z,
                                    const char* feature_control, double tolerance_plus,
                                    double tolerance_minus,
                                    const char** error_out);
 extern void rrcad_shape_export_dxf(void* ptr, const char* path, const char* view,
                                    double scale, int hidden, int center_marks,
                                    int dimensions, int title_block, int callouts,
-                                   const char* datum, const char* feature_control,
+                                   const char* datum, int datum_anchor_valid,
+                                   double datum_anchor_x, double datum_anchor_y,
+                                   double datum_anchor_z, const char* feature_control,
                                    double tolerance_plus, double tolerance_minus,
                                    const char** error_out);
 
@@ -233,6 +237,72 @@ extern void* rrcad_shape_convex_hull(void* ptr, const char** error_out);
 extern void* rrcad_shape_path_pattern(void* ptr, void* path_ptr, int n, const char** error_out);
 extern void* rrcad_shape_sweep_guide(void* ptr, void* path_ptr, void* guide_ptr,
                                      const char** error_out);
+
+static const char* shape_name_from_value(mrb_state* mrb, mrb_value v);
+static void* shape_ptr(mrb_state* mrb, mrb_value v);
+static void require_native_ptr(mrb_state* mrb, void* ptr);
+
+static int datum_anchor_from_shape_value(mrb_state* mrb, void* body_ptr, mrb_value value,
+                                         double out[3], const char** error_out) {
+    if (mrb_nil_p(value))
+        return 0;
+
+    if (mrb_data_p(value)) {
+        void* datum_ptr = shape_ptr(mrb, value);
+        require_native_ptr(mrb, datum_ptr);
+        rrcad_shape_centroid(datum_ptr, out, error_out);
+        return *error_out == NULL;
+    }
+
+    const char* selector = shape_name_from_value(mrb, value);
+    if (!selector) {
+        *error_out = "datum face expects a Shape, Symbol, or String selector";
+        return 0;
+    }
+
+    int count = rrcad_shape_faces_count(body_ptr, selector, error_out);
+    if (*error_out)
+        return 0;
+    if (count < 1) {
+        *error_out = "datum face selector matched no faces";
+        return 0;
+    }
+
+    void* face_ptr = rrcad_shape_faces_get(body_ptr, selector, 0, error_out);
+    if (*error_out || !face_ptr)
+        return 0;
+    rrcad_shape_centroid(face_ptr, out, error_out);
+    return *error_out == NULL;
+}
+
+static mrb_value append_selector_list(mrb_state* mrb, mrb_value text, mrb_value list) {
+    if (mrb_nil_p(list))
+        return text;
+
+    if (mrb_array_p(list)) {
+        mrb_int len = RARRAY_LEN(list);
+        for (mrb_int i = 0; i < len; i++) {
+            mrb_value item = mrb_ary_ref(mrb, list, i);
+            const char* s = shape_name_from_value(mrb, item);
+            if (!s)
+                mrb_raise(mrb, E_TYPE_ERROR,
+                          "feature_control datums must be Symbols or Strings");
+            if (RSTRING_LEN(text) > 0)
+                mrb_str_cat_cstr(mrb, text, " | ");
+            mrb_str_cat_cstr(mrb, text, s);
+        }
+        return text;
+    }
+
+    const char* s = shape_name_from_value(mrb, list);
+    if (!s)
+        mrb_raise(mrb, E_TYPE_ERROR,
+                  "feature_control datums must be a Symbol, String, or Array thereof");
+    if (RSTRING_LEN(text) > 0)
+        mrb_str_cat_cstr(mrb, text, " | ");
+    mrb_str_cat_cstr(mrb, text, s);
+    return text;
+}
 
 /* mRuby data type descriptor — name appears in TypeError messages. */
 static void shape_dfree(mrb_state* mrb, void* ptr) {
@@ -391,6 +461,9 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     int title_block = 0;
     int callouts = 0;
     const char* datum = "";
+    mrb_value datum_buf = mrb_nil_value();
+    int datum_anchor_valid = 0;
+    double datum_anchor[3] = {0.0, 0.0, 0.0};
     const char* feature_control = "";
     double tolerance_plus = 0.0;
     double tolerance_minus = 0.0;
@@ -428,19 +501,85 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
             mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "datum")),
                            mrb_nil_value());
         if (!mrb_nil_p(datum_v)) {
-            if (mrb_symbol_p(datum_v))
-                datum = mrb_sym_name(mrb, mrb_symbol(datum_v));
-            else
-                datum = mrb_string_value_cstr(mrb, &datum_v);
+            if (mrb_hash_p(datum_v)) {
+                mrb_value label_v =
+                    mrb_hash_fetch(mrb, datum_v, mrb_symbol_value(mrb_intern_lit(mrb, "label")),
+                                   mrb_nil_value());
+                if (mrb_nil_p(label_v)) {
+                    label_v =
+                        mrb_hash_fetch(mrb, datum_v, mrb_symbol_value(mrb_intern_lit(mrb, "name")),
+                                       mrb_nil_value());
+                }
+                mrb_value face_v =
+                    mrb_hash_fetch(mrb, datum_v, mrb_symbol_value(mrb_intern_lit(mrb, "face")),
+                                   mrb_nil_value());
+                if (mrb_nil_p(face_v)) {
+                    face_v = mrb_hash_fetch(mrb, datum_v,
+                                            mrb_symbol_value(mrb_intern_lit(mrb, "selector")),
+                                            mrb_nil_value());
+                }
+                const char* label = shape_name_from_value(mrb, label_v);
+                if (!label)
+                    mrb_raise(mrb, E_TYPE_ERROR,
+                              "datum hash expects label:/name: as a Symbol or String");
+                datum_buf = mrb_str_new_cstr(mrb, label);
+                datum = mrb_string_value_cstr(mrb, &datum_buf);
+                if (!mrb_nil_p(face_v)) {
+                    const char* anchor_err = NULL;
+                    if (!datum_anchor_from_shape_value(mrb, ptr, face_v, datum_anchor,
+                                                       &anchor_err)) {
+                        mrb_raise(mrb, E_RUNTIME_ERROR, anchor_err ? anchor_err
+                                                                   : "failed to resolve datum face");
+                    }
+                    datum_anchor_valid = 1;
+                }
+            } else {
+                const char* label = shape_name_from_value(mrb, datum_v);
+                if (!label)
+                    mrb_raise(mrb, E_TYPE_ERROR,
+                              "datum expects a Symbol, String, or Hash with label:/face:");
+                datum_buf = mrb_str_new_cstr(mrb, label);
+                datum = mrb_string_value_cstr(mrb, &datum_buf);
+            }
         }
         mrb_value fc_v = mrb_hash_fetch(mrb, opts,
                                         mrb_symbol_value(mrb_intern_lit(mrb, "feature_control")),
                                         mrb_nil_value());
         if (!mrb_nil_p(fc_v)) {
-            if (mrb_symbol_p(fc_v))
+            if (mrb_hash_p(fc_v)) {
+                mrb_value text_v =
+                    mrb_hash_fetch(mrb, fc_v, mrb_symbol_value(mrb_intern_lit(mrb, "text")),
+                                   mrb_nil_value());
+                if (mrb_nil_p(text_v)) {
+                    text_v = mrb_hash_fetch(mrb, fc_v,
+                                            mrb_symbol_value(mrb_intern_lit(mrb, "frame")),
+                                            mrb_nil_value());
+                }
+                if (mrb_nil_p(text_v)) {
+                    text_v = mrb_hash_fetch(mrb, fc_v,
+                                            mrb_symbol_value(mrb_intern_lit(mrb, "value")),
+                                            mrb_nil_value());
+                }
+                const char* text = shape_name_from_value(mrb, text_v);
+                if (!text)
+                    mrb_raise(mrb, E_TYPE_ERROR,
+                              "feature_control hash expects text:/frame:/value: as a Symbol or String");
+                mrb_value fc_text = mrb_str_new_cstr(mrb, text);
+                mrb_value datums_v =
+                    mrb_hash_fetch(mrb, fc_v, mrb_symbol_value(mrb_intern_lit(mrb, "datums")),
+                                   mrb_nil_value());
+                if (mrb_nil_p(datums_v)) {
+                    datums_v =
+                        mrb_hash_fetch(mrb, fc_v, mrb_symbol_value(mrb_intern_lit(mrb, "datum")),
+                                       mrb_nil_value());
+                }
+                fc_text = append_selector_list(mrb, fc_text, datums_v);
+                feature_control = mrb_string_value_cstr(mrb, &fc_text);
+            } else if (mrb_symbol_p(fc_v)) {
                 feature_control = mrb_sym_name(mrb, mrb_symbol(fc_v));
-            else
+            } else {
                 feature_control = mrb_string_value_cstr(mrb, &fc_v);
+            }
         }
         mrb_value tv2 =
             mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "tolerance")),
@@ -481,12 +620,14 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
         rrcad_shape_export_obj(ptr, path, &err);
     } else if (dot && (strcasecmp(dot, ".svg") == 0)) {
         rrcad_shape_export_svg(ptr, path, view, scale, hidden, center_marks, dimensions,
-                               title_block, callouts, datum, feature_control, tolerance_plus,
-                               tolerance_minus, &err);
+                               title_block, callouts, datum, datum_anchor_valid,
+                               datum_anchor[0], datum_anchor[1], datum_anchor[2],
+                               feature_control, tolerance_plus, tolerance_minus, &err);
     } else if (dot && (strcasecmp(dot, ".dxf") == 0)) {
         rrcad_shape_export_dxf(ptr, path, view, scale, hidden, center_marks, dimensions,
-                               title_block, callouts, datum, feature_control, tolerance_plus,
-                               tolerance_minus, &err);
+                               title_block, callouts, datum, datum_anchor_valid,
+                               datum_anchor[0], datum_anchor[1], datum_anchor[2],
+                               feature_control, tolerance_plus, tolerance_minus, &err);
     } else {
         /* Default: STEP (.step, .stp, or unknown extension) */
         rrcad_shape_export_step(ptr, path, &err);
