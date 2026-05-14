@@ -119,6 +119,22 @@ fn svg_sheet_view_renders_multiple_orthographic_views() {
 }
 
 #[test]
+fn svg_sheet_title_block_adds_metadata_block() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_sheet_title.svg");
+    vm.eval(&format!(
+        "box(20,10,5).export('{}', view: :sheet, title_block: true)",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("class=\"title-block\"") && content.contains(">rrcad<"),
+        "title_block: true should add an SVG title block"
+    );
+}
+
+#[test]
 fn svg_cylinder_top_view() {
     // Curved surfaces (circles) must be discretised into smooth polylines.
     let mut vm = MrubyVm::new();
@@ -312,6 +328,22 @@ fn dxf_sheet_view_renders_multiple_orthographic_views() {
     assert!(
         dxf_max_abs_xy(&sheet) > dxf_max_abs_xy(&single),
         "sheet mode should produce a larger coordinate envelope than a single view"
+    );
+}
+
+#[test]
+fn dxf_sheet_title_block_adds_metadata_block() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_sheet_title.dxf");
+    vm.eval(&format!(
+        "box(20,10,5).export('{}', view: :sheet, title_block: true)",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("\nTITLEBLOCK\n") && content.contains("rrcad"),
+        "title_block: true should add a DXF title block"
     );
 }
 

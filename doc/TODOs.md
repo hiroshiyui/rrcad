@@ -259,8 +259,8 @@ for failed operations.
 `center_marks: true` cylinder centres; SVG now also supports `hidden: true`
 dashed hidden-line output and `dimensions: true` width/height labels, while DXF
 writes hidden edges on a `HIDDEN` layer and also supports `dimensions: true`.
-SVG and DXF also now have `view: :sheet` for a 3-view sheet layout.
-Remaining work: title-block metadata and richer dimensioning.
+SVG and DXF also now have `view: :sheet` for a 3-view sheet layout and
+`title_block: true` metadata blocks. Remaining work: richer dimensioning.
 
 **CAM / 3-D printing checks ◐ STARTED:** Additive helpers landed in the
 Ruby prelude: `mass_estimate(part, density:)` computes a rough mass in

@@ -3075,6 +3075,13 @@ struct DrawingViewData {
     double height = 0.0;
 };
 
+struct DrawingCanvasBounds {
+    double xmin = 0.0;
+    double xmax = 0.0;
+    double ymin = 0.0;
+    double ymax = 0.0;
+};
+
 struct HlrProjection {
     DrawingPolylines visible;
     DrawingPolylines hidden;
@@ -3483,6 +3490,74 @@ static void write_dxf_view(std::ofstream& f, const DrawingViewData& view, double
     }
 }
 
+static void write_svg_title_block(std::ofstream& f, const DrawingCanvasBounds& canvas,
+                                  const std::string& sheet_name, const std::string& view_name,
+                                  bool sheet_mode, double scale) {
+    const double block_w = 42.0;
+    const double block_h = 18.0;
+    const double x0 = canvas.xmax - block_w - 4.0;
+    const double y0 = canvas.ymin + 4.0;
+    const double mid_y = y0 + 6.0;
+    const double top_y = y0 + 12.0;
+
+    f << "  <g class=\"title-block\" stroke=\"#111827\" stroke-width=\"0.25\" fill=\"none\"";
+    f << " font-family=\"monospace\" font-size=\"3.0\">\n";
+    f << "    <rect x=\"" << x0 << "\" y=\"" << (-y0 - block_h) << "\" width=\"" << block_w
+      << "\" height=\"" << block_h << "\"/>\n";
+    f << "    <line x1=\"" << x0 << "\" y1=\"" << (-(y0 + 6.0)) << "\" x2=\"" << (x0 + block_w)
+      << "\" y2=\"" << (-(y0 + 6.0)) << "\"/>\n";
+    f << "    <line x1=\"" << x0 << "\" y1=\"" << (-(y0 + 12.0)) << "\" x2=\"" << (x0 + block_w)
+      << "\" y2=\"" << (-(y0 + 12.0)) << "\"/>\n";
+    f << "    <text x=\"" << (x0 + 2.0) << "\" y=\"" << (-(top_y - 1.0))
+      << "\" fill=\"#111827\">rrcad</text>\n";
+    f << "    <text x=\"" << (x0 + 2.0) << "\" y=\"" << (-(mid_y - 1.0))
+      << "\" fill=\"#111827\">" << (sheet_mode ? sheet_name : view_name) << "</text>\n";
+    f << "    <text x=\"" << (x0 + 2.0) << "\" y=\"" << (-(y0 + 1.0))
+      << "\" fill=\"#111827\">scale 1:" << (1.0 / scale) << "</text>\n";
+    f << "  </g>\n";
+}
+
+static void write_dxf_title_block(std::ofstream& f, const DrawingCanvasBounds& canvas,
+                                  const std::string& sheet_name, const std::string& view_name,
+                                  bool sheet_mode, double scale) {
+    const double block_w = 42.0;
+    const double block_h = 18.0;
+    const double x0 = canvas.xmax - block_w - 4.0;
+    const double y0 = canvas.ymin + 4.0;
+    const double row1 = y0 + 6.0;
+    const double row2 = y0 + 12.0;
+
+    auto line = [&](double x1, double y1, double x2, double y2) {
+        f << "  0\nLINE\n";
+        f << "  8\nTITLEBLOCK\n";
+        f << " 10\n" << x1 << "\n";
+        f << " 20\n" << y1 << "\n";
+        f << " 30\n0.0\n";
+        f << " 11\n" << x2 << "\n";
+        f << " 21\n" << y2 << "\n";
+        f << " 31\n0.0\n";
+    };
+    auto text = [&](double x, double y, const std::string& s) {
+        f << "  0\nTEXT\n";
+        f << "  8\nTITLEBLOCK\n";
+        f << " 10\n" << x << "\n";
+        f << " 20\n" << y << "\n";
+        f << " 30\n0.0\n";
+        f << " 40\n3.0\n";
+        f << "  1\n" << s << "\n";
+    };
+
+    line(x0, y0, x0 + block_w, y0);
+    line(x0, y0 + block_h, x0 + block_w, y0 + block_h);
+    line(x0, y0, x0, y0 + block_h);
+    line(x0 + block_w, y0, x0 + block_w, y0 + block_h);
+    line(x0, y0 + 6.0, x0 + block_w, y0 + 6.0);
+    line(x0, y0 + 12.0, x0 + block_w, y0 + 12.0);
+    text(x0 + 2.0, row2 - 1.0, "rrcad");
+    text(x0 + 2.0, row1 - 1.0, sheet_mode ? sheet_name : view_name);
+    text(x0 + 2.0, y0 + 1.0, std::string("scale 1:") + std::to_string(1.0 / scale));
+}
+
 // Project the shape onto the chosen view plane, return visible and hidden
 // polylines as (x, y) point lists.
 static HlrProjection hlr_project(const OcctShape& shape, const std::string& view) {
@@ -3532,7 +3607,8 @@ void export_svg(const OcctShape& shape,
                 double scale,
                 bool hidden,
                 bool center_marks,
-                bool dimensions) {
+                bool dimensions,
+                bool title_block) {
     try {
         std::string path_str(path.data(), path.size());
         std::string view_str(view.data(), view.size());
@@ -3570,6 +3646,7 @@ void export_svg(const OcctShape& shape,
             const double h = (ymax - ymin) + 2.0 * margin;
             const double vb_x = xmin - margin;
             const double vb_y = -(ymax + margin);
+            const DrawingCanvasBounds canvas{xmin, xmax, ymin, ymax};
 
             std::ofstream f(path_str);
             if (!f.is_open())
@@ -3585,6 +3662,8 @@ void export_svg(const OcctShape& shape,
             write_svg_view(f, front_view, front_dx, front_dy, hidden, center_marks, dimensions,
                            true);
             write_svg_view(f, side_view, side_dx, side_dy, hidden, center_marks, dimensions, true);
+            if (title_block)
+                write_svg_title_block(f, canvas, "sheet", view_str, true, scale);
             f << "</svg>\n";
             if (!f.good())
                 throw std::runtime_error("export_svg: write error on file: " + path_str);
@@ -3597,6 +3676,8 @@ void export_svg(const OcctShape& shape,
         const double h = (single_view.ymax - single_view.ymin) + 2.0 * margin;
         const double vb_x = single_view.xmin - margin;
         const double vb_y = -(single_view.ymax + margin);
+        const DrawingCanvasBounds canvas{single_view.xmin, single_view.xmax, single_view.ymin,
+                                         single_view.ymax};
 
         std::ofstream f(path_str);
         if (!f.is_open())
@@ -3610,6 +3691,8 @@ void export_svg(const OcctShape& shape,
         f << "  <!-- Generated by rrcad — view: " << view_str << ", scale: " << scale
           << " -->\n";
         write_svg_view(f, single_view, 0.0, 0.0, hidden, center_marks, dimensions, false);
+        if (title_block)
+            write_svg_title_block(f, canvas, "sheet", view_str, false, scale);
         f << "</svg>\n";
         if (!f.good())
             throw std::runtime_error("export_svg: write error on file: " + path_str);
@@ -3632,7 +3715,8 @@ void export_dxf(const OcctShape& shape,
                 double scale,
                 bool hidden,
                 bool center_marks,
-                bool dimensions) {
+                bool dimensions,
+                bool title_block) {
     try {
         std::string path_str(path.data(), path.size());
         std::string view_str(view.data(), view.size());
@@ -3659,6 +3743,12 @@ void export_dxf(const OcctShape& shape,
             const double side_dy = (front_view.geom_ymin + front_view.geom_ymax) * 0.5 -
                                    (side_view.geom_ymin + side_view.geom_ymax) * 0.5;
 
+            double xmin = 1e30, xmax = -1e30, ymin = 1e30, ymax = -1e30;
+            include_placed_bounds(xmin, xmax, ymin, ymax, top_view, top_dx, top_dy);
+            include_placed_bounds(xmin, xmax, ymin, ymax, front_view, front_dx, front_dy);
+            include_placed_bounds(xmin, xmax, ymin, ymax, side_view, side_dx, side_dy);
+            const DrawingCanvasBounds canvas{xmin, xmax, ymin, ymax};
+
             std::ofstream f(path_str);
             if (!f.is_open())
                 throw std::runtime_error("export_dxf: cannot open file: " + path_str);
@@ -3672,6 +3762,8 @@ void export_dxf(const OcctShape& shape,
             write_dxf_view(f, top_view, top_dx, top_dy, hidden, center_marks, dimensions);
             write_dxf_view(f, front_view, front_dx, front_dy, hidden, center_marks, dimensions);
             write_dxf_view(f, side_view, side_dx, side_dy, hidden, center_marks, dimensions);
+            if (title_block)
+                write_dxf_title_block(f, canvas, "sheet", view_str, true, scale);
 
             f << "  0\nENDSEC\n  0\nEOF\n";
             if (!f.good())
@@ -3713,6 +3805,7 @@ void export_dxf(const OcctShape& shape,
             throw std::runtime_error("export_dxf: no drawing edges found after projection");
         double width = geom_xmax - geom_xmin;
         double height = geom_ymax - geom_ymin;
+        const DrawingCanvasBounds canvas{geom_xmin, geom_xmax, geom_ymin, geom_ymax};
 
         std::ofstream f(path_str);
         if (!f.is_open())
@@ -3854,6 +3947,8 @@ void export_dxf(const OcctShape& shape,
 
             write_text(dim_x - label_offset, hy, std::to_string(height), -90.0);
         }
+        if (title_block)
+            write_dxf_title_block(f, canvas, "sheet", view_str, false, scale);
 
         f << "  0\nENDSEC\n  0\nEOF\n";
         if (!f.good())
