@@ -1347,13 +1347,15 @@ impl Shape {
                     .map(|s| summarize(s))
                     .collect::<Vec<_>>()
                     .join(", ");
-                Shape::fresh_with_feature(
+                let parents = faces.iter().map(|s| s.feature.clone()).collect();
+                Shape::fresh_with_feature_parents(
                     p,
                     FeatureOp::Sew {
                         face_count: faces.len(),
                         tolerance,
                     },
                     format!("sew(faces=[{face_summary}], tolerance={tolerance})"),
+                    parents,
                 )
             })
             .map_err(|e| e.to_string())
