@@ -303,6 +303,24 @@ fn svg_callouts_off_by_default() {
 }
 
 #[test]
+fn svg_gdt_frame_adds_frame_group() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_gdt_frame.svg");
+    vm.eval(&format!(
+        "box(20,10,5).export('{}', datum: \"A\", feature_control: \"⌀0.1 | A | B\")",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("class=\"gdt-frame\"")
+            && content.contains("DATUM A")
+            && content.contains("⌀0.1 | A | B"),
+        "datum and feature-control annotations should render in SVG"
+    );
+}
+
+#[test]
 fn svg_dimensions_adds_dimension_group() {
     let mut vm = MrubyVm::new();
     let out = tmp("rrcad_test_dimensions.svg");
@@ -545,6 +563,24 @@ fn dxf_callouts_off_by_default() {
     assert!(
         !content.contains("\nCALLOUT\n"),
         "default DXF export should not include callouts"
+    );
+}
+
+#[test]
+fn dxf_gdt_frame_adds_frame_layer() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_gdt_frame.dxf");
+    vm.eval(&format!(
+        "box(20,10,5).export('{}', datum: \"A\", feature_control: \"⌀0.1 | A | B\")",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("\nGDT\n")
+            && content.contains("DATUM A")
+            && content.contains("⌀0.1 | A | B"),
+        "datum and feature-control annotations should render in DXF"
     );
 }
 

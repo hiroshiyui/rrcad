@@ -162,12 +162,14 @@ extern void rrcad_shape_export_obj(void* ptr, const char* path, const char** err
 /* Phase 8 Tier 4 — SVG / DXF 2-D drawing output */
 extern void rrcad_shape_export_svg(void* ptr, const char* path, const char* view,
                                    double scale, int hidden, int center_marks, int dimensions,
-                                   int title_block, int callouts, double tolerance_plus,
+                                   int title_block, int callouts, const char* datum,
+                                   const char* feature_control, double tolerance_plus,
                                    double tolerance_minus,
                                    const char** error_out);
 extern void rrcad_shape_export_dxf(void* ptr, const char* path, const char* view,
                                    double scale, int hidden, int center_marks,
                                    int dimensions, int title_block, int callouts,
+                                   const char* datum, const char* feature_control,
                                    double tolerance_plus, double tolerance_minus,
                                    const char** error_out);
 
@@ -351,7 +353,7 @@ static mrb_value mrb_rrcad_shape_inspect(mrb_state* mrb, mrb_value self) {
     return mrb_str_new_cstr(mrb, "#<Shape>");
 }
 
-/* .export("path" [, view: :top|:front|:side, scale: 1.0, hidden: false, center_marks: false, dimensions: false, title_block: false, callouts: false, tolerance: 0.0]) — dispatches by file extension:
+/* .export("path" [, view: :top|:front|:side, scale: 1.0, hidden: false, center_marks: false, dimensions: false, title_block: false, callouts: false, datum: nil, feature_control: nil, tolerance: 0.0]) — dispatches by file extension:
  *   .step / .stp  → STEP AP203
  *   .stl          → ASCII STL
  *   .glb          → binary glTF (GLB)
@@ -381,6 +383,8 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     int dimensions = 0;
     int title_block = 0;
     int callouts = 0;
+    const char* datum = "";
+    const char* feature_control = "";
     double tolerance_plus = 0.0;
     double tolerance_minus = 0.0;
     if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
@@ -413,6 +417,24 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
             mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "callouts")),
                            mrb_false_value());
         callouts = mrb_test(dv2) ? 1 : 0;
+        mrb_value datum_v =
+            mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "datum")),
+                           mrb_nil_value());
+        if (!mrb_nil_p(datum_v)) {
+            if (mrb_symbol_p(datum_v))
+                datum = mrb_sym_name(mrb, mrb_symbol(datum_v));
+            else
+                datum = mrb_string_value_cstr(mrb, &datum_v);
+        }
+        mrb_value fc_v = mrb_hash_fetch(mrb, opts,
+                                        mrb_symbol_value(mrb_intern_lit(mrb, "feature_control")),
+                                        mrb_nil_value());
+        if (!mrb_nil_p(fc_v)) {
+            if (mrb_symbol_p(fc_v))
+                feature_control = mrb_sym_name(mrb, mrb_symbol(fc_v));
+            else
+                feature_control = mrb_string_value_cstr(mrb, &fc_v);
+        }
         mrb_value tv2 =
             mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "tolerance")),
                            mrb_float_value(mrb, 0.0));
@@ -452,10 +474,12 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
         rrcad_shape_export_obj(ptr, path, &err);
     } else if (dot && (strcasecmp(dot, ".svg") == 0)) {
         rrcad_shape_export_svg(ptr, path, view, scale, hidden, center_marks, dimensions,
-                               title_block, callouts, tolerance_plus, tolerance_minus, &err);
+                               title_block, callouts, datum, feature_control, tolerance_plus,
+                               tolerance_minus, &err);
     } else if (dot && (strcasecmp(dot, ".dxf") == 0)) {
         rrcad_shape_export_dxf(ptr, path, view, scale, hidden, center_marks, dimensions,
-                               title_block, callouts, tolerance_plus, tolerance_minus, &err);
+                               title_block, callouts, datum, feature_control, tolerance_plus,
+                               tolerance_minus, &err);
     } else {
         /* Default: STEP (.step, .stp, or unknown extension) */
         rrcad_shape_export_step(ptr, path, &err);

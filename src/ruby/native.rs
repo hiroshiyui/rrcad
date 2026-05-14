@@ -358,6 +358,8 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
     dimensions: i32,
     title_block: i32,
     callouts: i32,
+    datum: *const c_char,
+    feature_control: *const c_char,
     tolerance_plus: f64,
     tolerance_minus: f64,
     error_out: *mut *const c_char,
@@ -382,6 +384,10 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
         dimensions != 0,
         title_block != 0,
         callouts != 0,
+        unsafe { std::ffi::CStr::from_ptr(datum) }.to_str().unwrap_or(""),
+        unsafe { std::ffi::CStr::from_ptr(feature_control) }
+            .to_str()
+            .unwrap_or(""),
         tolerance_plus,
         tolerance_minus,
     ) {
@@ -400,6 +406,8 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
     dimensions: i32,
     title_block: i32,
     callouts: i32,
+    datum: *const c_char,
+    feature_control: *const c_char,
     tolerance_plus: f64,
     tolerance_minus: f64,
     error_out: *mut *const c_char,
@@ -424,6 +432,10 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
         dimensions != 0,
         title_block != 0,
         callouts != 0,
+        unsafe { std::ffi::CStr::from_ptr(datum) }.to_str().unwrap_or(""),
+        unsafe { std::ffi::CStr::from_ptr(feature_control) }
+            .to_str()
+            .unwrap_or(""),
         tolerance_plus,
         tolerance_minus,
     ) {

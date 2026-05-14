@@ -97,6 +97,8 @@ fn export_svg_error_includes_view() {
         false,
         false,
         false,
+        "",
+        "",
         0.0,
         0.0,
     ));

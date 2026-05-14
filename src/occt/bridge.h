@@ -455,6 +455,8 @@ void export_svg(const OcctShape& shape,
                 bool dimensions,
                 bool title_block,
                 bool callouts,
+                rust::Str datum,
+                rust::Str feature_control,
                 double tolerance_plus,
                 double tolerance_minus);
 void export_dxf(const OcctShape& shape,
@@ -466,6 +468,8 @@ void export_dxf(const OcctShape& shape,
                 bool dimensions,
                 bool title_block,
                 bool callouts,
+                rust::Str datum,
+                rust::Str feature_control,
                 double tolerance_plus,
                 double tolerance_minus);
 

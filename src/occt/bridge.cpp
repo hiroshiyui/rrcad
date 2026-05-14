@@ -3690,6 +3690,37 @@ static void write_svg_title_block(std::ofstream& f, const DrawingCanvasBounds& c
     f << "  </g>\n";
 }
 
+static void write_svg_gdt_frame(std::ofstream& f, const DrawingCanvasBounds& canvas,
+                                const std::string& datum, const std::string& feature_control) {
+    if (datum.empty() && feature_control.empty())
+        return;
+
+    const bool has_both = !datum.empty() && !feature_control.empty();
+    const double block_w = std::max(42.0, std::max(datum.size(), feature_control.size()) * 1.8);
+    const double block_h = has_both ? 12.0 : 6.0;
+    const double x0 = canvas.xmin + 4.0;
+    const double y0 = canvas.ymin + 4.0;
+    const double line_y = y0 + 6.0;
+
+    f << "  <g class=\"gdt-frame\" stroke=\"#111827\" stroke-width=\"0.25\" fill=\"none\"";
+    f << " font-family=\"monospace\" font-size=\"3.0\">\n";
+    f << "    <rect x=\"" << x0 << "\" y=\"" << (-y0 - block_h) << "\" width=\"" << block_w
+      << "\" height=\"" << block_h << "\"/>\n";
+    if (has_both) {
+        f << "    <line x1=\"" << x0 << "\" y1=\"" << (-line_y) << "\" x2=\"" << (x0 + block_w)
+          << "\" y2=\"" << (-line_y) << "\"/>\n";
+    }
+    const std::string datum_text = datum.empty() ? feature_control : std::string("DATUM ") + datum;
+    const std::string fc_text = feature_control;
+    f << "    <text x=\"" << (x0 + 2.0) << "\" y=\"" << (-(y0 + (has_both ? 1.0 : 2.0)))
+      << "\" fill=\"#111827\">" << datum_text << "</text>\n";
+    if (has_both) {
+        f << "    <text x=\"" << (x0 + 2.0) << "\" y=\"" << (-(y0 + 7.0))
+          << "\" fill=\"#111827\">" << fc_text << "</text>\n";
+    }
+    f << "  </g>\n";
+}
+
 static void write_dxf_title_block(std::ofstream& f, const DrawingCanvasBounds& canvas,
                                   const std::string& sheet_name, const std::string& view_name,
                                   bool sheet_mode, double scale, double tolerance_plus,
@@ -3733,6 +3764,50 @@ static void write_dxf_title_block(std::ofstream& f, const DrawingCanvasBounds& c
     std::string tol = format_tolerance(tolerance_plus, tolerance_minus);
     if (!tol.empty())
         text(x0 + 22.0, y0 + 1.0, std::string("tol ") + tol);
+}
+
+static void write_dxf_gdt_frame(std::ofstream& f, const DrawingCanvasBounds& canvas,
+                                const std::string& datum, const std::string& feature_control) {
+    if (datum.empty() && feature_control.empty())
+        return;
+
+    const bool has_both = !datum.empty() && !feature_control.empty();
+    const double block_w = std::max(42.0, std::max(datum.size(), feature_control.size()) * 1.8);
+    const double block_h = has_both ? 12.0 : 6.0;
+    const double x0 = canvas.xmin + 4.0;
+    const double y0 = canvas.ymin + 4.0;
+    const double line_y = y0 + 6.0;
+
+    auto line = [&](double x1, double y1, double x2, double y2) {
+        f << "  0\nLINE\n";
+        f << "  8\nGDT\n";
+        f << " 10\n" << x1 << "\n";
+        f << " 20\n" << y1 << "\n";
+        f << " 30\n0.0\n";
+        f << " 11\n" << x2 << "\n";
+        f << " 21\n" << y2 << "\n";
+        f << " 31\n0.0\n";
+    };
+    auto text = [&](double x, double y, const std::string& s) {
+        f << "  0\nTEXT\n";
+        f << "  8\nGDT\n";
+        f << " 10\n" << x << "\n";
+        f << " 20\n" << y << "\n";
+        f << " 30\n0.0\n";
+        f << " 40\n3.0\n";
+        f << "  1\n" << s << "\n";
+    };
+
+    line(x0, y0, x0 + block_w, y0);
+    line(x0, y0 + block_h, x0 + block_w, y0 + block_h);
+    line(x0, y0, x0, y0 + block_h);
+    line(x0 + block_w, y0, x0 + block_w, y0 + block_h);
+    if (has_both)
+        line(x0, line_y, x0 + block_w, line_y);
+    text(x0 + 2.0, y0 + (has_both ? 1.0 : 2.0), datum.empty() ? feature_control
+                                                               : std::string("DATUM ") + datum);
+    if (has_both)
+        text(x0 + 2.0, y0 + 7.0, feature_control);
 }
 
 // Project the shape onto the chosen view plane, return visible and hidden
@@ -3787,11 +3862,15 @@ void export_svg(const OcctShape& shape,
                 bool dimensions,
                 bool title_block,
                 bool callouts,
+                rust::Str datum,
+                rust::Str feature_control,
                 double tolerance_plus,
                 double tolerance_minus) {
     try {
         std::string path_str(path.data(), path.size());
         std::string view_str(view.data(), view.size());
+        std::string datum_str(datum.data(), datum.size());
+        std::string feature_control_str(feature_control.data(), feature_control.size());
         if (!(scale > 0.0) || !std::isfinite(scale)) {
             throw std::runtime_error("export_svg: scale must be positive and finite");
         }
@@ -3844,6 +3923,7 @@ void export_svg(const OcctShape& shape,
                            callouts, true, "X", "Z", tolerance_plus, tolerance_minus);
             write_svg_view(f, side_view, side_dx, side_dy, hidden, center_marks, dimensions,
                            callouts, true, "Y", "Z", tolerance_plus, tolerance_minus);
+            write_svg_gdt_frame(f, canvas, datum_str, feature_control_str);
             if (title_block)
                 write_svg_title_block(f, canvas, "sheet", view_str, true, scale, tolerance_plus,
                                       tolerance_minus);
@@ -3876,6 +3956,7 @@ void export_svg(const OcctShape& shape,
           << " -->\n";
         write_svg_view(f, single_view, 0.0, 0.0, hidden, center_marks, dimensions, callouts,
                        false, nullptr, nullptr, tolerance_plus, tolerance_minus);
+        write_svg_gdt_frame(f, canvas, datum_str, feature_control_str);
         if (title_block)
             write_svg_title_block(f, canvas, "sheet", view_str, false, scale, tolerance_plus,
                                   tolerance_minus);
@@ -3904,11 +3985,15 @@ void export_dxf(const OcctShape& shape,
                 bool dimensions,
                 bool title_block,
                 bool callouts,
+                rust::Str datum,
+                rust::Str feature_control,
                 double tolerance_plus,
                 double tolerance_minus) {
     try {
         std::string path_str(path.data(), path.size());
         std::string view_str(view.data(), view.size());
+        std::string datum_str(datum.data(), datum.size());
+        std::string feature_control_str(feature_control.data(), feature_control.size());
         if (!(scale > 0.0) || !std::isfinite(scale)) {
             throw std::runtime_error("export_dxf: scale must be positive and finite");
         }
@@ -3957,6 +4042,7 @@ void export_dxf(const OcctShape& shape,
                            callouts, true, "X", "Z", tolerance_plus, tolerance_minus);
             write_dxf_view(f, side_view, side_dx, side_dy, hidden, center_marks, dimensions,
                            callouts, true, "Y", "Z", tolerance_plus, tolerance_minus);
+            write_dxf_gdt_frame(f, canvas, datum_str, feature_control_str);
             if (title_block)
                 write_dxf_title_block(f, canvas, "sheet", view_str, true, scale, tolerance_plus,
                                       tolerance_minus);
@@ -3989,6 +4075,7 @@ void export_dxf(const OcctShape& shape,
 
         write_dxf_view(f, single_view, 0.0, 0.0, hidden, center_marks, dimensions, callouts,
                        false, nullptr, nullptr, tolerance_plus, tolerance_minus);
+        write_dxf_gdt_frame(f, canvas, datum_str, feature_control_str);
         if (title_block)
             write_dxf_title_block(f, canvas, "sheet", view_str, false, scale, tolerance_plus,
                                   tolerance_minus);

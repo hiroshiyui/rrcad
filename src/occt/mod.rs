@@ -278,6 +278,8 @@ mod ffi {
             dimensions: bool,
             title_block: bool,
             callouts: bool,
+            datum: &str,
+            feature_control: &str,
             tolerance_plus: f64,
             tolerance_minus: f64,
         ) -> Result<()>;
@@ -291,6 +293,8 @@ mod ffi {
             dimensions: bool,
             title_block: bool,
             callouts: bool,
+            datum: &str,
+            feature_control: &str,
             tolerance_plus: f64,
             tolerance_minus: f64,
         ) -> Result<()>;
@@ -1238,6 +1242,7 @@ impl Shape {
     /// `center_marks` adds crosshair marks for cylindrical faces aligned to the view axis.
     /// `dimensions` adds overall width and height annotations.
     /// `callouts` adds diameter callouts for cylindrical faces aligned to the view axis.
+    /// `datum` and `feature_control` add a simple framed GD&T annotation block.
     pub fn export_svg(
         &self,
         path: &str,
@@ -1248,6 +1253,8 @@ impl Shape {
         dimensions: bool,
         title_block: bool,
         callouts: bool,
+        datum: &str,
+        feature_control: &str,
         tolerance_plus: f64,
         tolerance_minus: f64,
     ) -> Result<(), String> {
@@ -1261,12 +1268,14 @@ impl Shape {
             dimensions,
             title_block,
             callouts,
+            datum,
+            feature_control,
             tolerance_plus,
             tolerance_minus,
         )
         .map_err(|e| {
             format!(
-                "export_svg({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}) on {} failed: {e}",
+                "export_svg({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, datum: {datum:?}, feature_control: {feature_control:?}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}) on {} failed: {e}",
                 summarize(self)
             )
         })
@@ -1279,6 +1288,7 @@ impl Shape {
     /// `center_marks` adds crosshair marks on a `CENTER` layer.
     /// `dimensions` adds overall width/height labels.
     /// `callouts` adds diameter callouts on a `CALLOUT` layer.
+    /// `datum` and `feature_control` add a simple framed GD&T annotation block.
     pub fn export_dxf(
         &self,
         path: &str,
@@ -1289,6 +1299,8 @@ impl Shape {
         dimensions: bool,
         title_block: bool,
         callouts: bool,
+        datum: &str,
+        feature_control: &str,
         tolerance_plus: f64,
         tolerance_minus: f64,
     ) -> Result<(), String> {
@@ -1302,12 +1314,14 @@ impl Shape {
             dimensions,
             title_block,
             callouts,
+            datum,
+            feature_control,
             tolerance_plus,
             tolerance_minus,
         )
         .map_err(|e| {
             format!(
-                "export_dxf({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}) on {} failed: {e}",
+                "export_dxf({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, datum: {datum:?}, feature_control: {feature_control:?}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}) on {} failed: {e}",
                 summarize(self)
             )
         })
