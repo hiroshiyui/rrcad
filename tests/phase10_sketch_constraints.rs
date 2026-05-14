@@ -1162,6 +1162,90 @@ fn conflicting_horizontal_reports_point_coords() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// polar_point construction helper
+// ---------------------------------------------------------------------------
+
+#[test]
+fn polar_point_resolves_from_center_radius_and_angle() {
+    // Triangle with two corners placed at polar coordinates around (0,0).
+    // r=10, θ=0  ⇒ (10, 0).  r=10, θ=90 ⇒ (0, 10).
+    // Third corner at (0, 0) closes the loop. Right triangle, area 50, h=2
+    // ⇒ extruded volume 100.
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               c  = point(:c, 0, 0)
+               p1 = polar_point(:p1, c, 10, 0)
+               p2 = polar_point(:p2, c, 10, 90)
+               line c, p1
+               line p1, p2
+               line p2, c
+             end
+             profile.extrude(2).volume",
+        )
+        .unwrap();
+    let volume: f64 = result.trim().parse().expect("expected a volume");
+    assert!(
+        (volume - 100.0).abs() < 1.0,
+        "expected right-triangle prism volume near 100, got {volume}"
+    );
+}
+
+#[test]
+fn polar_point_waits_for_center_to_resolve() {
+    // Center coordinates are unknown initially, then fixed via another point.
+    // After fixing :c via coincident, the polar point should resolve too.
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "profile = sketch do
+               anchor = point(0, 0)
+               c      = point(:c, nil, nil)
+               coincident anchor, c
+               p1 = polar_point(:p1, c, 5, 0)
+               p2 = point(0, 5)
+               line c, p1
+               line p1, p2
+               line p2, c
+             end
+             profile.extrude(2).volume",
+        )
+        .unwrap();
+    let volume: f64 = result.trim().parse().expect("number");
+    // Right triangle with legs 5 (along X) and 5 (along Y), area 12.5, prism 25.
+    assert!((volume - 25.0).abs() < 1.0, "expected ~25, got {volume}");
+}
+
+#[test]
+fn polar_point_rejects_non_positive_radius() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval(
+            "sketch do
+               c = point(:c, 0, 0)
+               polar_point :p1, c, 0, 0
+             end",
+        )
+        .unwrap_err();
+    assert!(err.contains("must be > 0"), "got: {err}");
+}
+
+#[test]
+fn polar_point_rejects_non_numeric_angle() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval(
+            "sketch do
+               c = point(:c, 0, 0)
+               polar_point :p1, c, 5, :north
+             end",
+        )
+        .unwrap_err();
+    assert!(err.contains("must be a number"), "got: {err}");
+}
+
 #[test]
 fn conflicting_tangent_reports_distance_and_radius() {
     let mut vm = MrubyVm::new();

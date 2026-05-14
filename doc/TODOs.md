@@ -171,26 +171,27 @@ These are forward-looking CAD enhancements intended to move `rrcad` from a
 powerful scripted geometry engine toward a more complete, inspectable CAD
 workflow.
 
-**Constraint-based sketching ◐ MVP STARTED:** `sketch do ... end` now builds
-closed polygon profiles from points and lines, with constraint propagation for
-`fixed`, `horizontal`, `vertical`, `coincident`, `dimension`, `equal_length`,
-`parallel`, `perpendicular`, `symmetric`, `mirror_x`, `mirror_y`, and
-`tangent` (line-to-circle, with `side:` keyword for axis-aligned lines and
-verification mode for fully-resolved geometry). It also
-supports named construction points via `point(:name, x, y)`,
-`construction_point(:name, x, y)`, `ref(:name)`, and `self[:name]`, plus
-`midpoint` construction points and non-profile `construction_line(a, b)`
-references. The current MVP works with `.extrude`, `.pad`, and `.pocket`, and
-supports exact circle profiles via
-`circle_at(center, radius)` plus translated arc wires via
-`arc_at(center, radius, start_deg, end_deg)`. It also includes a constrained
-`rectangle(origin, width, height)` helper and `centered_rectangle(center, width,
-height)`, plus axis-aligned `slot_between(a, b, radius)` profiles. Solver diagnostics now name the involved points and report actual vs
-expected values for `horizontal`/`vertical`/`coincident`/`dimension`/
-`equal_length`/`tangent` conflicts, and the "did not converge" failure
-lists every unresolved point with its missing coordinates. Remaining
-work: richer construction geometry and broader under/over-constrained
-sketch analysis (e.g. detecting redundant constraints before solving).
+**Constraint-based sketching ✓ MVP COMPLETE:** `sketch do ... end` builds
+closed polygon profiles from points and lines, with constraint propagation
+for `fixed`, `horizontal`, `vertical`, `coincident`, `dimension`,
+`equal_length`, `parallel`, `perpendicular`, `symmetric`, `mirror_x`,
+`mirror_y`, and `tangent` (line-to-circle, with `side:` keyword for
+axis-aligned lines and verification mode for fully-resolved geometry).
+Construction geometry: named construction points via `point(:name, x, y)`,
+`construction_point(:name, x, y)`, `ref(:name)`, and `self[:name]`;
+`midpoint` construction points; non-profile `construction_line(a, b)`
+references; and `polar_point([:name,] center, radius, angle_deg)` for bolt
+circles and other polar layouts. The MVP works with `.extrude`, `.pad`, and
+`.pocket`, and supports exact circle profiles via `circle_at(center,
+radius)`, translated arc wires via `arc_at(center, radius, start_deg,
+end_deg)`, constrained `rectangle(origin, width, height)` /
+`centered_rectangle(center, width, height)` helpers, and axis-aligned
+`slot_between(a, b, radius)` profiles. Solver diagnostics name the
+involved points and report actual vs expected values for conflicting
+constraints, and the "did not converge" failure lists every unresolved
+point with its missing coordinates. Future work beyond the MVP: a real
+DOF-counting analyser for redundant-constraint detection before solving,
+and a richer 2-D drawing/preview layer to visualise the sketch graph.
 
 **Feature history / parametric model tree:** Represent modeling operations as a
 regeneratable feature graph instead of only immutable shape results. This would

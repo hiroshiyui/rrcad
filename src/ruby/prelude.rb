@@ -161,6 +161,37 @@ class SketchBuilder
     [a, b]
   end
 
+  # polar_point([:name,] center, radius, angle_deg) — register a construction
+  # point at polar coordinates around +center+. Once +center+ resolves, the
+  # new point's coordinates are computed as
+  #   x = center.x + radius * cos(θ)
+  #   y = center.y + radius * sin(θ)
+  # +radius+ must be positive and +angle_deg+ is measured CCW from +X.
+  # Useful for bolt circles, fan patterns, and other polar layouts.
+  def polar_point(name_or_center, center_or_radius = nil, radius_or_angle = nil, angle_deg = nil)
+    if name_or_center.is_a?(Symbol) || name_or_center.is_a?(String)
+      name = name_or_center
+      center = center_or_radius
+      radius = radius_or_angle
+      angle = angle_deg
+      p = point(name, nil, nil)
+    else
+      center = name_or_center
+      radius = center_or_radius
+      angle = radius_or_angle
+      p = point(nil, nil)
+    end
+
+    require_point!(center, "polar_point")
+    require_positive_number!(radius, "polar_point radius")
+    unless angle.is_a?(Numeric)
+      raise ArgumentError, "polar_point angle must be a number"
+    end
+
+    @constraints << [:polar_point, p, center, radius, angle]
+    p
+  end
+
   def rectangle(origin, width, height)
     require_point!(origin, "rectangle")
     require_positive_number!(width, "rectangle width")
@@ -459,6 +490,9 @@ class SketchBuilder
     when :tangent
       _type, a, b, center, radius, side = constraint
       apply_tangent(a, b, center, radius, side)
+    when :polar_point
+      _type, p, center, radius, angle_deg = constraint
+      apply_polar_point(p, center, radius, angle_deg)
     else
       false
     end
@@ -483,6 +517,17 @@ class SketchBuilder
     else
       false
     end
+  end
+
+  def apply_polar_point(p, center, radius, angle_deg)
+    return false unless center.resolved?
+
+    rad = angle_deg * Math::PI / 180.0
+    target_x = center.x + radius * Math.cos(rad)
+    target_y = center.y + radius * Math.sin(rad)
+
+    changed = assign_coord(p, :x, target_x, "polar_point")
+    assign_coord(p, :y, target_y, "polar_point") || changed
   end
 
   # Infer line orientation from known endpoint coordinates alone (independent
