@@ -438,10 +438,15 @@ void export_obj(const OcctShape& shape, rust::Str path, double linear_deflection
 //   "side"  — looking along the +X axis; drawing plane is YZ.
 //
 // SVG uses Y-down coordinates (standard for SVG/HTML). `scale` multiplies
-// projected drawing geometry; `1.0` preserves model units.
+// projected drawing geometry; `1.0` preserves model units. `hidden` includes
+// hidden HLR edges as dashed secondary geometry.
 // DXF uses Y-up coordinates (standard CAD convention). `scale` has the same
 // meaning as SVG scale.
-void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double scale);
+void export_svg(const OcctShape& shape,
+                rust::Str path,
+                rust::Str view,
+                double scale,
+                bool hidden);
 void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double scale);
 
 // --- Phase 8 Tier 5: Advanced composition ---

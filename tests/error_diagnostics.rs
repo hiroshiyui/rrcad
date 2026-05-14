@@ -88,7 +88,12 @@ fn export_step_error_includes_path() {
 #[test]
 fn export_svg_error_includes_view() {
     let cube = Shape::make_box(1.0, 1.0, 1.0).expect("make_box");
-    let err = err_of(cube.export_svg("/nonexistent_dir/rrcad_zzz.svg", "isometric", 1.0));
+    let err = err_of(cube.export_svg(
+        "/nonexistent_dir/rrcad_zzz.svg",
+        "isometric",
+        1.0,
+        false,
+    ));
     assert!(
         err.contains("export_svg(") && err.contains("isometric"),
         "expected export_svg + view in error, got: {err}"

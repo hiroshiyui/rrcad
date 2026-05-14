@@ -268,7 +268,13 @@ mod ffi {
         fn export_obj(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
 
         // Phase 8 Tier 4: 2-D drawing output.
-        fn export_svg(shape: &OcctShape, path: &str, view: &str, scale: f64) -> Result<()>;
+        fn export_svg(
+            shape: &OcctShape,
+            path: &str,
+            view: &str,
+            scale: f64,
+            hidden: bool,
+        ) -> Result<()>;
         fn export_dxf(shape: &OcctShape, path: &str, view: &str, scale: f64) -> Result<()>;
 
         // Phase 8 Tier 5: Advanced composition.
@@ -1210,10 +1216,17 @@ impl Shape {
     /// Export to SVG using hidden-line removal (HLRBRep_PolyAlgo).
     /// `view` is `"top"` (default), `"front"`, or `"side"`.
     /// `scale` multiplies drawing geometry; `1.0` preserves model units.
-    pub fn export_svg(&self, path: &str, view: &str, scale: f64) -> Result<(), String> {
-        ffi::export_svg(&self.inner, path, view, scale).map_err(|e| {
+    /// `hidden` includes hidden HLR edges as dashed secondary geometry.
+    pub fn export_svg(
+        &self,
+        path: &str,
+        view: &str,
+        scale: f64,
+        hidden: bool,
+    ) -> Result<(), String> {
+        ffi::export_svg(&self.inner, path, view, scale, hidden).map_err(|e| {
             format!(
-                "export_svg({path:?}, view: {view:?}, scale: {scale}) on {} failed: {e}",
+                "export_svg({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}) on {} failed: {e}",
                 summarize(self)
             )
         })

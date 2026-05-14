@@ -3049,10 +3049,48 @@ std::unique_ptr<OcctShape> make_helix(double radius, double pitch, double height
 // 32 gives smooth curves while keeping SVG/DXF files compact.
 static const int HLR_SAMPLES_PER_EDGE = 32;
 
-// Project the shape onto the chosen view plane, return all visible polylines
-// as a vector of (x, y) point lists.
-static std::vector<std::vector<std::pair<double, double>>> hlr_project(const OcctShape& shape,
-                                                                       const std::string& view) {
+using DrawingPolyline = std::vector<std::pair<double, double>>;
+using DrawingPolylines = std::vector<DrawingPolyline>;
+
+struct HlrProjection {
+    DrawingPolylines visible;
+    DrawingPolylines hidden;
+};
+
+static void collect_hlr_compound(const TopoDS_Shape& compound, DrawingPolylines& polylines) {
+    if (compound.IsNull())
+        return;
+    TopExp_Explorer eexp(compound, TopAbs_EDGE);
+    for (; eexp.More(); eexp.Next()) {
+        BRepAdaptor_Curve curve(TopoDS::Edge(eexp.Current()));
+        double t0 = curve.FirstParameter();
+        double t1 = curve.LastParameter();
+        if (t1 <= t0)
+            continue;
+
+        DrawingPolyline pts;
+        pts.reserve(HLR_SAMPLES_PER_EDGE + 1);
+        for (int i = 0; i <= HLR_SAMPLES_PER_EDGE; ++i) {
+            double t = t0 + (t1 - t0) * i / HLR_SAMPLES_PER_EDGE;
+            gp_Pnt p = curve.Value(t);
+            pts.emplace_back(p.X(), p.Y());
+        }
+        polylines.push_back(std::move(pts));
+    }
+}
+
+static void scale_polylines(DrawingPolylines& polylines, double scale) {
+    for (auto& pl : polylines) {
+        for (auto& [x, y] : pl) {
+            x *= scale;
+            y *= scale;
+        }
+    }
+}
+
+// Project the shape onto the chosen view plane, return visible and hidden
+// polylines as (x, y) point lists.
+static HlrProjection hlr_project(const OcctShape& shape, const std::string& view) {
     // Tessellate (required before loading into PolyAlgo).
     BRepMesh_IncrementalMesh mesher(shape.get(), 0.05, false, 0.5, true);
     mesher.Perform();
@@ -3078,44 +3116,26 @@ static std::vector<std::vector<std::pair<double, double>>> hlr_project(const Occ
     HLRBRep_PolyHLRToShape gen;
     gen.Update(algo);
 
-    // Collect projected edges: sharp visible + silhouette outline.
-    std::vector<std::vector<std::pair<double, double>>> polylines;
+    HlrProjection projection;
+    collect_hlr_compound(gen.VCompound(), projection.visible);
+    collect_hlr_compound(gen.OutLineVCompound(), projection.visible);
+    collect_hlr_compound(gen.HCompound(), projection.hidden);
+    collect_hlr_compound(gen.OutLineHCompound(), projection.hidden);
 
-    auto process_compound = [&](const TopoDS_Shape& compound) {
-        if (compound.IsNull())
-            return;
-        TopExp_Explorer eexp(compound, TopAbs_EDGE);
-        for (; eexp.More(); eexp.Next()) {
-            BRepAdaptor_Curve curve(TopoDS::Edge(eexp.Current()));
-            double t0 = curve.FirstParameter();
-            double t1 = curve.LastParameter();
-            if (t1 <= t0)
-                continue;
-
-            std::vector<std::pair<double, double>> pts;
-            pts.reserve(HLR_SAMPLES_PER_EDGE + 1);
-            for (int i = 0; i <= HLR_SAMPLES_PER_EDGE; ++i) {
-                double t = t0 + (t1 - t0) * i / HLR_SAMPLES_PER_EDGE;
-                gp_Pnt p = curve.Value(t);
-                pts.emplace_back(p.X(), p.Y());
-            }
-            polylines.push_back(std::move(pts));
-        }
-    };
-
-    process_compound(gen.VCompound());
-    process_compound(gen.OutLineVCompound());
-
-    if (polylines.empty())
+    if (projection.visible.empty() && projection.hidden.empty())
         throw std::runtime_error("export_svg/dxf: no visible edges found — "
                                  "shape may be degenerate or face the wrong direction");
-    return polylines;
+    return projection;
 }
 
 // ---------------------------------------------------------------------------
 // SVG export
 // ---------------------------------------------------------------------------
-void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double scale) {
+void export_svg(const OcctShape& shape,
+                rust::Str path,
+                rust::Str view,
+                double scale,
+                bool hidden) {
     try {
         std::string path_str(path.data(), path.size());
         std::string view_str(view.data(), view.size());
@@ -3123,24 +3143,27 @@ void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double s
             throw std::runtime_error("export_svg: scale must be positive and finite");
         }
 
-        auto polylines = hlr_project(shape, view_str);
-        for (auto& pl : polylines) {
-            for (auto& [x, y] : pl) {
-                x *= scale;
-                y *= scale;
-            }
-        }
+        auto projection = hlr_project(shape, view_str);
+        scale_polylines(projection.visible, scale);
+        scale_polylines(projection.hidden, scale);
 
         // Compute axis-aligned bounding box in drawing coordinates.
         double xmin = 1e30, xmax = -1e30, ymin = 1e30, ymax = -1e30;
-        for (auto& pl : polylines) {
-            for (auto& [x, y] : pl) {
-                xmin = std::min(xmin, x);
-                xmax = std::max(xmax, x);
-                ymin = std::min(ymin, y);
-                ymax = std::max(ymax, y);
+        auto include_bounds = [&](const DrawingPolylines& polylines) {
+            for (auto& pl : polylines) {
+                for (auto& [x, y] : pl) {
+                    xmin = std::min(xmin, x);
+                    xmax = std::max(xmax, x);
+                    ymin = std::min(ymin, y);
+                    ymax = std::max(ymax, y);
+                }
             }
-        }
+        };
+        include_bounds(projection.visible);
+        if (hidden)
+            include_bounds(projection.hidden);
+        if (xmin == 1e30)
+            throw std::runtime_error("export_svg: no drawing edges found after projection");
 
         const double margin = 5.0;
         double w = (xmax - xmin) + 2.0 * margin;
@@ -3160,21 +3183,38 @@ void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double s
         f << " width=\"" << w << "\" height=\"" << h << "\"";
         f << " viewBox=\"" << vb_x << " " << vb_y << " " << w << " " << h << "\">\n";
         f << "  <!-- Generated by rrcad — view: " << view_str << ", scale: " << scale << " -->\n";
-        f << "  <g stroke=\"black\" stroke-width=\"0.3\" fill=\"none\"";
+        f << "  <g class=\"visible\" stroke=\"black\" stroke-width=\"0.3\" fill=\"none\"";
         f << " stroke-linecap=\"round\" stroke-linejoin=\"round\">\n";
 
-        for (auto& pts : polylines) {
-            if (pts.size() < 2)
-                continue;
-            f << "    <polyline points=\"";
-            for (auto& [x, y] : pts) {
+        auto write_polyline_points = [&](const DrawingPolyline& polyline) {
+            for (auto& [x, y] : polyline) {
                 // Negate Y: drawing Y-up → SVG Y-down.
                 f << x << "," << -y << " ";
             }
+        };
+
+        for (auto& pts : projection.visible) {
+            if (pts.size() < 2)
+                continue;
+            f << "    <polyline points=\"";
+            write_polyline_points(pts);
             f << "\"/>\n";
         }
 
-        f << "  </g>\n</svg>\n";
+        f << "  </g>\n";
+        if (hidden) {
+            f << "  <g class=\"hidden\" stroke=\"#888\" stroke-width=\"0.25\" fill=\"none\"";
+            f << " stroke-dasharray=\"2 1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n";
+            for (auto& pts : projection.hidden) {
+                if (pts.size() < 2)
+                    continue;
+                f << "    <polyline points=\"";
+                write_polyline_points(pts);
+                f << "\"/>\n";
+            }
+            f << "  </g>\n";
+        }
+        f << "</svg>\n";
         if (!f.good())
             throw std::runtime_error("export_svg: write error on file: " + path_str);
     } catch (const Standard_Failure& e) {
@@ -3198,13 +3238,8 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
             throw std::runtime_error("export_dxf: scale must be positive and finite");
         }
 
-        auto polylines = hlr_project(shape, view_str);
-        for (auto& pl : polylines) {
-            for (auto& [x, y] : pl) {
-                x *= scale;
-                y *= scale;
-            }
-        }
+        auto projection = hlr_project(shape, view_str);
+        scale_polylines(projection.visible, scale);
 
         std::ofstream f(path_str);
         if (!f.is_open())
@@ -3220,7 +3255,7 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
         // ENTITIES section: one LINE entity per polyline segment.
         f << "  0\nSECTION\n  2\nENTITIES\n";
 
-        for (auto& pts : polylines) {
+        for (auto& pts : projection.visible) {
             for (std::size_t i = 0; i + 1 < pts.size(); ++i) {
                 auto [x1, y1] = pts[i];
                 auto [x2, y2] = pts[i + 1];

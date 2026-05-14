@@ -143,6 +143,35 @@ fn svg_rejects_non_positive_scale() {
     );
 }
 
+#[test]
+fn svg_hidden_option_adds_dashed_hidden_layer() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_hidden.svg");
+    vm.eval(&format!(
+        "box(10,10,10).export('{}', hidden: true)",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("class=\"hidden\"") && content.contains("stroke-dasharray"),
+        "hidden: true should add a dashed hidden SVG layer"
+    );
+}
+
+#[test]
+fn svg_hidden_layer_is_off_by_default() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_no_hidden.svg");
+    vm.eval(&format!("box(10,10,10).export('{}')", out.display()))
+        .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        !content.contains("class=\"hidden\"") && !content.contains("stroke-dasharray"),
+        "default SVG export should not include hidden-line styling"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // DXF export
 // ---------------------------------------------------------------------------
