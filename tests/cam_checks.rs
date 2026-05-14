@@ -207,3 +207,103 @@ fn overhang_faces_rejects_out_of_range_angle() {
         "expected range error, got: {err}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// draft_faces
+// ---------------------------------------------------------------------------
+
+#[test]
+fn draft_faces_flags_all_four_walls_of_a_plain_box() {
+    // A vertical-walled box has 4 side faces with 0° draft.  Top and bottom
+    // are perpendicular to the pull axis (90° draft) and are NOT flagged.
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("draft_faces(box(10, 10, 10), min_draft_deg: 1).length")
+        .unwrap();
+    assert_eq!(
+        result.trim(),
+        "4",
+        "expected 4 zero-draft side walls, got {result}"
+    );
+}
+
+#[test]
+fn draft_faces_excludes_tapered_walls_above_threshold() {
+    // Extrude a unit square with a 5° draft.  Side faces tilt outward by 5°,
+    // so |n·z| = sin(5°) ≈ 0.087.  With min_draft_deg: 1, all sides pass
+    // (5° > 1°) → 0 flagged faces.  With min_draft_deg: 10, sides fail
+    // (5° < 10°) → 4 flagged.
+    let mut vm = MrubyVm::new();
+    let ok = vm
+        .eval(
+            "part = rect(20, 20).extrude(10, draft: 5)
+             draft_faces(part, min_draft_deg: 1).length",
+        )
+        .unwrap();
+    assert_eq!(ok.trim(), "0", "5° drafted box: no flags at 1° threshold");
+
+    let mut vm2 = MrubyVm::new();
+    let strict = vm2
+        .eval(
+            "part = rect(20, 20).extrude(10, draft: 5)
+             draft_faces(part, min_draft_deg: 10).length",
+        )
+        .unwrap();
+    assert_eq!(
+        strict.trim(),
+        "4",
+        "5° drafted box: 4 flags at 10° threshold"
+    );
+}
+
+#[test]
+fn draft_faces_accepts_alternate_pull_axis() {
+    // Same plain box, but pulled along +X instead of +Z.  Then the two
+    // X-facing faces have 90° draft (perpendicular to pull) and the four
+    // Y/Z-facing faces have 0° → 4 flagged.
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("draft_faces(box(10, 10, 10), axis: [1, 0, 0], min_draft_deg: 1).length")
+        .unwrap();
+    assert_eq!(
+        result.trim(),
+        "4",
+        "expected 4 side walls along +X pull, got {result}"
+    );
+}
+
+#[test]
+fn draft_faces_rejects_zero_axis() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval("draft_faces(box(10, 10, 10), axis: [0, 0, 0])")
+        .unwrap_err();
+    assert!(
+        err.contains("non-zero"),
+        "expected non-zero error, got: {err}"
+    );
+}
+
+#[test]
+fn draft_faces_rejects_bad_axis_shape() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval("draft_faces(box(10, 10, 10), axis: [0, 0])")
+        .unwrap_err();
+    assert!(
+        err.contains("3-element"),
+        "expected 3-element error, got: {err}"
+    );
+}
+
+#[test]
+fn draft_faces_rejects_out_of_range_threshold() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval("draft_faces(box(10, 10, 10), min_draft_deg: 91)")
+        .unwrap_err();
+    assert!(
+        err.contains("must be in [0, 90]"),
+        "expected range error, got: {err}"
+    );
+}

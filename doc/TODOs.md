@@ -251,12 +251,15 @@ grams from `part.volume × density / 1000` (PLA default 1.24 g/cm³);
 overflow against a rectangular build volume by comparing `bounding_box`
 extents; and `overhang_faces(part, max_angle_deg:)` returns faces whose
 outward normal tips downward more than the threshold (assumes the part is
-+Z-up). The underlying primitive `Shape#normal` is exposed by a new OCCT
-bridge call (`shape_face_normal`) using `BRepLProp_SLProps` at the face's
++Z-up); `draft_faces(part, axis:, min_draft_deg:)` lists faces with
+insufficient mould-draft along a chosen pull axis (`asin(|n·axis|) <
+min_draft_deg`, naturally excluding top/bottom faces). The underlying
+primitive `Shape#normal` is exposed by a new OCCT bridge call
+(`shape_face_normal`) using `BRepLProp_SLProps` at the face's
 parameter-space midpoint, with the normal flipped for `TopAbs_REVERSED`
 faces. Minimum wall thickness is already available via
 `Shape#min_thickness`. Remaining work: unsupported islands (slice-based
-connectivity), hole orientation, and draft analysis.
+connectivity) and hole orientation (cylindrical-axis extraction).
 
 ---
 

@@ -1653,6 +1653,36 @@ module Kernel
     end
   end
 
+  # draft_faces(part, axis: [0, 0, 1], min_draft_deg: 1.0) — list faces with
+  # insufficient draft for the given pull direction.  A face's draft angle is
+  # `asin(|normal · axis|)`: 0° when the face is parallel to the pull axis (a
+  # vertical wall when pulling along Z — sticks in the mould), 90° when the
+  # face is perpendicular to the axis (top/bottom — releases cleanly).
+  # Returns faces whose draft is strictly less than +min_draft_deg+, i.e. the
+  # walls that need a taper applied before injection moulding or casting.
+  # Top/bottom faces are naturally excluded (their draft is 90°).
+  def draft_faces(part, axis: [0, 0, 1], min_draft_deg: 1.0)
+    unless axis.is_a?(Array) && axis.length == 3 && axis.all? { |v| v.is_a?(Numeric) }
+      raise ArgumentError, "draft_faces axis must be a 3-element numeric array"
+    end
+    mag = Math.sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2])
+    raise ArgumentError, "draft_faces axis must be non-zero" if mag < 1.0e-12
+    unless min_draft_deg.is_a?(Numeric) && min_draft_deg >= 0 && min_draft_deg <= 90
+      raise ArgumentError, "draft_faces min_draft_deg must be in [0, 90]"
+    end
+
+    ux = axis[0] / mag
+    uy = axis[1] / mag
+    uz = axis[2] / mag
+    sin_limit = Math.sin(min_draft_deg * Math::PI / 180.0)
+
+    part.faces("all").select do |face|
+      n = face.normal
+      dot_abs = (n[0] * ux + n[1] * uy + n[2] * uz).abs
+      dot_abs < sin_limit
+    end
+  end
+
   # print_volume_check(part, x:, y:, z:) — verify that +part+ fits within
   # a rectangular build volume of +x+ × +y+ × +z+ millimetres.
   # Compares bounding-box extents (orientation-insensitive); the part is
