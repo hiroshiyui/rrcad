@@ -358,7 +358,8 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
     dimensions: i32,
     title_block: i32,
     callouts: i32,
-    tolerance: f64,
+    tolerance_plus: f64,
+    tolerance_minus: f64,
     error_out: *mut *const c_char,
 ) {
     unsafe { *error_out = std::ptr::null() };
@@ -381,7 +382,8 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
         dimensions != 0,
         title_block != 0,
         callouts != 0,
-        tolerance,
+        tolerance_plus,
+        tolerance_minus,
     ) {
         unsafe { set_err(error_out, &e) };
     }
@@ -398,7 +400,8 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
     dimensions: i32,
     title_block: i32,
     callouts: i32,
-    tolerance: f64,
+    tolerance_plus: f64,
+    tolerance_minus: f64,
     error_out: *mut *const c_char,
 ) {
     unsafe { *error_out = std::ptr::null() };
@@ -421,7 +424,8 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
         dimensions != 0,
         title_block != 0,
         callouts != 0,
-        tolerance,
+        tolerance_plus,
+        tolerance_minus,
     ) {
         unsafe { set_err(error_out, &e) };
     }

@@ -261,9 +261,10 @@ dashed hidden-line output and `dimensions: true` width/height labels, while DXF
 writes hidden edges on a `HIDDEN` layer and also supports `dimensions: true`.
 SVG and DXF also now have `view: :sheet` for a 3-view sheet layout and
 `title_block: true` metadata blocks, with axis-aware sheet dimensions.
-`tolerance:` now adds `±` annotations to dimensions, and standards-style
-`callouts: true` diameter labels are now available. Remaining work: fuller
-geometric tolerancing.
+`tolerance:` now supports both symmetric `±` and asymmetric `+.../-...`
+annotations on dimensions, and standards-style `callouts: true` diameter
+labels are now available. Remaining work: fuller geometric tolerancing and
+datum / feature-control frames.
 
 **CAM / 3-D printing checks ◐ STARTED:** Additive helpers landed in the
 Ruby prelude: `mass_estimate(part, density:)` computes a rough mass in

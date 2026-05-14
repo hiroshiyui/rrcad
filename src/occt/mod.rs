@@ -278,7 +278,8 @@ mod ffi {
             dimensions: bool,
             title_block: bool,
             callouts: bool,
-            tolerance: f64,
+            tolerance_plus: f64,
+            tolerance_minus: f64,
         ) -> Result<()>;
         fn export_dxf(
             shape: &OcctShape,
@@ -290,7 +291,8 @@ mod ffi {
             dimensions: bool,
             title_block: bool,
             callouts: bool,
-            tolerance: f64,
+            tolerance_plus: f64,
+            tolerance_minus: f64,
         ) -> Result<()>;
 
         // Phase 8 Tier 5: Advanced composition.
@@ -1246,7 +1248,8 @@ impl Shape {
         dimensions: bool,
         title_block: bool,
         callouts: bool,
-        tolerance: f64,
+        tolerance_plus: f64,
+        tolerance_minus: f64,
     ) -> Result<(), String> {
         ffi::export_svg(
             &self.inner,
@@ -1258,11 +1261,12 @@ impl Shape {
             dimensions,
             title_block,
             callouts,
-            tolerance,
+            tolerance_plus,
+            tolerance_minus,
         )
         .map_err(|e| {
             format!(
-                "export_svg({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, tolerance: {tolerance}) on {} failed: {e}",
+                "export_svg({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}) on {} failed: {e}",
                 summarize(self)
             )
         })
@@ -1285,7 +1289,8 @@ impl Shape {
         dimensions: bool,
         title_block: bool,
         callouts: bool,
-        tolerance: f64,
+        tolerance_plus: f64,
+        tolerance_minus: f64,
     ) -> Result<(), String> {
         ffi::export_dxf(
             &self.inner,
@@ -1297,11 +1302,12 @@ impl Shape {
             dimensions,
             title_block,
             callouts,
-            tolerance,
+            tolerance_plus,
+            tolerance_minus,
         )
         .map_err(|e| {
             format!(
-                "export_dxf({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, tolerance: {tolerance}) on {} failed: {e}",
+                "export_dxf({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}) on {} failed: {e}",
                 summarize(self)
             )
         })

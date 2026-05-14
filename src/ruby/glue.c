@@ -162,12 +162,13 @@ extern void rrcad_shape_export_obj(void* ptr, const char* path, const char** err
 /* Phase 8 Tier 4 — SVG / DXF 2-D drawing output */
 extern void rrcad_shape_export_svg(void* ptr, const char* path, const char* view,
                                    double scale, int hidden, int center_marks, int dimensions,
-                                   int title_block, int callouts, double tolerance,
+                                   int title_block, int callouts, double tolerance_plus,
+                                   double tolerance_minus,
                                    const char** error_out);
 extern void rrcad_shape_export_dxf(void* ptr, const char* path, const char* view,
                                    double scale, int hidden, int center_marks,
                                    int dimensions, int title_block, int callouts,
-                                   double tolerance,
+                                   double tolerance_plus, double tolerance_minus,
                                    const char** error_out);
 
 /* Phase 7 — Bézier patch and sewing */
@@ -380,7 +381,8 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     int dimensions = 0;
     int title_block = 0;
     int callouts = 0;
-    double tolerance = 0.0;
+    double tolerance_plus = 0.0;
+    double tolerance_minus = 0.0;
     if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
         mrb_value vv = mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "view")),
                                       mrb_nil_value());
@@ -414,10 +416,26 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
         mrb_value tv2 =
             mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "tolerance")),
                            mrb_float_value(mrb, 0.0));
-        if (mrb_float_p(tv2))
-            tolerance = (double)mrb_float(tv2);
-        else if (mrb_integer_p(tv2))
-            tolerance = (double)mrb_integer(tv2);
+        if (mrb_hash_p(tv2)) {
+            mrb_value plus_v = mrb_hash_fetch(
+                mrb, tv2, mrb_symbol_value(mrb_intern_lit(mrb, "plus")),
+                mrb_float_value(mrb, 0.0));
+            mrb_value minus_v = mrb_hash_fetch(
+                mrb, tv2, mrb_symbol_value(mrb_intern_lit(mrb, "minus")),
+                mrb_float_value(mrb, 0.0));
+            if (mrb_float_p(plus_v))
+                tolerance_plus = (double)mrb_float(plus_v);
+            else if (mrb_integer_p(plus_v))
+                tolerance_plus = (double)mrb_integer(plus_v);
+            if (mrb_float_p(minus_v))
+                tolerance_minus = (double)mrb_float(minus_v);
+            else if (mrb_integer_p(minus_v))
+                tolerance_minus = (double)mrb_integer(minus_v);
+        } else if (mrb_float_p(tv2) || mrb_integer_p(tv2)) {
+            double tol = mrb_float_p(tv2) ? (double)mrb_float(tv2) : (double)mrb_integer(tv2);
+            tolerance_plus = tol;
+            tolerance_minus = tol;
+        }
     }
 
     /* Find the last '.' to determine the extension. */
@@ -434,10 +452,10 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
         rrcad_shape_export_obj(ptr, path, &err);
     } else if (dot && (strcasecmp(dot, ".svg") == 0)) {
         rrcad_shape_export_svg(ptr, path, view, scale, hidden, center_marks, dimensions,
-                               title_block, callouts, tolerance, &err);
+                               title_block, callouts, tolerance_plus, tolerance_minus, &err);
     } else if (dot && (strcasecmp(dot, ".dxf") == 0)) {
         rrcad_shape_export_dxf(ptr, path, view, scale, hidden, center_marks, dimensions,
-                               title_block, callouts, tolerance, &err);
+                               title_block, callouts, tolerance_plus, tolerance_minus, &err);
     } else {
         /* Default: STEP (.step, .stp, or unknown extension) */
         rrcad_shape_export_step(ptr, path, &err);

@@ -152,6 +152,22 @@ fn svg_sheet_dimensions_show_axis_labels() {
 }
 
 #[test]
+fn svg_sheet_dimensions_support_asymmetric_tolerance() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_sheet_dimensions_asym.svg");
+    vm.eval(&format!(
+        "box(20,10,5).export('{}', view: :sheet, dimensions: true, tolerance: {{ plus: 0.2, minus: 0.05 }})",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("+0.2/-0.05"),
+        "asymmetric tolerances should render plus/minus notation in SVG"
+    );
+}
+
+#[test]
 fn svg_cylinder_top_view() {
     // Curved surfaces (circles) must be discretised into smooth polylines.
     let mut vm = MrubyVm::new();
@@ -407,6 +423,22 @@ fn dxf_sheet_dimensions_show_axis_labels() {
         content.contains("±0.1") && content.contains("\n  1\nX ")
             && content.contains("\n  1\nY ") && content.contains("\n  1\nZ "),
         "sheet dimensions should label X/Y/Z axes and tolerances"
+    );
+}
+
+#[test]
+fn dxf_sheet_dimensions_support_asymmetric_tolerance() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_sheet_dimensions_asym.dxf");
+    vm.eval(&format!(
+        "box(20,10,5).export('{}', view: :sheet, dimensions: true, tolerance: {{ plus: 0.2, minus: 0.05 }})",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("+0.2/-0.05"),
+        "asymmetric tolerances should render plus/minus notation in DXF"
     );
 }
 
