@@ -146,4 +146,21 @@ impl Shape {
     pub fn validate(&self) -> Result<String, String> {
         ffi::shape_validate_str(&self.inner).map_err(|e| e.to_string())
     }
+
+    /// Minimum distance between two shapes. Returns 0.0 when they intersect.
+    pub fn distance_to(&self, other: &Shape) -> Result<f64, String> {
+        ffi::shape_distance_to(&self.inner, &other.inner).map_err(|e| e.to_string())
+    }
+
+    /// Inertia tensor [Ixx, Iyy, Izz, Ixy, Ixz, Iyz] about the centre of mass.
+    pub fn inertia(&self) -> Result<[f64; 6], String> {
+        let mut out = [0f64; 6];
+        ffi::shape_inertia(&self.inner, &mut out).map_err(|e| e.to_string())?;
+        Ok(out)
+    }
+
+    /// Minimum wall thickness of a solid/shell.
+    pub fn min_thickness(&self) -> Result<f64, String> {
+        ffi::shape_min_thickness(&self.inner).map_err(|e| e.to_string())
+    }
 }
