@@ -559,6 +559,7 @@ The browser viewer has a hamburger menu (top-right corner) and keyboard shortcut
 | Scroll / pinch | Zoom |
 | **F** | Toggle flat-line view (white flat-shaded surfaces + gray edge lines) |
 | **A** | Toggle axes helper |
+| **M** | Toggle measurement mode |
 
 The hamburger menu exposes the same toggles plus a **Scene** selector:
 
@@ -571,7 +572,8 @@ The hamburger menu exposes the same toggles plus a **Scene** selector:
 
 The top-left model panel updates with each `preview(shape)` call and reports
 the shape type, BRep validation status, bounding-box size, volume, and surface
-area for quick inspection while iterating.
+area for quick inspection while iterating. In measurement mode, click two model
+points to draw a cyan segment and report their 3-D distance in millimetres.
 
 ---
 

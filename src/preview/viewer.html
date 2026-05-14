@@ -199,6 +199,7 @@
   <div class="prop-row"><span>Size</span><span id="prop-size">waiting</span></div>
   <div class="prop-row"><span>Volume</span><span id="prop-volume">waiting</span></div>
   <div class="prop-row"><span>Area</span><span id="prop-area">waiting</span></div>
+  <div class="prop-row"><span>Distance</span><span id="prop-distance">off</span></div>
 </div>
 <img id="logo" src="/logo.png" alt="rrcad">
 
@@ -228,6 +229,9 @@
     <div class="menu-label">Show</div>
     <div class="menu-item" id="mi-axes">
       <div class="menu-check"></div>Axes<span class="menu-shortcut">A</span>
+    </div>
+    <div class="menu-item" id="mi-measure">
+      <div class="menu-check"></div>Measure<span class="menu-shortcut">M</span>
     </div>
   </div>
   <div class="menu-section">
@@ -369,6 +373,11 @@ const axes = new THREE.AxesHelper(30);
 axes.visible = false;
 scene.add(axes);
 
+const measureGroup = new THREE.Group();
+scene.add(measureGroup);
+const measureMarkerMaterial = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+const measureLineMaterial = new THREE.LineBasicMaterial({ color: 0x38bdf8 });
+
 // View mode — persists across model reloads.
 // 'normal' | 'flatline'
 let viewMode = 'normal';
@@ -431,6 +440,7 @@ function applyViewMode(model) {
 }
 
 function statusText() {
+  if (measureMode) return 'rrcad preview — measure';
   return viewMode === 'flatline' ? 'rrcad preview — flat-line'
                                  : 'rrcad preview — live';
 }
@@ -481,6 +491,7 @@ const sectionOffsetValue = document.getElementById('section-offset-value');
 const sectionPlane = new THREE.Plane();
 let sectionAxis = 'off';
 let sectionOffset = 0;
+let measureMode = false;
 
 function sectionNormal(axis) {
   if (axis === 'x') return new THREE.Vector3(1, 0, 0);
@@ -519,6 +530,7 @@ function syncMenu() {
   document.getElementById('mi-showroom').classList.toggle('active', sceneMode === 'showroom');
   document.getElementById('mi-white')   .classList.toggle('active', sceneMode === 'white');
   document.getElementById('mi-axes')    .classList.toggle('active', axes.visible);
+  document.getElementById('mi-measure') .classList.toggle('active', measureMode);
   document.getElementById('mi-section-off').classList.toggle('active', sectionAxis === 'off');
   document.getElementById('mi-section-x')  .classList.toggle('active', sectionAxis === 'x');
   document.getElementById('mi-section-y')  .classList.toggle('active', sectionAxis === 'y');
@@ -573,6 +585,9 @@ document.getElementById('mi-axes').addEventListener('click', () => {
   axes.visible = !axes.visible;
   syncMenu();
 });
+document.getElementById('mi-measure').addEventListener('click', () => {
+  setMeasureMode(!measureMode);
+});
 document.getElementById('mi-section-off').addEventListener('click', () => setSectionAxis('off'));
 document.getElementById('mi-section-x')  .addEventListener('click', () => setSectionAxis('x'));
 document.getElementById('mi-section-y')  .addEventListener('click', () => setSectionAxis('y'));
@@ -592,13 +607,93 @@ const propValid = document.getElementById('prop-valid');
 const propSize = document.getElementById('prop-size');
 const propVolume = document.getElementById('prop-volume');
 const propArea = document.getElementById('prop-area');
+const propDistance = document.getElementById('prop-distance');
+
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+const measurePoints = [];
+let pointerDown = null;
+
+function measurementText() {
+  if (measurePoints.length === 0) return measureMode ? 'pick first point' : 'off';
+  if (measurePoints.length === 1) return 'pick second point';
+  return formatNumber(measurePoints[0].distanceTo(measurePoints[1])) + ' mm';
+}
+
+function setMeasureMode(enabled) {
+  measureMode = enabled;
+  controls.enabled = !enabled;
+  propDistance.textContent = measurementText();
+  status.textContent = statusText();
+  syncMenu();
+}
+
+function clearMeasurement() {
+  measurePoints.length = 0;
+  while (measureGroup.children.length > 0) {
+    const child = measureGroup.children.pop();
+    if (child.geometry) child.geometry.dispose();
+  }
+  propDistance.textContent = measurementText();
+}
+
+function markerRadius() {
+  if (!currentModel) return 1;
+  const size = new THREE.Box3().setFromObject(currentModel).getSize(new THREE.Vector3());
+  return Math.max(size.x, size.y, size.z) * 0.012 || 1;
+}
+
+function addMeasurePoint(point) {
+  if (measurePoints.length >= 2) clearMeasurement();
+  measurePoints.push(point.clone());
+
+  const marker = new THREE.Mesh(
+    new THREE.SphereGeometry(markerRadius(), 16, 8),
+    measureMarkerMaterial,
+  );
+  marker.position.copy(point);
+  measureGroup.add(marker);
+
+  if (measurePoints.length === 2) {
+    const geometry = new THREE.BufferGeometry().setFromPoints(measurePoints);
+    measureGroup.add(new THREE.Line(geometry, measureLineMaterial));
+  }
+  propDistance.textContent = measurementText();
+}
+
+function pickModelPoint(event) {
+  if (!currentModel) return null;
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObject(currentModel, true)
+    .filter(hit => hit.object.isMesh && hit.object.name !== '__edgeLines');
+  return hits.length > 0 ? hits[0].point : null;
+}
+
+renderer.domElement.addEventListener('pointerdown', event => {
+  if (!measureMode || event.button !== 0) return;
+  pointerDown = { x: event.clientX, y: event.clientY };
+});
+
+renderer.domElement.addEventListener('pointerup', event => {
+  if (!measureMode || event.button !== 0 || !pointerDown) return;
+  const moved = Math.hypot(event.clientX - pointerDown.x, event.clientY - pointerDown.y);
+  pointerDown = null;
+  if (moved > 4) return;
+  const point = pickModelPoint(event);
+  if (point) addMeasurePoint(point);
+});
 
 window.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     menuPanel.classList.remove('open');
     menuBtn.classList.remove('open');
+    if (measureMode) setMeasureMode(false);
   }
   if (e.key === 'a' || e.key === 'A') { axes.visible = !axes.visible; syncMenu(); }
+  if (e.key === 'm' || e.key === 'M') setMeasureMode(!measureMode);
   if (e.key === 'f' || e.key === 'F') {
     viewMode = (viewMode === 'flatline') ? 'normal' : 'flatline';
     applyViewMode(currentModel);
@@ -700,6 +795,7 @@ function loadModel() {
   loader.load('/model.glb?' + Date.now(),
     gltf => {
       if (currentModel) {
+        clearMeasurement();
         // Free GPU memory for the outgoing model.  Materials (plastic / flatMaterial /
         // edgeMaterial) are module-scoped shared instances and must NOT be disposed.
         // EdgesGeometry children are per-mesh and are disposed here via setEdgeLines.
