@@ -247,14 +247,15 @@ size-keyed helpers accept both metric (`:m2`–`:m5`, ISO 4762 / 7380 /
 `:"10-24"`, `:"1/4-20"`, `:"5/16-18"`, `:"3/8-16"`, ASME B18 / ANSI B18.3)
 fastener names.
 
-**Preview inspection UX ◐ STARTED:** The browser preview now writes and serves
+**Preview inspection UX ✓ COMPLETE:** The browser preview now writes and serves
 a `metadata.json` sidecar for each `preview(shape)` update and shows a compact
 model properties panel with shape type, validation status, bounding-box size,
 volume, and surface area. The viewer menu also has section plane controls
 for X/Y/Z clipping with an offset slider, plus a measurement mode that picks
-two model points and reports their 3-D distance. Remaining work: face/edge
-hover IDs, click-to-print selectors, exploded assembly view, and debug overlays
-for failed operations.
+two model points and reports their 3-D distance. Hovering the model now
+shows face/edge IDs, clicks print the best matching selector into the panel,
+an explode toggle separates top-level parts, and failed preview updates surface
+their error message in the inspector.
 
 **2-D drawing improvements ◐ STARTED:** SVG and DXF output now accept explicit
 `scale:` selection for projected drawing geometry. Both support

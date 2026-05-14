@@ -617,8 +617,12 @@ The hamburger menu exposes the same toggles plus a **Scene** selector:
 
 The top-left model panel updates with each `preview(shape)` call and reports
 the shape type, BRep validation status, bounding-box size, volume, and surface
-area for quick inspection while iterating. In measurement mode, click two model
-points to draw a cyan segment and report their 3-D distance in millimetres.
+area for quick inspection while iterating. Hovering the model shows a best-fit
+face or edge label, clicking prints its selector into the panel, and the
+**Explode** menu option separates top-level parts for inspection. If a preview
+update fails, the panel shows the error message instead of silently keeping the
+old state. In measurement mode, click two model points to draw a cyan segment
+and report their 3-D distance in millimetres.
 
 ---
 

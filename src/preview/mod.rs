@@ -29,6 +29,13 @@ pub fn metadata_path_for_glb(glb_path: &std::path::Path) -> PathBuf {
 
 /// Collect lightweight shape properties for the live preview inspector.
 pub fn metadata_json_for_shape(shape: &crate::occt::Shape) -> serde_json::Value {
+    metadata_json_for_shape_with_error(shape, None)
+}
+
+pub fn metadata_json_for_shape_with_error(
+    shape: &crate::occt::Shape,
+    error: Option<&str>,
+) -> serde_json::Value {
     let bounding_box = match shape.bounding_box() {
         Ok([xmin, ymin, zmin, xmax, ymax, zmax]) => serde_json::json!({
             "min": [xmin, ymin, zmin],
@@ -44,6 +51,8 @@ pub fn metadata_json_for_shape(shape: &crate::occt::Shape) -> serde_json::Value 
         "volume": query_or_error(shape.volume()),
         "surface_area": query_or_error(shape.surface_area()),
         "bounding_box": bounding_box,
+        "named_refs": shape.named_ref_snapshots(),
+        "error": error,
     })
 }
 
@@ -100,5 +109,26 @@ mod tests {
         assert_eq!(metadata["bounding_box"]["size"][0], 10.0);
         assert_eq!(metadata["bounding_box"]["size"][1], 20.0);
         assert_eq!(metadata["bounding_box"]["size"][2], 30.0);
+        assert!(metadata["named_refs"].as_array().is_some());
+    }
+
+    #[test]
+    fn metadata_for_named_refs_includes_selectors() {
+        let shape = Shape::make_box(10.0, 20.0, 30.0).expect("make_box");
+        shape.name_face("mounting_face", "top").expect("name_face");
+        shape.name_edge("vertical_edges", "vertical").expect("name_edge");
+        let metadata = metadata_json_for_shape(&shape);
+
+        let refs = metadata["named_refs"].as_array().expect("named refs array");
+        assert!(
+            refs.iter().any(|entry| entry["name"] == "mounting_face"
+                && entry["kind"] == "face"
+                && entry["selector"] == ":top")
+        );
+        assert!(
+            refs.iter().any(|entry| entry["name"] == "vertical_edges"
+                && entry["kind"] == "edge"
+                && entry["selector"] == ":vertical")
+        );
     }
 }

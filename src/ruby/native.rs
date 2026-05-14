@@ -1358,6 +1358,17 @@ pub unsafe extern "C" fn rrcad_preview_shape(ptr: *mut c_void, error_out: *mut *
     let path = state.glb_path.to_string_lossy();
     if let Err(e) = shape.export_glb(&path, DEFAULT_LINEAR_DEFLECTION) {
         unsafe { set_err(error_out, &e) };
+        let metadata_path = crate::preview::metadata_path_for_glb(&state.glb_path);
+        let metadata = crate::preview::metadata_json_for_shape_with_error(shape, Some(&e));
+        match serde_json::to_vec_pretty(&metadata) {
+            Ok(bytes) => {
+                if let Err(write_err) = std::fs::write(metadata_path, bytes) {
+                    eprintln!("rrcad preview: failed to write error metadata: {write_err}");
+                }
+            }
+            Err(encode_err) => eprintln!("rrcad preview: failed to encode error metadata: {encode_err}"),
+        }
+        state.reload_tx.send(()).ok();
         return;
     }
 
