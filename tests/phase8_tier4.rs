@@ -172,6 +172,35 @@ fn svg_hidden_layer_is_off_by_default() {
     );
 }
 
+#[test]
+fn svg_center_marks_adds_center_mark_group() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_center_marks.svg");
+    vm.eval(&format!(
+        "cylinder(5,20).export('{}', center_marks: true)",
+        out.display()
+    ))
+    .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        content.contains("class=\"center-marks\"") && content.contains("<line "),
+        "center_marks: true should add a center-marks group"
+    );
+}
+
+#[test]
+fn svg_center_marks_off_by_default() {
+    let mut vm = MrubyVm::new();
+    let out = tmp("rrcad_test_no_center_marks.svg");
+    vm.eval(&format!("cylinder(5,20).export('{}')", out.display()))
+        .unwrap();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        !content.contains("class=\"center-marks\""),
+        "default SVG export should not include center marks"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // DXF export
 // ---------------------------------------------------------------------------

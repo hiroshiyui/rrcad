@@ -131,7 +131,7 @@ mod ffi {
         // Phase 7 Tier 1: 2D profile offset (Wire or Face in its own plane).
         fn shape_offset_2d(shape: &OcctShape, distance: f64) -> Result<UniquePtr<OcctShape>>;
         fn shape_simplify(shape: &OcctShape, min_feature_size: f64)
-            -> Result<UniquePtr<OcctShape>>;
+        -> Result<UniquePtr<OcctShape>>;
         fn shape_extrude_ex(
             shape: &OcctShape,
             height: f64,
@@ -258,7 +258,7 @@ mod ffi {
         ) -> Result<UniquePtr<OcctShape>>;
         fn shape_fill_surface(boundary_wire: &OcctShape) -> Result<UniquePtr<OcctShape>>;
         fn shape_slice(shape: &OcctShape, plane: &str, offset: f64)
-            -> Result<UniquePtr<OcctShape>>;
+        -> Result<UniquePtr<OcctShape>>;
 
         // --- Export ---
         fn export_step(shape: &OcctShape, path: &str) -> Result<()>;
@@ -274,6 +274,7 @@ mod ffi {
             view: &str,
             scale: f64,
             hidden: bool,
+            center_marks: bool,
         ) -> Result<()>;
         fn export_dxf(
             shape: &OcctShape,
@@ -1223,16 +1224,18 @@ impl Shape {
     /// `view` is `"top"` (default), `"front"`, or `"side"`.
     /// `scale` multiplies drawing geometry; `1.0` preserves model units.
     /// `hidden` includes hidden HLR edges as dashed secondary geometry.
+    /// `center_marks` adds crosshair marks for cylindrical faces aligned to the view axis.
     pub fn export_svg(
         &self,
         path: &str,
         view: &str,
         scale: f64,
         hidden: bool,
+        center_marks: bool,
     ) -> Result<(), String> {
-        ffi::export_svg(&self.inner, path, view, scale, hidden).map_err(|e| {
+        ffi::export_svg(&self.inner, path, view, scale, hidden, center_marks).map_err(|e| {
             format!(
-                "export_svg({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}) on {} failed: {e}",
+                "export_svg({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}) on {} failed: {e}",
                 summarize(self)
             )
         })

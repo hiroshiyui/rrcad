@@ -93,6 +93,7 @@ fn export_svg_error_includes_view() {
         "isometric",
         1.0,
         false,
+        false,
     ));
     assert!(
         err.contains("export_svg(") && err.contains("isometric"),

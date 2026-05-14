@@ -3052,10 +3052,32 @@ static const int HLR_SAMPLES_PER_EDGE = 32;
 using DrawingPolyline = std::vector<std::pair<double, double>>;
 using DrawingPolylines = std::vector<DrawingPolyline>;
 
+struct DrawingMark {
+    double x;
+    double y;
+    double size;
+};
+
 struct HlrProjection {
     DrawingPolylines visible;
     DrawingPolylines hidden;
 };
+
+static std::pair<double, double> project_point(const std::string& view, const gp_Pnt& p) {
+    if (view == "front")
+        return {p.X(), p.Z()};
+    if (view == "side")
+        return {p.Y(), p.Z()};
+    return {p.X(), p.Y()};
+}
+
+static gp_Dir view_direction(const std::string& view) {
+    if (view == "front")
+        return gp_Dir(0, -1, 0);
+    if (view == "side")
+        return gp_Dir(1, 0, 0);
+    return gp_Dir(0, 0, 1);
+}
 
 static void collect_hlr_compound(const TopoDS_Shape& compound, DrawingPolylines& polylines) {
     if (compound.IsNull())
@@ -3086,6 +3108,40 @@ static void scale_polylines(DrawingPolylines& polylines, double scale) {
             y *= scale;
         }
     }
+}
+
+static std::vector<DrawingMark> collect_center_marks(const OcctShape& shape,
+                                                     const std::string& view) {
+    std::vector<DrawingMark> marks;
+    const gp_Dir draw_dir = view_direction(view);
+
+    for (TopExp_Explorer exp(shape.get(), TopAbs_FACE); exp.More(); exp.Next()) {
+        const TopoDS_Face& face = TopoDS::Face(exp.Current());
+        BRepAdaptor_Surface surf(face);
+        if (surf.GetType() != GeomAbs_Cylinder)
+            continue;
+
+        gp_Cylinder cyl = surf.Cylinder();
+        const gp_Dir& axis = cyl.Axis().Direction();
+        if (std::abs(axis.Dot(draw_dir)) < 0.98)
+            continue;
+
+        gp_Pnt loc = cyl.Axis().Location();
+        auto [x, y] = project_point(view, loc);
+        double size = std::max(cyl.Radius() * 0.35, 1.5);
+        bool duplicate = false;
+        for (const auto& mark : marks) {
+            if (std::abs(mark.x - x) < 1e-6 && std::abs(mark.y - y) < 1e-6 &&
+                std::abs(mark.size - size) < 1e-6) {
+                duplicate = true;
+                break;
+            }
+        }
+        if (!duplicate)
+            marks.push_back({x, y, size});
+    }
+
+    return marks;
 }
 
 // Project the shape onto the chosen view plane, return visible and hidden
@@ -3135,7 +3191,8 @@ void export_svg(const OcctShape& shape,
                 rust::Str path,
                 rust::Str view,
                 double scale,
-                bool hidden) {
+                bool hidden,
+                bool center_marks) {
     try {
         std::string path_str(path.data(), path.size());
         std::string view_str(view.data(), view.size());
@@ -3146,6 +3203,12 @@ void export_svg(const OcctShape& shape,
         auto projection = hlr_project(shape, view_str);
         scale_polylines(projection.visible, scale);
         scale_polylines(projection.hidden, scale);
+        auto marks = center_marks ? collect_center_marks(shape, view_str) : std::vector<DrawingMark>{};
+        for (auto& mark : marks) {
+            mark.x *= scale;
+            mark.y *= scale;
+            mark.size *= scale;
+        }
 
         // Compute axis-aligned bounding box in drawing coordinates.
         double xmin = 1e30, xmax = -1e30, ymin = 1e30, ymax = -1e30;
@@ -3162,6 +3225,12 @@ void export_svg(const OcctShape& shape,
         include_bounds(projection.visible);
         if (hidden)
             include_bounds(projection.hidden);
+        for (const auto& mark : marks) {
+            xmin = std::min(xmin, mark.x - mark.size);
+            xmax = std::max(xmax, mark.x + mark.size);
+            ymin = std::min(ymin, mark.y - mark.size);
+            ymax = std::max(ymax, mark.y + mark.size);
+        }
         if (xmin == 1e30)
             throw std::runtime_error("export_svg: no drawing edges found after projection");
 
@@ -3211,6 +3280,19 @@ void export_svg(const OcctShape& shape,
                 f << "    <polyline points=\"";
                 write_polyline_points(pts);
                 f << "\"/>\n";
+            }
+            f << "  </g>\n";
+        }
+        if (center_marks && !marks.empty()) {
+            f << "  <g class=\"center-marks\" stroke=\"#6b7280\" stroke-width=\"0.25\" fill=\"none\"";
+            f << " stroke-linecap=\"round\">\n";
+            for (const auto& mark : marks) {
+                f << "    <line x1=\"" << (mark.x - mark.size) << "\" y1=\"" << (-mark.y)
+                  << "\" x2=\"" << (mark.x + mark.size) << "\" y2=\"" << (-mark.y)
+                  << "\"/>\n";
+                f << "    <line x1=\"" << mark.x << "\" y1=\"" << (-(mark.y - mark.size))
+                  << "\" x2=\"" << mark.x << "\" y2=\"" << (-(mark.y + mark.size))
+                  << "\"/>\n";
             }
             f << "  </g>\n";
         }
