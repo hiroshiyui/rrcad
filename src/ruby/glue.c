@@ -2907,7 +2907,8 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     /* Instance methods — override the prelude stubs. */
     mrb_define_method(mrb, shape_class, "inspect", mrb_rrcad_shape_inspect, MRB_ARGS_NONE());
     mrb_define_method(mrb, shape_class, "to_s", mrb_rrcad_shape_inspect, MRB_ARGS_NONE());
-    mrb_define_method(mrb, shape_class, "export", mrb_rrcad_shape_export, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "export", mrb_rrcad_shape_export,
+                      MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
     mrb_define_method(mrb, shape_class, "fuse", mrb_rrcad_shape_fuse, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "cut", mrb_rrcad_shape_cut, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "common", mrb_rrcad_shape_common, MRB_ARGS_REQ(1));
