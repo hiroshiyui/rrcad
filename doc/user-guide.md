@@ -462,6 +462,8 @@ stud_grid  = grid_pattern(cylinder(2, 5), 4, 3, 10, 10)
 | `.shape_type` | Symbol | `:solid`, `:shell`, `:face`, `:wire`, `:edge`, `:vertex`, `:compound`, `:compsolid` |
 | `.validate` | `"ok"` or Array | List of topology errors, or `"ok"` |
 | `.history` | Array of Strings | Provenance chain of modeling operations that produced the shape |
+| `.feature_graph` | Array of Hashes | Dependency tree with stable node IDs, labels, parent IDs, and history entries |
+| `.rebuild` | Shape | Replays the stored feature tree from its recorded parents |
 | `.closed?` | Boolean | True if every edge has ≥ 2 adjacent faces |
 | `.manifold?` | Boolean | True if every edge has exactly 2 adjacent faces |
 | `.centroid` | `[x, y, z]` | Centre of mass |
@@ -496,6 +498,13 @@ You can inspect the modeling chain for any derived shape with `.history`:
 ```ruby
 part = box(10, 20, 30).translate(5, 0, 0).scale(2)
 puts part.history.join(" -> ")
+```
+
+For a structured view of the dependency tree, use `.feature_graph`:
+
+```ruby
+graph = part.feature_graph
+puts graph.map { |node| "#{node[:id]}: #{node[:label]} <- #{node[:parents].inspect}" }
 ```
 
 ### Import / Export

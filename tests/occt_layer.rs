@@ -41,6 +41,63 @@ fn primitive_history_records_constructor() {
 }
 
 #[test]
+fn feature_graph_records_dependencies() {
+    let shape = Shape::make_box(10.0, 20.0, 30.0)
+        .unwrap()
+        .translate(5.0, 0.0, 0.0)
+        .unwrap()
+        .scale(2.0)
+        .unwrap();
+    let graph = shape.feature_graph();
+    let lines: Vec<&str> = graph.lines().collect();
+    assert!(
+        lines.len() >= 3,
+        "expected at least 3 graph nodes, got: {lines:?}"
+    );
+    let box_id = lines[0].split('\t').next().unwrap();
+    let translate_fields: Vec<&str> = lines[1].split('\t').collect();
+    let scale_fields: Vec<&str> = lines[2].split('\t').collect();
+    assert!(translate_fields[2].contains("translate("), "missing translate node: {lines:?}");
+    assert!(scale_fields[2].contains("scale("), "missing scale node: {lines:?}");
+    assert_eq!(
+        translate_fields[1],
+        box_id,
+        "translate node should point at the box parent"
+    );
+    assert_eq!(
+        scale_fields[1],
+        translate_fields[0],
+        "scale node should point at the translate parent"
+    );
+}
+
+#[test]
+fn feature_rebuild_round_trips_geometry() {
+    let shape = Shape::make_box(10.0, 20.0, 30.0)
+        .unwrap()
+        .translate(5.0, 0.0, 0.0)
+        .unwrap()
+        .scale(2.0)
+        .unwrap();
+    let rebuilt = shape.rebuild().expect("rebuild failed");
+    assert_eq!(shape.shape_type_name().unwrap(), rebuilt.shape_type_name().unwrap());
+    let a = shape.bounding_box().unwrap();
+    let b = rebuilt.bounding_box().unwrap();
+    for (lhs, rhs) in a.iter().zip(b.iter()) {
+        assert!(
+            (lhs - rhs).abs() < 1.0e-6,
+            "rebuild changed bounding box: original={a:?}, rebuilt={b:?}"
+        );
+    }
+    let v0 = shape.volume().unwrap();
+    let v1 = rebuilt.volume().unwrap();
+    assert!(
+        (v0 - v1).abs() < 1.0e-6,
+        "rebuild changed volume: original={v0}, rebuilt={v1}"
+    );
+}
+
+#[test]
 fn primitive_make_cylinder() {
     Shape::make_cylinder(5.0, 15.0).expect("make_cylinder failed");
 }

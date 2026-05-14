@@ -2120,3 +2120,32 @@ pub unsafe extern "C" fn rrcad_shape_history(
     }
     raw
 }
+
+/// Return the shape's feature graph as tab-separated lines:
+/// `id<TAB>parent_ids<TAB>label<TAB>history_entry`.
+/// The pointer is valid until the next call on this thread.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_feature_graph(
+    ptr: *mut c_void,
+    error_out: *mut *const c_char,
+) -> *const c_char {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let joined = shape.feature_graph();
+    let mut raw: *const c_char = std::ptr::null();
+    unsafe {
+        set_str(&mut raw as *mut *const c_char, &joined);
+    }
+    raw
+}
+
+/// Rebuild the shape by replaying its feature graph from the stored parents.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_rebuild(
+    ptr: *mut c_void,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    unsafe { shape_result_to_ptr(shape.rebuild(), error_out) }
+}

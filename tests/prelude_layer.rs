@@ -148,6 +148,29 @@ fn shape_history_is_visible_in_ruby() {
     );
 }
 
+#[test]
+fn shape_feature_graph_and_rebuild_are_visible_in_ruby() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "shape = box(1.0, 2.0, 3.0).translate(4.0, 0.0, 0.0).scale(2.0); \
+             graph = shape.feature_graph; \
+             rebuilt = shape.rebuild; \
+             [graph.length, graph[0][:label], graph[1][:label], graph[2][:label], \
+              graph[1][:parents].first == graph[0][:id], \
+              (shape.volume - rebuilt.volume).abs < 1.0e-6].inspect",
+        )
+        .expect("feature graph should be visible in Ruby");
+    assert!(
+        result.contains("true"),
+        "expected feature graph rebuild round-trip to be true, got {result}"
+    );
+    assert!(
+        result.contains("box(") && result.contains("translate(") && result.contains("scale("),
+        "expected feature graph labels in result, got {result}"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Shape class identity
 // ---------------------------------------------------------------------------

@@ -1703,6 +1703,17 @@ class Shape
     raise NotImplementedError, "Shape#validate is not yet implemented (Phase 7 Tier 2)"
   end
 
+  # Return the feature graph as an array of hashes:
+  #   [{ id: 1, parents: [], label: "box(...)", entry: "..." }, ...]
+  def feature_graph
+    raise NotImplementedError, "Shape#feature_graph is not yet implemented (Phase 10)"
+  end
+
+  # Rebuild this shape by replaying its stored feature graph.
+  def rebuild
+    raise NotImplementedError, "Shape#rebuild is not yet implemented (Phase 10)"
+  end
+
   # --- Surface modeling — Phase 7 Tier 3 -----------------------------------
 
   # Cross-section of this shape by an axis-aligned plane.

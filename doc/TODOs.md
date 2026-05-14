@@ -193,15 +193,12 @@ with its missing coordinates, and `sketch(diagnostics: true)` attaches a
 structured redundancy report to solved profile shapes while `strict: true`
 raises when redundant constraints are present.
 
-**Feature history / parametric model tree ✓ COMPLETE (provenance slice):**
+**Feature history / parametric model tree ✓ COMPLETE:**
 Shapes now carry a readable modeling history chain, accessible from Ruby as
-`shape.history`, and the error path includes that provenance when operations
-fail.
-
-Remaining work:
-- a true regeneratable feature graph with stable node IDs and dependency edges
-- replay/regeneration of downstream shapes when an upstream operation changes
-- editor support for inspecting and editing the feature tree
+`shape.history`, and a regeneratable feature graph with stable node IDs and
+dependency edges, accessible as `shape.feature_graph`. `shape.rebuild` replays
+the stored feature tree from the recorded parents. Editor support for browsing
+and editing the tree remains a future UI task.
 
 **Named faces, edges, and datums ✓ COMPLETE:** Persistent names now work for
 face selectors, edge selectors, and datum reference shapes. Scripts can target

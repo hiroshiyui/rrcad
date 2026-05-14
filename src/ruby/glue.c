@@ -124,6 +124,8 @@ extern void* rrcad_make_ellipse_face(double rx, double ry, const char** error_ou
 extern void* rrcad_make_arc(double r, double start_deg, double end_deg, const char** error_out);
 extern void* rrcad_shape_extrude(void* ptr, double height, const char** error_out);
 extern void* rrcad_shape_revolve(void* ptr, double angle_deg, const char** error_out);
+extern const char* rrcad_shape_feature_graph(void* ptr, const char** error_out);
+extern void* rrcad_shape_rebuild(void* ptr, const char** error_out);
 
 /* Phase 3 — splines and sweep */
 extern void* rrcad_make_spline_2d(const double* pts, size_t n_pts, const char** error_out);
@@ -2361,6 +2363,100 @@ static mrb_value mrb_rrcad_shape_history(mrb_state* mrb, mrb_value self) {
     return ary;
 }
 
+static mrb_value mrb_rrcad_shape_feature_graph_line(mrb_state* mrb, const char* line, size_t len) {
+    const char* tab1 = memchr(line, '\t', len);
+    if (!tab1)
+        return mrb_nil_value();
+    const char* rest1 = tab1 + 1;
+    size_t len1 = (size_t)(len - (rest1 - line));
+    const char* tab2 = memchr(rest1, '\t', len1);
+    if (!tab2)
+        return mrb_nil_value();
+    const char* rest2 = tab2 + 1;
+    size_t len2 = (size_t)(len - (rest2 - line));
+    const char* tab3 = memchr(rest2, '\t', len2);
+    if (!tab3)
+        return mrb_nil_value();
+    const char* rest3 = tab3 + 1;
+
+    mrb_value parents = mrb_ary_new(mrb);
+    if (tab2 > rest1) {
+        const char* p = rest1;
+        while (p < tab2) {
+            const char* comma = memchr(p, ',', (size_t)(tab2 - p));
+            const char* end = comma ? comma : tab2;
+            if (end > p) {
+                char buf[32];
+                size_t n = (size_t)(end - p);
+                if (n >= sizeof(buf))
+                    n = sizeof(buf) - 1;
+                memcpy(buf, p, n);
+                buf[n] = '\0';
+                mrb_ary_push(mrb, parents, mrb_fixnum_value((mrb_int)strtoll(buf, NULL, 10)));
+            }
+            if (!comma)
+                break;
+            p = comma + 1;
+        }
+    }
+
+    char id_buf[32];
+    size_t id_len = (size_t)(tab1 - line);
+    if (id_len >= sizeof(id_buf))
+        id_len = sizeof(id_buf) - 1;
+    memcpy(id_buf, line, id_len);
+    id_buf[id_len] = '\0';
+
+    mrb_value hash = mrb_hash_new(mrb);
+    mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_lit(mrb, "id")),
+                 mrb_fixnum_value((mrb_int)strtoll(id_buf, NULL, 10)));
+    mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_lit(mrb, "parents")), parents);
+    mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_lit(mrb, "label")),
+                 mrb_str_new(mrb, rest2, (mrb_int)(tab3 - rest2)));
+    mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_lit(mrb, "entry")),
+                 mrb_str_new(mrb, rest3, (mrb_int)(len - (size_t)(rest3 - line))));
+    return hash;
+}
+
+/* shape.feature_graph  → [{id:, parents:, label:, entry:}, ...] */
+static mrb_value mrb_rrcad_shape_feature_graph(mrb_state* mrb, mrb_value self) {
+    void* ptr = shape_ptr(mrb, self);
+    require_native_ptr(mrb, ptr);
+
+    const char* err = NULL;
+    const char* report = rrcad_shape_feature_graph(ptr, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+
+    mrb_value ary = mrb_ary_new(mrb);
+    if (report[0] == '\0')
+        return ary;
+
+    const char* p = report;
+    while (*p) {
+        const char* nl = strchr(p, '\n');
+        size_t len = nl ? (size_t)(nl - p) : strlen(p);
+        mrb_value entry = mrb_rrcad_shape_feature_graph_line(mrb, p, len);
+        if (!mrb_nil_p(entry))
+            mrb_ary_push(mrb, ary, entry);
+        p += len;
+        if (*p == '\n')
+            p++;
+    }
+    return ary;
+}
+
+static mrb_value mrb_rrcad_shape_rebuild(mrb_state* mrb, mrb_value self) {
+    void* ptr = shape_ptr(mrb, self);
+    require_native_ptr(mrb, ptr);
+
+    const char* err = NULL;
+    void* rebuilt = rrcad_shape_rebuild(ptr, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    return shape_from_ptr(mrb, rebuilt);
+}
+
 /* -------------------------------------------------------------------------
  * Phase 7 Tier 3: ruled_surface / fill_surface / slice
  * -------------------------------------------------------------------------
@@ -2924,6 +3020,9 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     mrb_define_method(mrb, shape_class, "manifold?", mrb_rrcad_shape_manifold, MRB_ARGS_NONE());
     mrb_define_method(mrb, shape_class, "validate", mrb_rrcad_shape_validate, MRB_ARGS_NONE());
     mrb_define_method(mrb, shape_class, "history", mrb_rrcad_shape_history, MRB_ARGS_NONE());
+    mrb_define_method(mrb, shape_class, "feature_graph", mrb_rrcad_shape_feature_graph,
+                      MRB_ARGS_NONE());
+    mrb_define_method(mrb, shape_class, "rebuild", mrb_rrcad_shape_rebuild, MRB_ARGS_NONE());
 
     /* Phase 7: Bézier patch and sewing */
     mrb_define_method(mrb, mrb->kernel_module, "bezier_patch", mrb_rrcad_bezier_patch,

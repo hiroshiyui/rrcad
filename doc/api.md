@@ -278,6 +278,8 @@ let simple = part.simplify(1.0)?;   // remove features smaller than ~1 mm
 |--------|-------------|
 | `.shape_type_name() -> Result<String>` | Returns the topological type as a string: `"solid"`, `"shell"`, `"face"`, `"wire"`, `"edge"`, `"vertex"`, `"compound"`, `"compsolid"`, or `"other"`. |
 | `.history() -> Vec<String>` | Returns the provenance chain of modeling operations that produced the shape, oldest to newest. |
+| `.feature_graph() -> String` | Returns the feature tree as tab-separated lines with stable node IDs, parent IDs, labels, and history entries. |
+| `.rebuild() -> Result<Shape>` | Replays the stored feature tree and returns a rebuilt shape. |
 | `.centroid() -> Result<[f64; 3]>` | Centre of mass as `[x, y, z]`. Dispatches to `BRepGProp::VolumeProperties` (solids/compounds), `SurfaceProperties` (shells/faces), or `LinearProperties` (wires/edges). |
 | `.is_closed() -> Result<bool>` | `true` if every edge has at least 2 adjacent faces (no open boundary). Uses `TopTools_IndexedDataMapOfShapeListOfShape`. |
 | `.is_manifold() -> Result<bool>` | `true` if every edge has exactly 2 adjacent faces (manifold mesh). |
