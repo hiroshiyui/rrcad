@@ -1283,7 +1283,7 @@ impl Shape {
         parents: Vec<Arc<FeatureNode>>,
     ) -> Self {
         let entry = entry.into();
-        let shape = Self {
+        Self {
             inner,
             named_refs: RefCell::new(self.named_refs.borrow().clone()),
             gdt_render: RefCell::new(self.gdt_render.borrow().clone()),
@@ -1293,8 +1293,7 @@ impl Shape {
                 hist
             }),
             feature: FeatureNode::new(op, parents, entry),
-        };
-        shape
+        }
     }
 
     fn fresh_with_feature(

@@ -129,4 +129,21 @@ mod tests {
             && entry["kind"] == "edge"
             && entry["selector"] == ":vertical"));
     }
+
+    #[test]
+    fn viewer_html_rejects_stale_preview_loads() {
+        let html = include_str!("viewer.html");
+        assert!(
+            html.contains("let loadGeneration = 0;"),
+            "viewer must track preview load generations"
+        );
+        assert!(
+            html.contains("if (loadToken !== loadGeneration) return;"),
+            "stale preview responses must be ignored"
+        );
+        assert!(
+            html.contains("const loadToken = ++loadGeneration;"),
+            "each preview load must mint a new generation token"
+        );
+    }
 }
