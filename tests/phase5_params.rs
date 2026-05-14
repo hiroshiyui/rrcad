@@ -21,6 +21,12 @@ fn param_float_default() {
 }
 
 #[test]
+fn param_typed_length_default() {
+    let mut vm = MrubyVm::new();
+    assert_eq!(vm.eval("param :width, default: 10.mm").unwrap(), "10.0mm");
+}
+
+#[test]
 fn param_string_default() {
     let mut vm = MrubyVm::new();
     assert_eq!(
@@ -45,6 +51,13 @@ fn param_override_float() {
     let mut vm = MrubyVm::new();
     vm.set_params(&[("scale".into(), "2.5".into())]).unwrap();
     assert_eq!(vm.eval("param :scale, default: 1.0").unwrap(), "2.5");
+}
+
+#[test]
+fn param_override_typed_length() {
+    let mut vm = MrubyVm::new();
+    vm.set_params(&[("width".into(), "42.5".into())]).unwrap();
+    assert_eq!(vm.eval("param :width, default: 10.mm").unwrap(), "42.5mm");
 }
 
 #[test]
@@ -87,6 +100,15 @@ fn param_within_range_ok() {
     assert_eq!(
         vm.eval("param :width, default: 50, range: 1..100").unwrap(),
         "50"
+    );
+}
+
+#[test]
+fn param_typed_length_within_range_ok() {
+    let mut vm = MrubyVm::new();
+    assert_eq!(
+        vm.eval("param :width, default: 10.mm, range: 1.mm..20.mm").unwrap(),
+        "10.0mm"
     );
 }
 

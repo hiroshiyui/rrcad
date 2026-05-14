@@ -298,8 +298,6 @@ Open items deferred from completed or partially-complete tracks above.
 These are not blocking and can be picked up when the use cases become
 important.
 
-- **Units — dimensional analysis** with richer unit-aware values,
-  beyond the current `Numeric` helpers. (Extends *Units system*.)
 - **Hardware helpers — washer/nut bodies.** Imperial sizes (#4-40 through
   3/8-16) are now supported across `clearance_hole`, `tap_drill`,
   `heat_set_insert`, `socket_head_cbore`, `flat_head_csink`, and `screw`.

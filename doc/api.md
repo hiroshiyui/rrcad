@@ -677,8 +677,8 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `draft_faces(part, axis: [0, 0, 1], min_draft_deg: 1.0)` | Array of faces with insufficient mould draft along the pull axis: `asin(|n·axis|) < min_draft_deg`. Top/bottom faces are naturally excluded (their draft is 90°). Pure Ruby DSL. |
 | `hole_axes(part, orientation: nil, tolerance_deg: 5.0)` | Enumerate cylindrical-surface faces of `part` as `{origin:, axis:, radius:}`. Filter with `orientation:` `:vertical` (axis ‖ Z) or `:horizontal` (axis ⊥ Z) within `tolerance_deg`. Pure Ruby DSL on top of `Shape#cylinder_axis`. |
 | `unsupported_islands(part, layer_height: 0.2, axis: :z, min_area: 0.0, tolerance: 0.05)` | Slice `part` layer-by-layer and report disconnected footprints that do not overlap the previous layer. Returns an Array of layer hashes with `:offset`, `:components`, and `:unsupported`; each unsupported component includes `:area`, `:centroid`, and `:bbox`. `axis:` accepts `:x`, `:y`, `:z`, or an axis-aligned 3-element vector. Pure Ruby DSL. |
-| `param(:name, default: val)` | Declare a named parameter. Returns `val` unless a `--param name=x` CLI override was supplied; coerces string overrides to the default's type (Integer/Float/String). |
-| `param(:name, default: val, range: lo..hi)` | Same with range validation; raises `ArgumentError` if the value is outside the range. |
+| `param(:name, default: val)` | Declare a named parameter. Returns `val` unless a `--param name=x` CLI override was supplied; coerces string overrides to the default's type (Integer/Float/String or typed length/angle values). |
+| `param(:name, default: val, range: lo..hi)` | Same with range validation; raises `ArgumentError` if the value is outside the range. Typed unit defaults and ranges work as expected. |
 | `solid { ... }` | Block returning its last expression |
 | `assembly("name") { \|a\| ... }` | Named assembly. See `Assembly` below. |
 | `preview(shape)` | Tessellate and push to live browser preview. No-op when not in `--preview` mode. |

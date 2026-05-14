@@ -110,23 +110,27 @@ cargo run -- --mcp                            # MCP server (stdio JSON-RPC)
 ### Units
 
 Model lengths are millimetres by default, and angular APIs use degrees. Numeric
-unit helpers convert values before they are passed into constructors, sketches,
-transforms, params, and patterns.
+unit helpers now return typed unit values, so arithmetic keeps track of whether
+you are working with a length or an angle before values are handed to
+constructors, sketches, transforms, params, and patterns.
 
 | Helper | Meaning |
 |--------|---------|
-| `.mm`, `.millimeter`, `.millimeters` | Millimetres; identity conversion |
-| `.cm`, `.centimeter`, `.centimeters` | Centimetres to millimetres |
-| `.m`, `.meter`, `.meters` | Metres to millimetres |
-| `.inch`, `.inches` | Inches to millimetres |
-| `.deg`, `.degree`, `.degrees` | Degrees; identity conversion |
-| `.rad`, `.radian`, `.radians` | Radians to degrees |
+| `.mm`, `.millimeter`, `.millimeters` | Typed millimetre length |
+| `.cm`, `.centimeter`, `.centimeters` | Typed millimetre length from centimetres |
+| `.m`, `.meter`, `.meters` | Typed millimetre length from metres |
+| `.inch`, `.inches` | Typed millimetre length from inches |
+| `.deg`, `.degree`, `.degrees` | Typed degree angle |
+| `.rad`, `.radian`, `.radians` | Typed degree angle from radians |
 
 ```ruby
 plate = box(2.inch, 30.mm, 0.25.inch)
 hole  = cylinder(3.mm, 10.mm).translate(25.4.mm, 15.mm, -1.mm)
 part  = plate.cut(hole).rotate(0, 0, 1, Math::PI.rad)
 ```
+
+Typed values still behave like numbers in the common CAD cases, but they now
+reject obvious unit mixups in Ruby arithmetic.
 
 ### Primitives (3D Solids)
 

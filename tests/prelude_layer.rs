@@ -80,6 +80,22 @@ fn numeric_angle_units_convert_to_degrees() {
 }
 
 #[test]
+fn typed_units_support_arithmetic_and_reject_cross_conversion() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("[1.mm + 2.mm, 1.mm * 2, 1.mm + 2, 90.deg + 15.deg, Math::PI.rad].inspect")
+        .expect("typed unit arithmetic should succeed");
+    assert!(result.contains("3.0mm"), "expected length addition, got {result}");
+    assert!(result.contains("2.0mm"), "expected scalar multiplication, got {result}");
+    assert!(result.contains("105.0deg"), "expected angle addition, got {result}");
+    assert!(result.contains("180.0deg"), "expected radian conversion, got {result}");
+
+    assert_err_contains(&mut vm, "1.mm.deg", "cannot convert length to angle");
+    assert_err_contains(&mut vm, "1.deg.mm", "cannot convert angle to length");
+    assert_err_contains(&mut vm, "1.mm + 1.deg", "incompatible units");
+}
+
+#[test]
 fn unit_helpers_work_in_shape_operations() {
     let mut vm = MrubyVm::new();
     let result = vm

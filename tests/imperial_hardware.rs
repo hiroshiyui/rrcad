@@ -6,52 +6,47 @@
 use rrcad::ruby::vm::MrubyVm;
 
 #[test]
-fn clearance_hole_imperial_number_size() {
-    // #8 close-fit clearance = 0.170" = 4.32 mm.
+fn imperial_hardware_sizes() {
     let mut vm = MrubyVm::new();
-    let result = vm
+
+    // #8 close-fit clearance = 0.170" = 4.32 mm.
+    let dx: f64 = vm
         .eval("clearance_hole(:\"8-32\", depth: 10).bounding_box[:dx]")
-        .unwrap();
-    let dx: f64 = result.trim().parse().expect("number");
+        .unwrap()
+        .trim()
+        .parse()
+        .expect("number");
     assert!(
         (dx - 4.32).abs() < 0.1,
         "expected #8 clearance ~4.32 mm, got {dx}"
     );
-}
 
-#[test]
-fn clearance_hole_imperial_fractional_size() {
     // 1/4 close-fit clearance = 0.257" = 6.53 mm.
-    let mut vm = MrubyVm::new();
-    let result = vm
+    let dx: f64 = vm
         .eval("clearance_hole(:\"1/4-20\", depth: 10).bounding_box[:dx]")
-        .unwrap();
-    let dx: f64 = result.trim().parse().expect("number");
+        .unwrap()
+        .trim()
+        .parse()
+        .expect("number");
     assert!(
         (dx - 6.53).abs() < 0.1,
         "expected 1/4 clearance ~6.53 mm, got {dx}"
     );
-}
 
-#[test]
-fn tap_drill_imperial_size() {
     // #10-32 tap drill (#21) = 0.159" = 4.04 mm.
-    let mut vm = MrubyVm::new();
-    let result = vm
+    let dx: f64 = vm
         .eval("tap_drill(:\"10-32\", depth: 10).bounding_box[:dx]")
-        .unwrap();
-    let dx: f64 = result.trim().parse().expect("number");
+        .unwrap()
+        .trim()
+        .parse()
+        .expect("number");
     assert!(
         (dx - 4.04).abs() < 0.1,
         "expected #10-32 tap drill ~4.04 mm, got {dx}"
     );
-}
 
-#[test]
-fn tap_drill_distinguishes_10_32_from_10_24() {
     // #10-24 has a larger pilot than #10-32 (3.80 vs 4.04 — wait, actually
     // 10-24 is COARSER so 75% thread tap is SMALLER).
-    let mut vm = MrubyVm::new();
     let result = vm
         .eval(
             "fine = tap_drill(:\"10-32\", depth: 10).bounding_box[:dx]
@@ -60,74 +55,58 @@ fn tap_drill_distinguishes_10_32_from_10_24() {
         )
         .unwrap();
     assert_eq!(result.trim(), "true");
-}
 
-#[test]
-fn heat_set_insert_imperial_size() {
-    let mut vm = MrubyVm::new();
-    let result = vm
+    let dx: f64 = vm
         .eval("heat_set_insert(:\"6-32\", depth: 6).bounding_box[:dx]")
-        .unwrap();
-    let dx: f64 = result.trim().parse().expect("number");
+        .unwrap()
+        .trim()
+        .parse()
+        .expect("number");
     assert!((dx - 4.5).abs() < 0.2, "got {dx}");
-}
 
-#[test]
-fn socket_head_cbore_imperial_head_diameter() {
     // #8 socket-head OD = 0.270" = 6.86 mm.
-    let mut vm = MrubyVm::new();
-    let result = vm
+    let dx: f64 = vm
         .eval("socket_head_cbore(:\"8-32\", depth: 10, head_depth: 3).bounding_box[:dx]")
-        .unwrap();
-    let dx: f64 = result.trim().parse().expect("number");
+        .unwrap()
+        .trim()
+        .parse()
+        .expect("number");
     assert!(
         (dx - 6.86).abs() < 0.2,
         "expected #8 SHCS head ~6.86 mm, got {dx}"
     );
-}
 
-#[test]
-fn flat_head_csink_imperial_with_82_deg_angle() {
     // 1/4-20 flat-head OD = 0.507" = 12.88 mm. Imperial flat heads use 82°
     // included angle → 41° half-angle.
-    let mut vm = MrubyVm::new();
-    let result = vm
+    let dx: f64 = vm
         .eval("flat_head_csink(:\"1/4-20\", depth: 10, angle: 41).bounding_box[:dx]")
-        .unwrap();
-    let dx: f64 = result.trim().parse().expect("number");
+        .unwrap()
+        .trim()
+        .parse()
+        .expect("number");
     assert!(
         (dx - 12.88).abs() < 0.3,
         "expected 1/4 FH head ~12.88 mm, got {dx}"
     );
-}
 
-#[test]
-fn screw_imperial_socket_head_diameter() {
     // #10-32 socket-head OD = 0.312" = 7.92 mm.
-    let mut vm = MrubyVm::new();
-    let result = vm
+    let dx: f64 = vm
         .eval("screw(:\"10-32\", length: 12, style: :socket).bounding_box[:dx]")
-        .unwrap();
-    let dx: f64 = result.trim().parse().expect("number");
+        .unwrap()
+        .trim()
+        .parse()
+        .expect("number");
     assert!(
         (dx - 7.92).abs() < 0.2,
         "expected #10-32 SHCS head ~7.92 mm, got {dx}"
     );
-}
 
-#[test]
-fn screw_imperial_returns_solid() {
-    let mut vm = MrubyVm::new();
     let result = vm.eval("screw(:\"4-40\", length: 6).shape_type").unwrap();
     assert!(
         result == ":solid" || result == ":compound",
         "expected solid/compound, got {result}"
     );
-}
 
-#[test]
-fn imperial_hardware_rejects_unknown_size() {
-    let mut vm = MrubyVm::new();
     let err = vm
         .eval("clearance_hole(:\"1/2-13\", depth: 10)")
         .unwrap_err();

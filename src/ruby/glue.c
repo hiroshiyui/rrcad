@@ -261,6 +261,9 @@ extern void* rrcad_shape_sweep_guide(void* ptr, void* path_ptr, void* guide_ptr,
 static const char* shape_name_from_value(mrb_state* mrb, mrb_value v);
 static void* shape_ptr(mrb_state* mrb, mrb_value v);
 static void require_native_ptr(mrb_state* mrb, void* ptr);
+static double value_to_double(mrb_state* mrb, mrb_value v) {
+    return (double)mrb_as_float(mrb, v);
+}
 
 static int datum_anchor_from_shape_value(mrb_state* mrb, void* body_ptr, mrb_value value,
                                          double out[3], const char** error_out) {
@@ -525,10 +528,7 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
             view = mrb_sym_name(mrb, mrb_symbol(vv));
         mrb_value sv = mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "scale")),
                                       mrb_float_value(mrb, 1.0));
-        if (mrb_float_p(sv))
-            scale = (double)mrb_float(sv);
-        else if (mrb_integer_p(sv))
-            scale = (double)mrb_integer(sv);
+        scale = value_to_double(mrb, sv);
         mrb_value hv = mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "hidden")),
                                       mrb_false_value());
         hidden = mrb_test(hv) ? 1 : 0;
@@ -662,16 +662,10 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
             mrb_value minus_v = mrb_hash_fetch(
                 mrb, tv2, mrb_symbol_value(mrb_intern_lit(mrb, "minus")),
                 mrb_float_value(mrb, 0.0));
-            if (mrb_float_p(plus_v))
-                tolerance_plus = (double)mrb_float(plus_v);
-            else if (mrb_integer_p(plus_v))
-                tolerance_plus = (double)mrb_integer(plus_v);
-            if (mrb_float_p(minus_v))
-                tolerance_minus = (double)mrb_float(minus_v);
-            else if (mrb_integer_p(minus_v))
-                tolerance_minus = (double)mrb_integer(minus_v);
-        } else if (mrb_float_p(tv2) || mrb_integer_p(tv2)) {
-            double tol = mrb_float_p(tv2) ? (double)mrb_float(tv2) : (double)mrb_integer(tv2);
+            tolerance_plus = value_to_double(mrb, plus_v);
+            tolerance_minus = value_to_double(mrb, minus_v);
+        } else if (!mrb_nil_p(tv2)) {
+            double tol = value_to_double(mrb, tv2);
             tolerance_plus = tol;
             tolerance_minus = tol;
         }
@@ -1307,18 +1301,9 @@ static mrb_value mrb_rrcad_shape_extrude(mrb_state* mrb, mrb_value self) {
             mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "scale")), mrb_float_value(mrb, 1.0));
         mrb_value draft_val = mrb_hash_fetch(
             mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "draft")), mrb_float_value(mrb, 0.0));
-        if (mrb_float_p(twist_val))
-            twist_deg = (double)mrb_float(twist_val);
-        else if (mrb_integer_p(twist_val))
-            twist_deg = (double)mrb_integer(twist_val);
-        if (mrb_float_p(scale_val))
-            scale = (double)mrb_float(scale_val);
-        else if (mrb_integer_p(scale_val))
-            scale = (double)mrb_integer(scale_val);
-        if (mrb_float_p(draft_val))
-            draft_deg = (double)mrb_float(draft_val);
-        else if (mrb_integer_p(draft_val))
-            draft_deg = (double)mrb_integer(draft_val);
+        twist_deg = value_to_double(mrb, twist_val);
+        scale = value_to_double(mrb, scale_val);
+        draft_deg = value_to_double(mrb, draft_val);
     }
 
     void* ptr = DATA_PTR(self);
@@ -1480,14 +1465,7 @@ static double* extract_point_array(mrb_state* mrb, mrb_value arr, int stride, in
         }
         for (int j = 0; j < stride; j++) {
             mrb_value v = mrb_ary_ref(mrb, inner, j);
-            if (mrb_float_p(v)) {
-                pts[i * stride + j] = (double)mrb_float(v);
-            } else if (mrb_integer_p(v)) {
-                pts[i * stride + j] = (double)mrb_integer(v);
-            } else {
-                free(pts);
-                mrb_raise(mrb, E_ARGUMENT_ERROR, "point coordinates must be numbers");
-            }
+            pts[i * stride + j] = value_to_double(mrb, v);
         }
     }
     return pts;
@@ -1935,9 +1913,7 @@ static mrb_value mrb_rrcad_linear_pattern(mrb_state* mrb, mrb_value self) {
     double dx = 0.0, dy = 0.0, dz = 0.0;
     for (int j = 0; j < 3; j++) {
         mrb_value v = mrb_ary_ref(mrb, vec_val, j);
-        double d = mrb_float_p(v)     ? (double)mrb_float(v)
-                   : mrb_integer_p(v) ? (double)mrb_integer(v)
-                                      : 0.0;
+        double d = value_to_double(mrb, v);
         if (j == 0)
             dx = d;
         else if (j == 1)
@@ -2112,9 +2088,7 @@ static mrb_value mrb_rrcad_bezier_patch(mrb_state* mrb, mrb_value self) {
             mrb_raise(mrb, E_ARGUMENT_ERROR, "each bezier_patch control point must be [x, y, z]");
         for (int j = 0; j < 3; j++) {
             mrb_value v = mrb_ary_ref(mrb, pt, j);
-            pts[i * 3 + j] = mrb_float_p(v)     ? (double)mrb_float(v)
-                             : mrb_integer_p(v) ? (double)mrb_integer(v)
-                                                : 0.0;
+            pts[i * 3 + j] = value_to_double(mrb, v);
         }
     }
 
@@ -2144,10 +2118,7 @@ static mrb_value mrb_rrcad_sew(mrb_state* mrb, mrb_value self) {
     if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
         mrb_value tv = mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "tolerance")),
                                       mrb_float_value(mrb, 1e-4));
-        if (mrb_float_p(tv))
-            tol = mrb_float(tv);
-        else if (mrb_integer_p(tv))
-            tol = (mrb_float)mrb_integer(tv);
+        tol = value_to_double(mrb, tv);
     }
 
     int n = (int)RARRAY_LEN(arr);
@@ -2396,9 +2367,7 @@ static mrb_value mrb_rrcad_shape_slice(mrb_state* mrb, mrb_value self) {
 
     mrb_value offset_val =
         mrb_hash_fetch(mrb, kwargs, mrb_symbol_value(offset_key), mrb_float_value(mrb, 0.0));
-    double offset = mrb_float_p(offset_val)     ? (double)mrb_float(offset_val)
-                    : mrb_integer_p(offset_val) ? (double)mrb_integer(offset_val)
-                                                : 0.0;
+    double offset = value_to_double(mrb, offset_val);
 
     const char* err = NULL;
     void* result = rrcad_shape_slice(ptr, pname, offset, &err);
@@ -2461,9 +2430,7 @@ static mrb_value mrb_rrcad_shape_pad(mrb_state* mrb, mrb_value self) {
         mrb, kwargs, mrb_symbol_value(mrb_intern_lit(mrb, "height")), mrb_nil_value());
     if (mrb_nil_p(height_val))
         mrb_raise(mrb, E_ARGUMENT_ERROR, "pad requires height: keyword");
-    double height = mrb_float_p(height_val)     ? (double)mrb_float(height_val)
-                    : mrb_integer_p(height_val) ? (double)mrb_integer(height_val)
-                                                : 1.0;
+    double height = value_to_double(mrb, height_val);
 
     /* Evaluate the block to obtain the sketch shape. */
     if (mrb_nil_p(block))
@@ -2502,9 +2469,7 @@ static mrb_value mrb_rrcad_shape_pocket(mrb_state* mrb, mrb_value self) {
         mrb, kwargs, mrb_symbol_value(mrb_intern_lit(mrb, "depth")), mrb_nil_value());
     if (mrb_nil_p(depth_val))
         mrb_raise(mrb, E_ARGUMENT_ERROR, "pocket requires depth: keyword");
-    double depth = mrb_float_p(depth_val)     ? (double)mrb_float(depth_val)
-                   : mrb_integer_p(depth_val) ? (double)mrb_integer(depth_val)
-                                              : 1.0;
+    double depth = value_to_double(mrb, depth_val);
 
     /* Evaluate the block to obtain the sketch shape. */
     if (mrb_nil_p(block))
@@ -2567,9 +2532,9 @@ static mrb_value mrb_rrcad_datum_plane(mrb_state* mrb, mrb_value self) {
         mrb_value _a = mrb_ary_ref(mrb, (arr), 0);                                                 \
         mrb_value _b = mrb_ary_ref(mrb, (arr), 1);                                                 \
         mrb_value _c = mrb_ary_ref(mrb, (arr), 2);                                                 \
-        (a) = mrb_float_p(_a) ? mrb_float(_a) : (mrb_float)mrb_integer(_a);                        \
-        (b) = mrb_float_p(_b) ? mrb_float(_b) : (mrb_float)mrb_integer(_b);                        \
-        (c) = mrb_float_p(_c) ? mrb_float(_c) : (mrb_float)mrb_integer(_c);                        \
+        (a) = value_to_double(mrb, _a);                                                            \
+        (b) = value_to_double(mrb, _b);                                                            \
+        (c) = value_to_double(mrb, _c);                                                            \
     } while (0)
 
     mrb_float ox, oy, oz, nx, ny, nz, xx, xy, xz;
@@ -2665,9 +2630,9 @@ static mrb_value mrb_rrcad_helix(mrb_state* mrb, mrb_value self) {
     if (mrb_nil_p(r_val) || mrb_nil_p(p_val) || mrb_nil_p(h_val))
         mrb_raise(mrb, E_ARGUMENT_ERROR, "helix requires radius:, pitch:, and height:");
 
-    double radius = mrb_float_p(r_val) ? mrb_float(r_val) : (double)mrb_integer(r_val);
-    double pitch = mrb_float_p(p_val) ? mrb_float(p_val) : (double)mrb_integer(p_val);
-    double height = mrb_float_p(h_val) ? mrb_float(h_val) : (double)mrb_integer(h_val);
+    double radius = value_to_double(mrb, r_val);
+    double pitch = value_to_double(mrb, p_val);
+    double height = value_to_double(mrb, h_val);
 
     const char* err = NULL;
     void* result = rrcad_make_helix(radius, pitch, height, &err);

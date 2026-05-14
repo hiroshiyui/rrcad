@@ -1,6 +1,7 @@
 use std::{
     ffi::{CStr, CString},
     ptr,
+    sync::{Mutex, MutexGuard, OnceLock},
 };
 
 use super::ffi;
@@ -9,11 +10,30 @@ use super::ffi;
 /// It is evaluated once during `MrubyVm::new()` — users never need `require`.
 const PRELUDE: &str = include_str!("prelude.rb");
 
+static MRUBY_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn mruby_lock() -> &'static Mutex<()> {
+    MRUBY_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+struct VmLock {
+    _guard: MutexGuard<'static, ()>,
+}
+
+impl VmLock {
+    fn acquire() -> Self {
+        Self {
+            _guard: mruby_lock().lock().unwrap(),
+        }
+    }
+}
+
 /// Safe wrapper around a live mRuby interpreter instance.
 ///
 /// Automatically calls `mrb_close` when dropped.
 pub struct MrubyVm {
     mrb: *mut ffi::MrbState,
+    _lock: VmLock,
 }
 
 impl Default for MrubyVm {
@@ -32,12 +52,13 @@ impl MrubyVm {
     /// Panics if `mrb_open()` returns null (out of memory), or if the
     /// built-in prelude fails to parse (indicates a bug in prelude.rb).
     pub fn new() -> Self {
+        let lock = VmLock::acquire();
         // SAFETY: mrb_open() allocates a new mRuby state and returns a valid
         // pointer, or NULL on OOM (caught by the assert below).
         let mrb = unsafe { ffi::mrb_open() };
         assert!(!mrb.is_null(), "mrb_open() failed: out of memory");
-        let mut vm = Self { mrb };
-        vm.eval(PRELUDE)
+        let mut vm = Self { mrb, _lock: lock };
+        vm.eval_unlocked(PRELUDE)
             .unwrap_or_else(|e| panic!("rrcad prelude failed to load: {e}"));
         // Register native Shape class and top-level methods *after* the prelude
         // so native implementations shadow the Ruby stubs.
@@ -70,12 +91,16 @@ impl MrubyVm {
             .collect::<Vec<_>>()
             .join(", ");
         let code = format!("$_rrcad_params = {{{entries}}}");
-        self.eval(&code).map(|_| ())
+        self.eval_unlocked(&code).map(|_| ())
     }
 
     /// Evaluate `code` as Ruby source and return the `inspect` string of
     /// the result, or an error description if an exception was raised.
     pub fn eval(&mut self, code: &str) -> Result<String, String> {
+        self.eval_unlocked(code)
+    }
+
+    fn eval_unlocked(&mut self, code: &str) -> Result<String, String> {
         let c_code = CString::new(code).map_err(|e| e.to_string())?;
         let mut error_ptr: *const std::ffi::c_char = ptr::null();
 

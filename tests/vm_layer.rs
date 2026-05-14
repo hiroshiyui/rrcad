@@ -26,13 +26,18 @@ fn vm_drops_cleanly() {
 
 #[test]
 fn vm_multiple_independent_instances() {
-    let mut a = MrubyVm::new();
-    let mut b = MrubyVm::new();
-    // Global variables survive across mrb_load_string calls and are VM-local.
-    a.eval("$x = 1").unwrap();
-    b.eval("$x = 2").unwrap();
-    assert_eq!(a.eval("$x").unwrap(), "1");
-    assert_eq!(b.eval("$x").unwrap(), "2");
+    {
+        let mut a = MrubyVm::new();
+        // Global variables survive across mrb_load_string calls and are VM-local.
+        a.eval("$x = 1").unwrap();
+        assert_eq!(a.eval("$x").unwrap(), "1");
+    }
+
+    {
+        let mut b = MrubyVm::new();
+        b.eval("$x = 2").unwrap();
+        assert_eq!(b.eval("$x").unwrap(), "2");
+    }
 }
 
 // ---------------------------------------------------------------------------

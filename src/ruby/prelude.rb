@@ -8,47 +8,339 @@
 # Native methods shadow the Ruby stubs below.
 
 # ---------------------------------------------------------------------------
-# Units — all model length values are millimetres, and all angular APIs use
-# degrees.  These helpers are plain numeric conversions so they work anywhere a
-# number is accepted: primitives, transforms, params, sketches, and patterns.
+# Units — model lengths are mm, angles are degrees.
+#
+# Numeric helpers now return lightweight typed value objects so CAD scripts can
+# keep unit information through arithmetic while still interoping with the
+# existing numeric API surface.  Plain numerics are still accepted everywhere
+# the DSL already expected them.
 # ---------------------------------------------------------------------------
+module RRCADUnits
+  def self.scalar(value)
+    value.respond_to?(:to_f) ? value.to_f : value
+  end
+
+  def self.format_num(value)
+    rounded = (scalar(value) * 1.0e6).round / 1.0e6
+    rounded.to_s
+  end
+
+  class UnitValue < Numeric
+    include Comparable
+
+    attr_reader :value
+
+    def initialize(value)
+      @value = RRCADUnits.scalar(value)
+    end
+
+    def to_f
+      @value.to_f
+    end
+
+    def to_i
+      @value.to_i
+    end
+
+    def to_int
+      to_i
+    end
+
+    def round(*args)
+      @value.round(*args)
+    end
+
+    def floor
+      @value.floor
+    end
+
+    def ceil
+      @value.ceil
+    end
+
+    def abs
+      self.class.new(@value.abs)
+    end
+
+    def -@
+      self.class.new(-@value)
+    end
+
+    def <=>(other)
+      if other.is_a?(UnitValue)
+        return nil unless other.class == self.class
+        @value <=> other.value
+      elsif other.is_a?(Numeric)
+        @value <=> other.to_f
+      else
+        nil
+      end
+    end
+
+    def ==(other)
+      if other.is_a?(UnitValue)
+        other.class == self.class && @value == other.value
+      elsif other.is_a?(Numeric)
+        @value == other.to_f
+      else
+        false
+      end
+    end
+
+    alias eql? ==
+
+    def hash
+      [self.class, @value].hash
+    end
+
+    def coerce(other)
+      if other.is_a?(UnitValue)
+        raise TypeError, "incompatible units: #{other.class} and #{self.class}" unless other.class == self.class
+        [other, self]
+      elsif other.is_a?(Numeric)
+        [UnitScalar.new(other), self]
+      else
+        raise TypeError, "#{other.class} cannot be coerced into #{self.class}"
+      end
+    end
+
+    def +(other)
+      if other.is_a?(UnitValue)
+        raise TypeError, "incompatible units: #{other.class} and #{self.class}" unless other.class == self.class
+        self.class.new(@value + other.value)
+      elsif other.is_a?(Numeric)
+        self.class.new(@value + other.to_f)
+      else
+        raise TypeError, "#{other.class} cannot be added to #{self.class}"
+      end
+    end
+
+    def -(other)
+      if other.is_a?(UnitValue)
+        raise TypeError, "incompatible units: #{other.class} and #{self.class}" unless other.class == self.class
+        self.class.new(@value - other.value)
+      elsif other.is_a?(Numeric)
+        self.class.new(@value - other.to_f)
+      else
+        raise TypeError, "#{other.class} cannot be subtracted from #{self.class}"
+      end
+    end
+
+    def *(other)
+      if other.is_a?(UnitValue)
+        raise TypeError, "cannot multiply #{self.class} by #{other.class}"
+      elsif other.is_a?(Numeric)
+        self.class.new(@value * other.to_f)
+      else
+        raise TypeError, "#{other.class} cannot be multiplied with #{self.class}"
+      end
+    end
+
+    def /(other)
+      if other.is_a?(UnitValue)
+        raise TypeError, "cannot divide #{self.class} by #{other.class}"
+      elsif other.is_a?(Numeric)
+        self.class.new(@value / other.to_f)
+      else
+        raise TypeError, "#{other.class} cannot divide #{self.class}"
+      end
+    end
+
+    def inspect
+      "#{RRCADUnits.format_num(@value)}#{suffix}"
+    end
+
+    alias to_s inspect
+
+    protected
+
+    def suffix
+      ""
+    end
+  end
+
+  class UnitScalar < UnitValue
+    def coerce(other)
+      if other.is_a?(Numeric)
+        [UnitScalar.new(other), self]
+      else
+        raise TypeError, "#{other.class} cannot be coerced into UnitScalar"
+      end
+    end
+
+    def +(other)
+      if other.is_a?(UnitValue)
+        other.class.new(@value + other.value)
+      elsif other.is_a?(Numeric)
+        @value + other.to_f
+      else
+        raise TypeError, "#{other.class} cannot be added to UnitScalar"
+      end
+    end
+
+    def -(other)
+      if other.is_a?(UnitValue)
+        other.class.new(@value - other.value)
+      elsif other.is_a?(Numeric)
+        @value - other.to_f
+      else
+        raise TypeError, "#{other.class} cannot be subtracted from UnitScalar"
+      end
+    end
+
+    def *(other)
+      if other.is_a?(UnitValue)
+        other.class.new(@value * other.value)
+      elsif other.is_a?(Numeric)
+        @value * other.to_f
+      else
+        raise TypeError, "#{other.class} cannot be multiplied with UnitScalar"
+      end
+    end
+
+    def /(other)
+      if other.is_a?(UnitValue)
+        raise TypeError, "cannot divide UnitScalar by #{other.class}"
+      elsif other.is_a?(Numeric)
+        @value / other.to_f
+      else
+        raise TypeError, "#{other.class} cannot divide UnitScalar"
+      end
+    end
+  end
+
+  class UnitLength < UnitValue
+    def mm
+      self
+    end
+
+    alias millimeter mm
+    alias millimeters mm
+
+    def cm
+      raise TypeError, "cannot convert length to centimeters once typed"
+    end
+
+    alias centimeter cm
+    alias centimeters cm
+
+    def m
+      raise TypeError, "cannot convert length to metres once typed"
+    end
+
+    alias meter m
+    alias meters m
+
+    def inch
+      raise TypeError, "cannot convert length to inches once typed"
+    end
+
+    alias inches inch
+
+    def deg
+      raise TypeError, "cannot convert length to angle"
+    end
+
+    alias degree deg
+    alias degrees deg
+
+    def rad
+      raise TypeError, "cannot convert length to angle"
+    end
+
+    alias radian rad
+    alias radians rad
+
+    protected
+
+    def suffix
+      "mm"
+    end
+  end
+
+  class UnitAngle < UnitValue
+    def deg
+      self
+    end
+
+    alias degree deg
+    alias degrees deg
+
+    def rad
+      raise TypeError, "cannot convert angle to length"
+    end
+
+    alias radian rad
+    alias radians rad
+
+    def mm
+      raise TypeError, "cannot convert angle to length"
+    end
+
+    alias millimeter mm
+    alias millimeters mm
+    alias cm mm
+    alias centimeter mm
+    alias centimeters mm
+    alias m mm
+    alias meter mm
+    alias meters mm
+    alias inch mm
+    alias inches mm
+
+    protected
+
+    def suffix
+      "deg"
+    end
+  end
+
+  def self.length(value)
+    UnitLength.new(value)
+  end
+
+  def self.angle(value)
+    UnitAngle.new(value)
+  end
+end
+
 class Numeric
   def mm
-    self
+    RRCADUnits.length(self)
   end
 
   alias millimeter mm
   alias millimeters mm
 
   def cm
-    self * 10.0
+    RRCADUnits.length(self * 10.0)
   end
 
   alias centimeter cm
   alias centimeters cm
 
   def m
-    self * 1000.0
+    RRCADUnits.length(self * 1000.0)
   end
 
   alias meter m
   alias meters m
 
   def inch
-    self * 25.4
+    RRCADUnits.length(self * 25.4)
   end
 
   alias inches inch
 
   def deg
-    self
+    RRCADUnits.angle(self)
   end
 
   alias degree deg
   alias degrees deg
 
   def rad
-    self * 180.0 / Math::PI
+    RRCADUnits.angle(self * 180.0 / Math::PI)
   end
 
   alias radian rad
@@ -709,7 +1001,7 @@ class SketchBuilder
     i = 0
     while i <= segments
       t = start_deg + (end_deg - start_deg) * i / segments
-      rad = t * Math::PI / 180.0
+      rad = RRCADUnits.scalar(t) * Math::PI / 180.0
       pts << [cx + radius * Math.cos(rad), cy + radius * Math.sin(rad)]
       i += 1
     end
@@ -812,7 +1104,7 @@ class SketchBuilder
   def apply_polar_point(p, center, radius, angle_deg)
     return false unless center.resolved?
 
-    rad = angle_deg * Math::PI / 180.0
+    rad = RRCADUnits.scalar(angle_deg) * Math::PI / 180.0
     target_x = center.x + radius * Math.cos(rad)
     target_y = center.y + radius * Math.sin(rad)
 
@@ -870,10 +1162,10 @@ class SketchBuilder
 
   # 2D distance from point p to the infinite line through a and b.
   def point_line_distance(p, a, b)
-    abx = b.x - a.x
-    aby = b.y - a.y
-    apx = p.x - a.x
-    apy = p.y - a.y
+    abx = RRCADUnits.scalar(b.x) - RRCADUnits.scalar(a.x)
+    aby = RRCADUnits.scalar(b.y) - RRCADUnits.scalar(a.y)
+    apx = RRCADUnits.scalar(p.x) - RRCADUnits.scalar(a.x)
+    apy = RRCADUnits.scalar(p.y) - RRCADUnits.scalar(a.y)
     num = (abx * apy - aby * apx).abs
     den = Math.sqrt(abx * abx + aby * aby)
     num / den
@@ -1099,8 +1391,8 @@ class SketchBuilder
   end
 
   def distance(a, b)
-    dx = b.x - a.x
-    dy = b.y - a.y
+    dx = RRCADUnits.scalar(b.x) - RRCADUnits.scalar(a.x)
+    dy = RRCADUnits.scalar(b.y) - RRCADUnits.scalar(a.y)
     Math.sqrt(dx * dx + dy * dy)
   end
 
@@ -1259,7 +1551,9 @@ class Shape
     end
     px, py, pz = point
     ax, ay, az = axis_dir
-    mag = Math.sqrt(ax * ax + ay * ay + az * az)
+    mag = Math.sqrt(RRCADUnits.scalar(ax) * RRCADUnits.scalar(ax) +
+                    RRCADUnits.scalar(ay) * RRCADUnits.scalar(ay) +
+                    RRCADUnits.scalar(az) * RRCADUnits.scalar(az))
     raise ArgumentError, "rotate_about: axis_dir must be non-zero" if mag < 1.0e-12
 
     translate(-px, -py, -pz).rotate(ax, ay, az, angle_deg).translate(px, py, pz)
@@ -1886,11 +2180,13 @@ class Assembly
   end
 
   def vec_length(v)
-    Math.sqrt(vec_dot(v, v))
+    Math.sqrt(RRCADUnits.scalar(vec_dot(v, v)))
   end
 
   def vec_normalize(v, label = "axis")
-    mag = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+    mag = Math.sqrt(RRCADUnits.scalar(v[0]) * RRCADUnits.scalar(v[0]) +
+                    RRCADUnits.scalar(v[1]) * RRCADUnits.scalar(v[1]) +
+                    RRCADUnits.scalar(v[2]) * RRCADUnits.scalar(v[2]))
     raise ArgumentError, "#{label} axis points must be distinct" if mag < 1.0e-12
     [v[0] / mag, v[1] / mag, v[2] / mag]
   end
@@ -2480,7 +2776,7 @@ module Kernel
     unless max_angle_deg.is_a?(Numeric) && max_angle_deg >= 0 && max_angle_deg <= 90
       raise ArgumentError, "overhang_faces max_angle_deg must be in [0, 90]"
     end
-    sin_limit = Math.sin(max_angle_deg * Math::PI / 180.0)
+    sin_limit = Math.sin(RRCADUnits.scalar(max_angle_deg) * Math::PI / 180.0)
     part.faces("all").select do |face|
       nz = face.normal[2]
       nz < -sin_limit
@@ -2506,8 +2802,8 @@ module Kernel
     unless tolerance_deg.is_a?(Numeric) && tolerance_deg >= 0 && tolerance_deg <= 90
       raise ArgumentError, "hole_axes tolerance_deg must be in [0, 90]"
     end
-    sin_tol = Math.sin(tolerance_deg * Math::PI / 180.0)
-    cos_tol = Math.cos(tolerance_deg * Math::PI / 180.0)
+    sin_tol = Math.sin(RRCADUnits.scalar(tolerance_deg) * Math::PI / 180.0)
+    cos_tol = Math.cos(RRCADUnits.scalar(tolerance_deg) * Math::PI / 180.0)
 
     results = []
     part.faces("all").each do |face|
@@ -2541,7 +2837,9 @@ module Kernel
     unless axis.is_a?(Array) && axis.length == 3 && axis.all? { |v| v.is_a?(Numeric) }
       raise ArgumentError, "draft_faces axis must be a 3-element numeric array"
     end
-    mag = Math.sqrt(axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2])
+    mag = Math.sqrt(RRCADUnits.scalar(axis[0]) * RRCADUnits.scalar(axis[0]) +
+                    RRCADUnits.scalar(axis[1]) * RRCADUnits.scalar(axis[1]) +
+                    RRCADUnits.scalar(axis[2]) * RRCADUnits.scalar(axis[2]))
     raise ArgumentError, "draft_faces axis must be non-zero" if mag < 1.0e-12
     unless min_draft_deg.is_a?(Numeric) && min_draft_deg >= 0 && min_draft_deg <= 90
       raise ArgumentError, "draft_faces min_draft_deg must be in [0, 90]"
@@ -2550,7 +2848,7 @@ module Kernel
     ux = axis[0] / mag
     uy = axis[1] / mag
     uz = axis[2] / mag
-    sin_limit = Math.sin(min_draft_deg * Math::PI / 180.0)
+    sin_limit = Math.sin(RRCADUnits.scalar(min_draft_deg) * Math::PI / 180.0)
 
     part.faces("all").select do |face|
       n = face.normal
@@ -2885,7 +3183,7 @@ module Kernel
   def csink(d:, csink_d:, csink_angle:, depth:)
     clearance = circle(d / 2.0).extrude(depth)
     # Cone height from the difference in radii and the half-angle.
-    csink_h = (csink_d - d) / 2.0 / Math.tan(csink_angle * Math::PI / 180.0)
+    csink_h = (csink_d - d) / 2.0 / Math.tan(RRCADUnits.scalar(csink_angle) * Math::PI / 180.0)
     # cone(r_base, r_top, h): wide end at Z=0, narrows upward.
     conical = cone(csink_d / 2.0, d / 2.0, csink_h)
     conical.fuse(clearance)
@@ -2968,10 +3266,16 @@ module Kernel
     val = if raw.is_a?(String)
       case default
       when Integer then raw.to_i
-      when Float   then raw.to_f
+      when Float then raw.to_f
+      when RRCADUnits::UnitLength then RRCADUnits.length(raw.to_f)
+      when RRCADUnits::UnitAngle then RRCADUnits.angle(raw.to_f)
       when TrueClass, FalseClass then raw == "true"
       else raw
       end
+    elsif default.is_a?(RRCADUnits::UnitLength)
+      RRCADUnits.length(raw)
+    elsif default.is_a?(RRCADUnits::UnitAngle)
+      RRCADUnits.angle(raw)
     else
       raw
     end
