@@ -1177,6 +1177,15 @@ class Shape
     raise NotImplementedError, "Shape#min_thickness is not yet implemented (Phase 8 Tier 3)"
   end
 
+  # Return the outward unit normal of a planar face as [nx, ny, nz].
+  # The shape must be a Face; sampled at the middle of the face's parameter
+  # space. Flipped when the face's orientation is REVERSED so the vector
+  # points out of the parent solid. Raises if the shape isn't a face or the
+  # normal is undefined.
+  def normal
+    raise NotImplementedError, "Shape#normal is not yet implemented (Phase 10)"
+  end
+
   # Fillet all corner vertices of a 2D Wire or Face profile.
   # Uses BRepFilletAPI_MakeFillet2d; non-corner vertices are silently skipped.
   #
@@ -1620,6 +1629,28 @@ module Kernel
       raise ArgumentError, "mass_estimate density must be > 0 (g/cm³)"
     end
     part.volume * density / 1000.0
+  end
+
+  # overhang_faces(part, max_angle_deg: 45.0) — list faces of +part+ whose
+  # outward normal tips downward more than +max_angle_deg+ from horizontal.
+  # Assumes the part is oriented +Z-up (build direction).  A horizontal
+  # downward-facing face (normal ≈ −Z) yields an angle of 90°.  Returns an
+  # Array of Face shapes; an empty array means no critical overhangs at the
+  # given threshold.
+  #
+  # The angle is measured between the build plane (XY) and the line from
+  # the face up to its support — i.e. asin(−normal.z) for normal.z ≤ 0.
+  # Vertical walls (normal.z = 0) yield 0° (no overhang); a fully
+  # downward-facing face yields 90° (worst case).
+  def overhang_faces(part, max_angle_deg: 45.0)
+    unless max_angle_deg.is_a?(Numeric) && max_angle_deg >= 0 && max_angle_deg <= 90
+      raise ArgumentError, "overhang_faces max_angle_deg must be in [0, 90]"
+    end
+    sin_limit = Math.sin(max_angle_deg * Math::PI / 180.0)
+    part.faces("all").select do |face|
+      nz = face.normal[2]
+      nz < -sin_limit
+    end
   end
 
   # print_volume_check(part, x:, y:, z:) — verify that +part+ fits within

@@ -2040,6 +2040,36 @@ rust::String shape_type_str(const OcctShape& shape) {
 
 // Centroid of the shape.  Uses VolumeProperties for solids and compounds;
 // SurfaceProperties for shells/faces; LinearProperties for wires/edges.
+void shape_face_normal(const OcctShape& face_shape, rust::Slice<double> out) {
+    try {
+        if (out.size() < 3)
+            throw std::runtime_error("face_normal: output slice must have at least 3 elements");
+        const TopoDS_Shape& s = face_shape.get();
+        if (s.ShapeType() != TopAbs_FACE)
+            throw std::runtime_error("face_normal: shape is not a face");
+
+        const TopoDS_Face& face = TopoDS::Face(s);
+        BRepAdaptor_Surface adaptor(face);
+        double umid = 0.5 * (adaptor.FirstUParameter() + adaptor.LastUParameter());
+        double vmid = 0.5 * (adaptor.FirstVParameter() + adaptor.LastVParameter());
+        BRepLProp_SLProps props(adaptor, umid, vmid, 1, 1e-6);
+        if (!props.IsNormalDefined())
+            throw std::runtime_error("face_normal: normal is not defined at the sample point");
+
+        gp_Dir normal = props.Normal();
+        if (face.Orientation() == TopAbs_REVERSED)
+            normal.Reverse();
+
+        out[0] = normal.X();
+        out[1] = normal.Y();
+        out[2] = normal.Z();
+    } catch (const Standard_Failure& e) {
+        throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
+    } catch (const std::exception&) {
+        throw;
+    }
+}
+
 void shape_centroid(const OcctShape& shape, rust::Slice<double> out) {
     try {
         if (out.size() < 3)

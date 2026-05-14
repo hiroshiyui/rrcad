@@ -131,7 +131,7 @@ mod ffi {
         // Phase 7 Tier 1: 2D profile offset (Wire or Face in its own plane).
         fn shape_offset_2d(shape: &OcctShape, distance: f64) -> Result<UniquePtr<OcctShape>>;
         fn shape_simplify(shape: &OcctShape, min_feature_size: f64)
-        -> Result<UniquePtr<OcctShape>>;
+            -> Result<UniquePtr<OcctShape>>;
         fn shape_extrude_ex(
             shape: &OcctShape,
             height: f64,
@@ -206,6 +206,7 @@ mod ffi {
         // Phase 7 Tier 2: validation & introspection.
         fn shape_type_str(shape: &OcctShape) -> Result<String>;
         fn shape_centroid(shape: &OcctShape, out: &mut [f64]) -> Result<()>;
+        fn shape_face_normal(face: &OcctShape, out: &mut [f64]) -> Result<()>;
         fn shape_is_closed(shape: &OcctShape) -> Result<bool>;
         fn shape_is_manifold(shape: &OcctShape) -> Result<bool>;
         fn shape_validate_str(shape: &OcctShape) -> Result<String>;
@@ -256,7 +257,7 @@ mod ffi {
         ) -> Result<UniquePtr<OcctShape>>;
         fn shape_fill_surface(boundary_wire: &OcctShape) -> Result<UniquePtr<OcctShape>>;
         fn shape_slice(shape: &OcctShape, plane: &str, offset: f64)
-        -> Result<UniquePtr<OcctShape>>;
+            -> Result<UniquePtr<OcctShape>>;
 
         // --- Export ---
         fn export_step(shape: &OcctShape, path: &str) -> Result<()>;
@@ -725,6 +726,15 @@ impl Shape {
     pub fn centroid(&self) -> Result<[f64; 3], String> {
         let mut out = [0f64; 3];
         ffi::shape_centroid(&self.inner, &mut out).map_err(|e| e.to_string())?;
+        Ok(out)
+    }
+
+    /// Outward unit normal of a face as `[nx, ny, nz]`.  Sampled at the
+    /// middle of the face's parameter space; flipped when the face's
+    /// orientation is REVERSED so it points out of the parent solid.
+    pub fn face_normal(&self) -> Result<[f64; 3], String> {
+        let mut out = [0f64; 3];
+        ffi::shape_face_normal(&self.inner, &mut out).map_err(|e| e.to_string())?;
         Ok(out)
     }
 

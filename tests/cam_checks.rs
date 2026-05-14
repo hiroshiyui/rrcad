@@ -111,3 +111,99 @@ fn print_volume_check_rejects_non_positive_bed() {
         "expected y validation error, got: {err}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Shape#normal (face outward normal)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn face_normal_top_face_of_box_points_up() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("box(10, 10, 10).faces(:top).first.normal[2]")
+        .unwrap();
+    let nz: f64 = result.trim().parse().expect("number");
+    assert!((nz - 1.0).abs() < 1e-6, "expected nz ≈ 1, got {nz}");
+}
+
+#[test]
+fn face_normal_bottom_face_of_box_points_down() {
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("box(10, 10, 10).faces(:bottom).first.normal[2]")
+        .unwrap();
+    let nz: f64 = result.trim().parse().expect("number");
+    assert!((nz - (-1.0)).abs() < 1e-6, "expected nz ≈ -1, got {nz}");
+}
+
+#[test]
+fn face_normal_rejects_non_face() {
+    let mut vm = MrubyVm::new();
+    let err = vm.eval("box(10, 10, 10).normal").unwrap_err();
+    assert!(
+        err.contains("not a face"),
+        "expected 'not a face' error, got: {err}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// overhang_faces
+// ---------------------------------------------------------------------------
+
+#[test]
+fn overhang_faces_empty_for_plain_box() {
+    // A solid axis-aligned box has only the bottom face pointing −Z, but the
+    // bottom face sits on the build plate — overhang_faces should still
+    // flag it (it's downward-facing). However the default threshold is 45°,
+    // and a fully downward face is at 90°, so it IS flagged.
+    let mut vm = MrubyVm::new();
+    let result = vm.eval("overhang_faces(box(10, 10, 10)).length").unwrap();
+    assert_eq!(
+        result.trim(),
+        "1",
+        "expected 1 overhang face (the bottom), got {result}"
+    );
+}
+
+#[test]
+fn overhang_faces_finds_overhang_on_t_shape() {
+    // A T-shaped solid: a base, with a wider cap on top.  The cap's
+    // underside face points −Z and is an overhang.  We expect to find at
+    // least one overhanging face (the cap's underside, plus the base
+    // bottom).
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval(
+            "base = box(10, 10, 10)
+             cap  = box(30, 10, 5).translate(-10, 0, 10)
+             part = base.fuse(cap)
+             overhang_faces(part).length",
+        )
+        .unwrap();
+    let n: i32 = result.trim().parse().expect("number");
+    assert!(n >= 2, "expected ≥2 overhang faces on T-shape, got {n}");
+}
+
+#[test]
+fn overhang_faces_threshold_filters_results() {
+    // At max_angle_deg: 89 (only steeply downward faces count), a box's
+    // bottom is at 90° from horizontal → still flagged. At 90, only a
+    // perfectly downward face exceeds → still 1. Verify the threshold path.
+    let mut vm = MrubyVm::new();
+    let result = vm
+        .eval("overhang_faces(box(10, 10, 10), max_angle_deg: 89).length")
+        .unwrap();
+    assert_eq!(result.trim(), "1", "expected 1 overhang, got {result}");
+}
+
+#[test]
+fn overhang_faces_rejects_out_of_range_angle() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval("overhang_faces(box(10, 10, 10), max_angle_deg: -1)")
+        .unwrap_err();
+    assert!(
+        err.contains("must be in [0, 90]"),
+        "expected range error, got: {err}"
+    );
+}

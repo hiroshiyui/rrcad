@@ -326,6 +326,11 @@ rust::String shape_type_str(const OcctShape& shape);
 // Fills out[0..3] with [x, y, z] centroid of the shape.
 // Uses VolumeProperties for solids, SurfaceProperties for shells/faces.
 void shape_centroid(const OcctShape& shape, rust::Slice<double> out);
+// Fills out[0..3] with the outward unit normal [nx, ny, nz] sampled at the
+// middle of the face's parameter space. Honours face orientation (flipped
+// when TopAbs_REVERSED) so the vector points out of the solid. Throws if
+// the shape is not a face or the normal is undefined at the sample point.
+void shape_face_normal(const OcctShape& face, rust::Slice<double> out);
 // True if the shape has no free (boundary) edges — i.e., every edge is
 // shared by at least two faces.  Implies the shape is a closed manifold
 // when combined with is_manifold.

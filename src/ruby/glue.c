@@ -182,6 +182,7 @@ extern void* rrcad_shape_cut_all(void* base, const void** ptrs, size_t n, const 
 /* Phase 7 Tier 2 — validation & introspection */
 extern const char* rrcad_shape_type_name(void* ptr, const char** error_out);
 extern void rrcad_shape_centroid(void* ptr, double* out, const char** error_out);
+extern void rrcad_shape_face_normal(void* ptr, double* out, const char** error_out);
 extern int rrcad_shape_is_closed(void* ptr, const char** error_out);
 extern int rrcad_shape_is_manifold(void* ptr, const char** error_out);
 extern const char* rrcad_shape_validate(void* ptr, const char** error_out);
@@ -1622,6 +1623,24 @@ static mrb_value mrb_rrcad_shape_centroid(mrb_state* mrb, mrb_value self) {
     return ary;
 }
 
+/* face.normal  → [nx, ny, nz] outward unit normal of a planar face */
+static mrb_value mrb_rrcad_shape_face_normal(mrb_state* mrb, mrb_value self) {
+    void* ptr = shape_ptr(mrb, self);
+    require_native_ptr(mrb, ptr);
+
+    double out[3] = {0.0, 0.0, 0.0};
+    const char* err = NULL;
+    rrcad_shape_face_normal(ptr, out, &err);
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+
+    mrb_value ary = mrb_ary_new_capa(mrb, 3);
+    mrb_ary_push(mrb, ary, mrb_float_value(mrb, (mrb_float)out[0]));
+    mrb_ary_push(mrb, ary, mrb_float_value(mrb, (mrb_float)out[1]));
+    mrb_ary_push(mrb, ary, mrb_float_value(mrb, (mrb_float)out[2]));
+    return ary;
+}
+
 /* shape.closed?  → true/false */
 static mrb_value mrb_rrcad_shape_closed(mrb_state* mrb, mrb_value self) {
     void* ptr = shape_ptr(mrb, self);
@@ -2226,6 +2245,7 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     /* Phase 7 Tier 2: validation & introspection */
     mrb_define_method(mrb, shape_class, "shape_type", mrb_rrcad_shape_type, MRB_ARGS_NONE());
     mrb_define_method(mrb, shape_class, "centroid", mrb_rrcad_shape_centroid, MRB_ARGS_NONE());
+    mrb_define_method(mrb, shape_class, "normal", mrb_rrcad_shape_face_normal, MRB_ARGS_NONE());
     mrb_define_method(mrb, shape_class, "closed?", mrb_rrcad_shape_closed, MRB_ARGS_NONE());
     mrb_define_method(mrb, shape_class, "manifold?", mrb_rrcad_shape_manifold, MRB_ARGS_NONE());
     mrb_define_method(mrb, shape_class, "validate", mrb_rrcad_shape_validate, MRB_ARGS_NONE());
