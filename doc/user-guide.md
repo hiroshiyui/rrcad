@@ -523,6 +523,7 @@ part.export("drawing.svg", hidden: true)              # dashed hidden lines
 part.export("drawing.svg", center_marks: true)       # cylinder centres
 part.export("drawing.svg", dimensions: true)         # overall width/height labels
 part.export("drawing.dxf", scale: 0.5, hidden: true)  # DXF at 1:2 with HIDDEN layer
+part.export("drawing.dxf", view: :sheet)              # 3-view sheet
 part.export("drawing.dxf", center_marks: true)       # DXF centre marks
 part.export("drawing.dxf", dimensions: true)         # DXF width/height labels
 ```

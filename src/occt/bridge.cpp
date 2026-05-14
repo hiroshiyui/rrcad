@@ -3348,6 +3348,141 @@ static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double
     }
 }
 
+static void write_dxf_view(std::ofstream& f, const DrawingViewData& view, double offset_x,
+                           double offset_y, bool hidden, bool center_marks, bool dimensions) {
+    auto write_lines = [&](const DrawingPolylines& polylines, const char* layer) {
+        for (auto& pts : polylines) {
+            for (std::size_t i = 0; i + 1 < pts.size(); ++i) {
+                auto [x1, y1] = pts[i];
+                auto [x2, y2] = pts[i + 1];
+                x1 += offset_x;
+                y1 += offset_y;
+                x2 += offset_x;
+                y2 += offset_y;
+                if (std::abs(x2 - x1) < 1e-9 && std::abs(y2 - y1) < 1e-9)
+                    continue;
+                f << "  0\nLINE\n";
+                f << "  8\n" << layer << "\n";
+                f << " 10\n" << x1 << "\n";
+                f << " 20\n" << y1 << "\n";
+                f << " 30\n0.0\n";
+                f << " 11\n" << x2 << "\n";
+                f << " 21\n" << y2 << "\n";
+                f << " 31\n0.0\n";
+            }
+        }
+    };
+
+    write_lines(view.visible, "0");
+    if (hidden)
+        write_lines(view.hidden, "HIDDEN");
+    if (center_marks && !view.marks.empty()) {
+        for (const auto& mark : view.marks) {
+            const double x = mark.x + offset_x;
+            const double y = mark.y + offset_y;
+            f << "  0\nLINE\n";
+            f << "  8\nCENTER\n";
+            f << " 10\n" << (x - mark.size) << "\n";
+            f << " 20\n" << y << "\n";
+            f << " 30\n0.0\n";
+            f << " 11\n" << (x + mark.size) << "\n";
+            f << " 21\n" << y << "\n";
+            f << " 31\n0.0\n";
+            f << "  0\nLINE\n";
+            f << "  8\nCENTER\n";
+            f << " 10\n" << x << "\n";
+            f << " 20\n" << (y - mark.size) << "\n";
+            f << " 30\n0.0\n";
+            f << " 11\n" << x << "\n";
+            f << " 21\n" << (y + mark.size) << "\n";
+            f << " 31\n0.0\n";
+        }
+    }
+    if (dimensions) {
+        const double dim_gap = 8.0;
+        const double tick = 1.5;
+        const double label_offset = 3.5;
+        const double font_size = 3.0;
+        const double dim_xmin = view.geom_xmin + offset_x;
+        const double dim_xmax = view.geom_xmax + offset_x;
+        const double dim_ymin = view.geom_ymin + offset_y;
+        const double dim_ymax = view.geom_ymax + offset_y;
+        const double width = view.width;
+        const double height = view.height;
+        const double hx = (dim_xmin + dim_xmax) * 0.5;
+        const double hy = (dim_ymin + dim_ymax) * 0.5;
+        const double dim_y = dim_ymin - dim_gap;
+        const double dim_x = dim_xmin - dim_gap;
+
+        auto write_text = [&](double x, double y, const std::string& text, double rotation) {
+            f << "  0\nTEXT\n";
+            f << "  8\nDIMENSION\n";
+            f << " 10\n" << x << "\n";
+            f << " 20\n" << y << "\n";
+            f << " 30\n0.0\n";
+            f << " 40\n" << font_size << "\n";
+            f << "  1\n" << text << "\n";
+            if (rotation != 0.0)
+                f << " 50\n" << rotation << "\n";
+        };
+
+        f << "  0\nLINE\n";
+        f << "  8\nDIMENSION\n";
+        f << " 10\n" << dim_xmin << "\n";
+        f << " 20\n" << dim_y << "\n";
+        f << " 30\n0.0\n";
+        f << " 11\n" << dim_xmax << "\n";
+        f << " 21\n" << dim_y << "\n";
+        f << " 31\n0.0\n";
+        f << "  0\nLINE\n";
+        f << "  8\nDIMENSION\n";
+        f << " 10\n" << dim_x << "\n";
+        f << " 20\n" << dim_ymin << "\n";
+        f << " 30\n0.0\n";
+        f << " 11\n" << dim_x << "\n";
+        f << " 21\n" << dim_ymax << "\n";
+        f << " 31\n0.0\n";
+
+        f << "  0\nLINE\n";
+        f << "  8\nDIMENSION\n";
+        f << " 10\n" << (dim_xmin + tick) << "\n";
+        f << " 20\n" << (dim_y - tick) << "\n";
+        f << " 30\n0.0\n";
+        f << " 11\n" << (dim_xmin - tick) << "\n";
+        f << " 21\n" << (dim_y + tick) << "\n";
+        f << " 31\n0.0\n";
+        f << "  0\nLINE\n";
+        f << "  8\nDIMENSION\n";
+        f << " 10\n" << (dim_xmax + tick) << "\n";
+        f << " 20\n" << (dim_y - tick) << "\n";
+        f << " 30\n0.0\n";
+        f << " 11\n" << (dim_xmax - tick) << "\n";
+        f << " 21\n" << (dim_y + tick) << "\n";
+        f << " 31\n0.0\n";
+
+        write_text(hx, dim_y - label_offset, std::to_string(width), 0.0);
+
+        f << "  0\nLINE\n";
+        f << "  8\nDIMENSION\n";
+        f << " 10\n" << (dim_x - tick) << "\n";
+        f << " 20\n" << (dim_ymin + tick) << "\n";
+        f << " 30\n0.0\n";
+        f << " 11\n" << (dim_x + tick) << "\n";
+        f << " 21\n" << (dim_ymin - tick) << "\n";
+        f << " 31\n0.0\n";
+        f << "  0\nLINE\n";
+        f << "  8\nDIMENSION\n";
+        f << " 10\n" << (dim_x - tick) << "\n";
+        f << " 20\n" << (dim_ymax + tick) << "\n";
+        f << " 30\n0.0\n";
+        f << " 11\n" << (dim_x + tick) << "\n";
+        f << " 21\n" << (dim_ymax - tick) << "\n";
+        f << " 31\n0.0\n";
+
+        write_text(dim_x - label_offset, hy, std::to_string(height), -90.0);
+    }
+}
+
 // Project the shape onto the chosen view plane, return visible and hidden
 // polylines as (x, y) point lists.
 static HlrProjection hlr_project(const OcctShape& shape, const std::string& view) {
@@ -3503,6 +3638,45 @@ void export_dxf(const OcctShape& shape,
         std::string view_str(view.data(), view.size());
         if (!(scale > 0.0) || !std::isfinite(scale)) {
             throw std::runtime_error("export_dxf: scale must be positive and finite");
+        }
+
+        if (view_str == "sheet") {
+            const double sheet_gap = 16.0;
+
+            auto top_view =
+                build_drawing_view(shape, "top", scale, hidden, center_marks, dimensions);
+            auto front_view =
+                build_drawing_view(shape, "front", scale, hidden, center_marks, dimensions);
+            auto side_view =
+                build_drawing_view(shape, "side", scale, hidden, center_marks, dimensions);
+
+            const double top_dx = (front_view.geom_xmin + front_view.geom_xmax) * 0.5 -
+                                  (top_view.geom_xmin + top_view.geom_xmax) * 0.5;
+            const double top_dy = front_view.geom_ymax - front_view.geom_ymin + sheet_gap;
+            const double front_dx = 0.0;
+            const double front_dy = 0.0;
+            const double side_dx = front_view.geom_xmax - side_view.geom_xmin + sheet_gap;
+            const double side_dy = (front_view.geom_ymin + front_view.geom_ymax) * 0.5 -
+                                   (side_view.geom_ymin + side_view.geom_ymax) * 0.5;
+
+            std::ofstream f(path_str);
+            if (!f.is_open())
+                throw std::runtime_error("export_dxf: cannot open file: " + path_str);
+
+            f << std::fixed << std::setprecision(6);
+            f << "  0\nSECTION\n  2\nHEADER\n";
+            f << "  9\n$ACADVER\n  1\nAC1009\n";
+            f << "  0\nENDSEC\n";
+            f << "  0\nSECTION\n  2\nENTITIES\n";
+
+            write_dxf_view(f, top_view, top_dx, top_dy, hidden, center_marks, dimensions);
+            write_dxf_view(f, front_view, front_dx, front_dy, hidden, center_marks, dimensions);
+            write_dxf_view(f, side_view, side_dx, side_dy, hidden, center_marks, dimensions);
+
+            f << "  0\nENDSEC\n  0\nEOF\n";
+            if (!f.good())
+                throw std::runtime_error("export_dxf: write error on file: " + path_str);
+            return;
         }
 
         auto projection = hlr_project(shape, view_str);

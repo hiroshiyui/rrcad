@@ -300,6 +300,22 @@ fn dxf_front_view() {
 }
 
 #[test]
+fn dxf_sheet_view_renders_multiple_orthographic_views() {
+    let mut vm = MrubyVm::new();
+    let single = tmp("rrcad_test_single_view.dxf");
+    let sheet = tmp("rrcad_test_sheet_view.dxf");
+    vm.eval(&format!("box(20,10,5).export('{}', view: :front)", single.display()))
+        .unwrap();
+    vm.eval(&format!("box(20,10,5).export('{}', view: :sheet)", sheet.display()))
+        .unwrap();
+
+    assert!(
+        dxf_max_abs_xy(&sheet) > dxf_max_abs_xy(&single),
+        "sheet mode should produce a larger coordinate envelope than a single view"
+    );
+}
+
+#[test]
 fn dxf_ends_with_eof_marker() {
     let mut vm = MrubyVm::new();
     let out = tmp("rrcad_test_eof.dxf");
