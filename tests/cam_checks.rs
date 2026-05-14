@@ -495,29 +495,31 @@ fn unsupported_islands_detects_floating_component() {
 
 #[test]
 fn unsupported_islands_accepts_axis_overrides() {
-    let mut vm = MrubyVm::new();
-    let x_axis = vm
-        .eval(
+    let x_axis = {
+        let mut vm = MrubyVm::new();
+        vm.eval(
             "part = box(10, 10, 10).fuse(box(8, 8, 10).translate(20, 12, 0))
              unsupported_islands(part, axis: :x, layer_height: 5)
                .flat_map { |layer| layer[:unsupported] }
                .length",
         )
-        .unwrap();
+        .unwrap()
+    };
     assert!(
         x_axis.trim().parse::<i32>().unwrap() >= 1,
         "expected unsupported islands along the X build axis"
     );
 
-    let mut vm2 = MrubyVm::new();
-    let y_axis = vm2
-        .eval(
+    let y_axis = {
+        let mut vm = MrubyVm::new();
+        vm.eval(
             "part = box(10, 10, 10).fuse(box(8, 8, 10).translate(20, 12, 20))
              unsupported_islands(part, axis: [0, 1, 0], layer_height: 5)
                .flat_map { |layer| layer[:unsupported] }
                .length",
         )
-        .unwrap();
+        .unwrap()
+    };
     assert!(
         y_axis.trim().parse::<i32>().unwrap() >= 1,
         "expected unsupported islands along the Y build axis"
@@ -526,28 +528,31 @@ fn unsupported_islands_accepts_axis_overrides() {
 
 #[test]
 fn unsupported_islands_rejects_bad_inputs() {
-    let mut vm = MrubyVm::new();
-    let err = vm
-        .eval("unsupported_islands(box(10, 10, 10), layer_height: 0)")
-        .unwrap_err();
+    let err = {
+        let mut vm = MrubyVm::new();
+        vm.eval("unsupported_islands(box(10, 10, 10), layer_height: 0)")
+            .unwrap_err()
+    };
     assert!(
         err.contains("layer_height"),
         "expected layer_height validation error, got: {err}"
     );
 
-    let mut vm2 = MrubyVm::new();
-    let err2 = vm2
-        .eval("unsupported_islands(box(10, 10, 10), axis: [0, 0])")
-        .unwrap_err();
+    let err2 = {
+        let mut vm = MrubyVm::new();
+        vm.eval("unsupported_islands(box(10, 10, 10), axis: [0, 0])")
+            .unwrap_err()
+    };
     assert!(
         err2.contains("axis"),
         "expected axis validation error, got: {err2}"
     );
 
-    let mut vm3 = MrubyVm::new();
-    let err3 = vm3
-        .eval("unsupported_islands(box(10, 10, 10), tolerance: -1)")
-        .unwrap_err();
+    let err3 = {
+        let mut vm = MrubyVm::new();
+        vm.eval("unsupported_islands(box(10, 10, 10), tolerance: -1)")
+            .unwrap_err()
+    };
     assert!(
         err3.contains("tolerance"),
         "expected tolerance validation error, got: {err3}"
