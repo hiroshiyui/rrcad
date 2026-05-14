@@ -875,6 +875,28 @@ class Shape
     raise NotImplementedError, "Shape#rotate is not yet implemented (Phase 2)"
   end
 
+  # rotate_about(point, axis_dir, angle_deg) — rotate this shape by angle_deg
+  # degrees around an axis through `point` (a 3-element [x, y, z]) pointing in
+  # `axis_dir` (also 3-element). Implemented via translate(-p) → rotate →
+  # translate(+p) so the pivot point stays fixed.
+  def rotate_about(point, axis_dir, angle_deg)
+    unless point.is_a?(Array) && point.length == 3 && point.all? { |v| v.is_a?(Numeric) }
+      raise ArgumentError, "rotate_about: point must be a 3-element numeric array"
+    end
+    unless axis_dir.is_a?(Array) && axis_dir.length == 3 && axis_dir.all? { |v| v.is_a?(Numeric) }
+      raise ArgumentError, "rotate_about: axis_dir must be a 3-element numeric array"
+    end
+    unless angle_deg.is_a?(Numeric)
+      raise ArgumentError, "rotate_about: angle_deg must be a number"
+    end
+    px, py, pz = point
+    ax, ay, az = axis_dir
+    mag = Math.sqrt(ax * ax + ay * ay + az * az)
+    raise ArgumentError, "rotate_about: axis_dir must be non-zero" if mag < 1.0e-12
+
+    translate(-px, -py, -pz).rotate(ax, ay, az, angle_deg).translate(px, py, pz)
+  end
+
   def scale(_factor)
     raise NotImplementedError, "Shape#scale is not yet implemented (Phase 2)"
   end
@@ -1119,6 +1141,108 @@ class Assembly
     @shapes << positioned
     positioned
   end
+
+  # distance_mate(shape, from:, to:, distance:) — same as mate, but expresses
+  # the gap explicitly. `distance:` must be positive (a gap, not contact);
+  # use the plain `mate(... offset: 0)` for flush contact.
+  def distance_mate(shape, from:, to:, distance:)
+    unless distance.is_a?(Numeric) && distance > 0
+      raise ArgumentError, "distance_mate distance must be > 0 (use mate for flush contact)"
+    end
+    positioned = shape.mate(from, to, distance)
+    @shapes << positioned
+    positioned
+  end
+
+  # axis_align(shape, from: [p1, p2], to: [q1, q2]) — rotate and translate
+  # +shape+ so that the source axis (p1 → p2, in the shape's current frame)
+  # maps to the target axis (q1 → q2 in world coordinates). p1 becomes
+  # coincident with q1, and direction (p2−p1) is rotated to (q2−q1). Useful
+  # for concentric / coaxial alignment of cylindrical features when you can
+  # name two points on each axis.
+  def axis_align(shape, from:, to:)
+    p1, p2 = validate_axis_pair!(from, "axis_align from:")
+    q1, q2 = validate_axis_pair!(to, "axis_align to:")
+
+    u = vec_normalize(vec_sub(p2, p1), "axis_align from:")
+    v = vec_normalize(vec_sub(q2, q1), "axis_align to:")
+
+    # First translate p1 to the origin, then rotate u → v about the origin,
+    # then translate the origin to q1.
+    intermediate = shape.translate(-p1[0], -p1[1], -p1[2])
+    intermediate = apply_axis_rotation(intermediate, u, v)
+    positioned = intermediate.translate(q1[0], q1[1], q1[2])
+    @shapes << positioned
+    positioned
+  end
+
+  # angle_mate(shape, from:, to:, angle:, pivot:, axis_dir:, offset: 0)
+  # — mate +from+ face flush onto +to+ face (optionally with `offset:` gap),
+  # then rotate the placed shape by +angle+ degrees about an axis through
+  # +pivot+ in direction +axis_dir+ (both 3-element world-space vectors).
+  # Useful for locking the rotational degree of freedom left over after a
+  # planar mate.
+  def angle_mate(shape, from:, to:, angle:, pivot:, axis_dir:, offset: 0.0)
+    unless angle.is_a?(Numeric)
+      raise ArgumentError, "angle_mate angle must be a number"
+    end
+    mated = shape.mate(from, to, offset)
+    positioned = mated.rotate_about(pivot, axis_dir, angle)
+    @shapes << positioned
+    positioned
+  end
+
+  def validate_axis_pair!(pair, label)
+    unless pair.is_a?(Array) && pair.length == 2
+      raise ArgumentError, "#{label} must be a [point_a, point_b] pair"
+    end
+    pair.each do |pt|
+      unless pt.is_a?(Array) && pt.length == 3 && pt.all? { |v| v.is_a?(Numeric) }
+        raise ArgumentError, "#{label} entries must be 3-element numeric arrays"
+      end
+    end
+    pair
+  end
+
+  def vec_sub(a, b)
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+  end
+
+  def vec_normalize(v, label = "axis")
+    mag = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2])
+    raise ArgumentError, "#{label} axis points must be distinct" if mag < 1.0e-12
+    [v[0] / mag, v[1] / mag, v[2] / mag]
+  end
+
+  # Apply the rotation that takes unit vector u to unit vector v, pivoting
+  # about the origin.  Returns a new shape.
+  def apply_axis_rotation(shape, u, v)
+    # k = u × v (rotation axis); |k| = sin θ; u·v = cos θ.
+    kx = u[1] * v[2] - u[2] * v[1]
+    ky = u[2] * v[0] - u[0] * v[2]
+    kz = u[0] * v[1] - u[1] * v[0]
+    sin_t = Math.sqrt(kx * kx + ky * ky + kz * kz)
+    cos_t = u[0] * v[0] + u[1] * v[1] + u[2] * v[2]
+
+    if sin_t < 1.0e-12
+      if cos_t > 0.0
+        # Already aligned — no rotation needed.
+        shape
+      else
+        # Antiparallel: rotate 180° about any axis perpendicular to u.
+        perp = if u[0].abs < 0.9 then [1.0, 0.0, 0.0] else [0.0, 1.0, 0.0] end
+        px = u[1] * perp[2] - u[2] * perp[1]
+        py = u[2] * perp[0] - u[0] * perp[2]
+        pz = u[0] * perp[1] - u[1] * perp[0]
+        shape.rotate(px, py, pz, 180.0)
+      end
+    else
+      angle_deg = Math.atan2(sin_t, cos_t) * 180.0 / Math::PI
+      shape.rotate(kx / sin_t, ky / sin_t, kz / sin_t, angle_deg)
+    end
+  end
+
+  private :validate_axis_pair!, :vec_sub, :vec_normalize, :apply_axis_rotation
 
   def to_shape
     raise RuntimeError, "Assembly '#{@name}' contains no shapes" if @shapes.empty?
