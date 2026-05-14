@@ -404,7 +404,11 @@ class SketchBuilder
       return unless changed
     end
 
-    raise RuntimeError, "sketch constraints did not converge"
+    unresolved = @points.reject(&:resolved?).map do |pt|
+      "#{point_label(pt)} (missing #{missing_coords(pt)})"
+    end
+    suffix = unresolved.empty? ? "" : "; unresolved: #{unresolved.join(', ')}"
+    raise RuntimeError, "sketch constraints did not converge#{suffix}"
   end
 
   def apply_constraint(constraint)
@@ -470,7 +474,10 @@ class SketchBuilder
     elsif a.resolved? && b.resolved? && center.resolved?
       d = point_line_distance(center, a, b)
       if (d - radius).abs > 1.0e-6
-        raise RuntimeError, "conflicting tangent constraint"
+        raise RuntimeError,
+              "conflicting tangent constraint: distance from #{point_label(center)} " \
+              "to line (#{point_label(a)}, #{point_label(b)}) is " \
+              "#{format_num(d)}, expected radius #{format_num(radius)}"
       end
       false
     else
@@ -503,7 +510,11 @@ class SketchBuilder
 
     if line_v && cv
       if ((line_v - cv).abs - radius).abs > 1.0e-6
-        raise RuntimeError, "conflicting tangent constraint"
+        actual = (line_v - cv).abs
+        raise RuntimeError,
+              "conflicting tangent constraint: line #{attr}=#{format_num(line_v)}, " \
+              "#{point_label(center)} #{attr}=#{format_num(cv)}, |Δ|=" \
+              "#{format_num(actual)}, expected radius #{format_num(radius)}"
       end
       false
     elsif line_v.nil? && cv
@@ -688,7 +699,9 @@ class SketchBuilder
     elsif a.resolved? && b.resolved?
       actual = distance(a, b)
       if (actual - length).abs > 1.0e-6
-        raise RuntimeError, "conflicting dimension constraint"
+        raise RuntimeError,
+              "conflicting dimension constraint: #{point_label(a)}→#{point_label(b)} " \
+              "length=#{format_num(actual)}, expected #{format_num(length)}"
       end
       false
     else
@@ -701,7 +714,12 @@ class SketchBuilder
     cd = segment_length(c, d)
 
     if ab && cd
-      raise RuntimeError, "conflicting equal_length constraint" if (ab - cd).abs > 1.0e-6
+      if (ab - cd).abs > 1.0e-6
+        raise RuntimeError,
+              "conflicting equal_length constraint: #{point_label(a)}→#{point_label(b)} " \
+              "length=#{format_num(ab)}, #{point_label(c)}→#{point_label(d)} " \
+              "length=#{format_num(cd)}"
+      end
       false
     elsif ab
       apply_dimension(c, d, ab)
@@ -731,7 +749,10 @@ class SketchBuilder
       coord_set(b, attr, av + length)
       true
     elsif ((bv - av).abs - length).abs > 1.0e-6
-      raise RuntimeError, "conflicting #{name} constraint"
+      actual = (bv - av).abs
+      raise RuntimeError,
+            "conflicting #{name} constraint: #{point_label(a)}→#{point_label(b)} " \
+            "|Δ#{attr}|=#{format_num(actual)}, expected #{format_num(length)}"
     else
       false
     end
@@ -754,7 +775,9 @@ class SketchBuilder
       coord_set(point, attr, value)
       true
     elsif (current - value).abs > 1.0e-9
-      raise RuntimeError, "conflicting #{name} constraint"
+      raise RuntimeError,
+            "conflicting #{name} constraint: #{point_label(point)} #{attr}=" \
+            "#{format_num(current)}, expected #{format_num(value)}"
     else
       false
     end
@@ -773,10 +796,18 @@ class SketchBuilder
       coord_set(b, attr, av)
       true
     elsif (av - bv).abs > 1.0e-9
-      raise RuntimeError, "conflicting #{name} constraint"
+      raise RuntimeError,
+            "conflicting #{name} constraint: #{point_label(a)} #{attr}=" \
+            "#{format_num(av)}, #{point_label(b)} #{attr}=#{format_num(bv)}"
     else
       false
     end
+  end
+
+  def format_num(v)
+    return v.to_s unless v.is_a?(Numeric)
+    rounded = (v * 1.0e6).round / 1.0e6
+    rounded.to_s
   end
 
   def coord_get(point, attr)

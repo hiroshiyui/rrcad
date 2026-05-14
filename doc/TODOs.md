@@ -185,9 +185,12 @@ supports exact circle profiles via
 `circle_at(center, radius)` plus translated arc wires via
 `arc_at(center, radius, start_deg, end_deg)`. It also includes a constrained
 `rectangle(origin, width, height)` helper and `centered_rectangle(center, width,
-height)`, plus axis-aligned `slot_between(a, b, radius)` profiles. Remaining
-work: richer construction geometry, stronger solver diagnostics, and broader
-under/over-constrained sketch analysis.
+height)`, plus axis-aligned `slot_between(a, b, radius)` profiles. Solver diagnostics now name the involved points and report actual vs
+expected values for `horizontal`/`vertical`/`coincident`/`dimension`/
+`equal_length`/`tangent` conflicts, and the "did not converge" failure
+lists every unresolved point with its missing coordinates. Remaining
+work: richer construction geometry and broader under/over-constrained
+sketch analysis (e.g. detecting redundant constraints before solving).
 
 **Feature history / parametric model tree:** Represent modeling operations as a
 regeneratable feature graph instead of only immutable shape results. This would

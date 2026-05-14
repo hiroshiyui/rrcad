@@ -1070,3 +1070,124 @@ fn tangent_rejects_invalid_side() {
         "expected side validation error, got: {err}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Solver diagnostics
+// ---------------------------------------------------------------------------
+
+#[test]
+fn convergence_failure_lists_unresolved_points() {
+    // An under-constrained sketch with two points whose Y is unknown.
+    // Three lines so the closed-loop check isn't what fires first; the
+    // solver loop should hit max iterations and report the unresolved points.
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval(
+            "sketch do
+               p1 = point(:a, 0, 0)
+               p2 = point(:b, 10, nil)
+               p3 = point(:c, 5, nil)
+               horizontal p2, p3
+               line p1, p2
+               line p2, p3
+               line p3, p1
+             end",
+        )
+        .unwrap_err();
+    // Either the convergence message OR the under-constrained message
+    // should mention the unresolved points by name.
+    assert!(
+        err.contains(":b") || err.contains(":c"),
+        "expected unresolved point names, got: {err}"
+    );
+    assert!(
+        err.contains("missing"),
+        "expected 'missing' coord hint, got: {err}"
+    );
+}
+
+#[test]
+fn conflicting_dimension_reports_actual_and_expected() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval(
+            "sketch do
+               a = point(:a, 0, 0)
+               b = point(:b, 10, 0)
+               dimension a, b, 5
+               line a, b
+               line b, point(10, 1)
+               line point(10, 1), a
+             end",
+        )
+        .unwrap_err();
+    assert!(
+        err.contains("conflicting dimension constraint"),
+        "expected dimension conflict header, got: {err}"
+    );
+    assert!(err.contains(":a"), "expected :a in message, got: {err}");
+    assert!(err.contains(":b"), "expected :b in message, got: {err}");
+    assert!(
+        err.contains("expected") && err.contains("5"),
+        "expected 'expected 5' in message, got: {err}"
+    );
+}
+
+#[test]
+fn conflicting_horizontal_reports_point_coords() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval(
+            "sketch do
+               a = point(:a, 0, 0)
+               b = point(:b, 10, 4)
+               horizontal a, b
+               line a, b
+               line b, point(0, 4)
+               line point(0, 4), a
+             end",
+        )
+        .unwrap_err();
+    assert!(
+        err.contains("conflicting horizontal constraint"),
+        "expected horizontal conflict header, got: {err}"
+    );
+    assert!(
+        err.contains(":a") && err.contains(":b"),
+        "expected point labels in message, got: {err}"
+    );
+    assert!(
+        err.contains("y=0") && err.contains("y=4"),
+        "expected coord values in message, got: {err}"
+    );
+}
+
+#[test]
+fn conflicting_tangent_reports_distance_and_radius() {
+    let mut vm = MrubyVm::new();
+    let err = vm
+        .eval(
+            "sketch do
+               c = point(:c, 5, 0)
+               a = point(:p1, 0, 2)
+               b = point(:p2, 10, 2)
+               tangent a, b, c, 3
+               line a, b
+               line b, point(10, 5)
+               line point(10, 5), a
+             end",
+        )
+        .unwrap_err();
+    assert!(
+        err.contains("conflicting tangent constraint"),
+        "expected tangent conflict header, got: {err}"
+    );
+    assert!(
+        err.contains(":c"),
+        "expected center label in message, got: {err}"
+    );
+    assert!(
+        err.contains("expected radius") && err.contains("3"),
+        "expected 'expected radius 3' in message, got: {err}"
+    );
+}
