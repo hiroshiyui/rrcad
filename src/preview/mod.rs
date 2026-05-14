@@ -22,6 +22,38 @@ pub struct PreviewState {
 /// `rrcad_preview_shape` (called on the main thread from mRuby).
 pub static PREVIEW: OnceLock<PreviewState> = OnceLock::new();
 
+/// Return the JSON sidecar path used by the browser properties panel.
+pub fn metadata_path_for_glb(glb_path: &std::path::Path) -> PathBuf {
+    glb_path.with_extension("json")
+}
+
+/// Collect lightweight shape properties for the live preview inspector.
+pub fn metadata_json_for_shape(shape: &crate::occt::Shape) -> serde_json::Value {
+    let bounding_box = match shape.bounding_box() {
+        Ok([xmin, ymin, zmin, xmax, ymax, zmax]) => serde_json::json!({
+            "min": [xmin, ymin, zmin],
+            "max": [xmax, ymax, zmax],
+            "size": [xmax - xmin, ymax - ymin, zmax - zmin],
+        }),
+        Err(e) => serde_json::json!({ "error": e }),
+    };
+
+    serde_json::json!({
+        "shape_type": query_or_error(shape.shape_type_name()),
+        "validation": query_or_error(shape.validate()),
+        "volume": query_or_error(shape.volume()),
+        "surface_area": query_or_error(shape.surface_area()),
+        "bounding_box": bounding_box,
+    })
+}
+
+fn query_or_error<T: serde::Serialize>(result: Result<T, String>) -> serde_json::Value {
+    match result {
+        Ok(value) => serde_json::json!({ "ok": true, "value": value }),
+        Err(error) => serde_json::json!({ "ok": false, "error": error }),
+    }
+}
+
 /// Initialise the preview state, spawn the axum server on a background
 /// Tokio runtime, and open the browser.
 ///
@@ -49,4 +81,24 @@ pub fn start(glb_path: PathBuf, port: u16) -> Result<tokio::runtime::Runtime, St
     open::that(&url).ok();
 
     Ok(rt)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::occt::Shape;
+
+    #[test]
+    fn metadata_for_box_includes_core_properties() {
+        let shape = Shape::make_box(10.0, 20.0, 30.0).expect("make_box");
+        let metadata = metadata_json_for_shape(&shape);
+
+        assert_eq!(metadata["shape_type"]["value"], "solid");
+        assert_eq!(metadata["validation"]["value"], "ok");
+        assert_eq!(metadata["volume"]["value"], 6000.0);
+        assert_eq!(metadata["surface_area"]["value"], 2200.0);
+        assert_eq!(metadata["bounding_box"]["size"][0], 10.0);
+        assert_eq!(metadata["bounding_box"]["size"][1], 20.0);
+        assert_eq!(metadata["bounding_box"]["size"][2], 30.0);
+    }
 }

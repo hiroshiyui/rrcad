@@ -568,6 +568,10 @@ The hamburger menu exposes the same toggles plus a **Scene** selector:
 | Scene | Showroom (dark studio, default) · White (bright neutral background) |
 | Show | Axes on/off |
 
+The top-left model panel updates with each `preview(shape)` call and reports
+the shape type, BRep validation status, bounding-box size, volume, and surface
+area for quick inspection while iterating.
+
 ---
 
 ## Parametric Design & Batch Export

@@ -18,6 +18,38 @@
       color: #4b5563; font: 12px/1.5 monospace;
       pointer-events: none;
     }
+    #properties {
+      position: fixed; top: 34px; left: 8px;
+      width: min(260px, calc(100vw - 16px));
+      padding: 8px 10px;
+      background: rgba(10,12,18,0.82);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 6px;
+      color: #9ca3af;
+      font: 11px/1.45 monospace;
+      backdrop-filter: blur(10px);
+      pointer-events: none;
+      z-index: 10;
+    }
+    .prop-title {
+      color: #e5e7eb;
+      font-size: 11px;
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .prop-row {
+      display: grid;
+      grid-template-columns: 82px minmax(0, 1fr);
+      gap: 8px;
+      min-height: 16px;
+    }
+    .prop-row span:first-child { color: #4b5563; }
+    .prop-row span:last-child {
+      color: #d1d5db;
+      overflow-wrap: anywhere;
+      text-align: right;
+    }
     #logo {
       position: fixed; bottom: 16px; right: 16px;
       height: 36px; width: auto;
@@ -123,6 +155,14 @@
     body.scene-white #menu-btn span { background: #9ca3af; }
     body.scene-white #menu-btn:hover span,
     body.scene-white #menu-btn.open  span { background: #374151; }
+    body.scene-white #properties {
+      background: rgba(255,255,255,0.82);
+      border-color: rgba(0,0,0,0.10);
+      color: #4b5563;
+    }
+    body.scene-white .prop-title,
+    body.scene-white .prop-row span:last-child { color: #111827; }
+    body.scene-white .prop-row span:first-child { color: #6b7280; }
   </style>
   <script type="importmap">
   {
@@ -136,6 +176,14 @@
 <body>
 <div id="vignette"></div>
 <div id="status">rrcad preview — connecting…</div>
+<div id="properties" aria-live="polite">
+  <div class="prop-title">Model</div>
+  <div class="prop-row"><span>Type</span><span id="prop-type">waiting</span></div>
+  <div class="prop-row"><span>Valid</span><span id="prop-valid">waiting</span></div>
+  <div class="prop-row"><span>Size</span><span id="prop-size">waiting</span></div>
+  <div class="prop-row"><span>Volume</span><span id="prop-volume">waiting</span></div>
+  <div class="prop-row"><span>Area</span><span id="prop-area">waiting</span></div>
+</div>
 <img id="logo" src="/logo.png" alt="rrcad">
 
 <button id="menu-btn" aria-label="View menu">
@@ -454,6 +502,11 @@ document.getElementById('mi-axes').addEventListener('click', () => {
 let currentModel = null;
 const loader = new GLTFLoader();
 const status = document.getElementById('status');
+const propType = document.getElementById('prop-type');
+const propValid = document.getElementById('prop-valid');
+const propSize = document.getElementById('prop-size');
+const propVolume = document.getElementById('prop-volume');
+const propArea = document.getElementById('prop-area');
 
 window.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
@@ -468,6 +521,52 @@ window.addEventListener('keydown', e => {
     syncMenu();
   }
 });
+
+function formatNumber(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'n/a';
+  return value.toLocaleString(undefined, {
+    maximumFractionDigits: Math.abs(value) >= 100 ? 1 : 3
+  });
+}
+
+function queryValue(query) {
+  if (!query) return 'n/a';
+  if (query.ok === false) return 'error';
+  return query.value;
+}
+
+function setPropertiesUnavailable(text) {
+  propType.textContent = text;
+  propValid.textContent = text;
+  propSize.textContent = text;
+  propVolume.textContent = text;
+  propArea.textContent = text;
+}
+
+async function loadMetadata() {
+  try {
+    const response = await fetch('/metadata.json?' + Date.now(), { cache: 'no-store' });
+    if (!response.ok) {
+      setPropertiesUnavailable('n/a');
+      return;
+    }
+    const metadata = await response.json();
+    const type = queryValue(metadata.shape_type);
+    const validation = queryValue(metadata.validation);
+    const size = metadata.bounding_box && metadata.bounding_box.size;
+
+    propType.textContent = typeof type === 'string' ? type : 'n/a';
+    propValid.textContent = validation === 'ok' ? 'ok' : String(validation || 'n/a');
+    propSize.textContent = Array.isArray(size)
+      ? size.map(formatNumber).join(' x ')
+      : 'n/a';
+    propVolume.textContent = formatNumber(queryValue(metadata.volume));
+    propArea.textContent = formatNumber(queryValue(metadata.surface_area));
+  } catch (err) {
+    console.error('rrcad: metadata load error', err);
+    setPropertiesUnavailable('error');
+  }
+}
 
 // Resize the key-light's shadow camera to tightly wrap the loaded model
 // so shadows are crisp rather than washed out by an over-large frustum.
@@ -511,6 +610,7 @@ function fitCamera(object) {
 
 function loadModel() {
   status.textContent = 'rrcad preview — loading…';
+  loadMetadata();
   // Cache-bust so the browser always fetches the freshly written GLB.
   loader.load('/model.glb?' + Date.now(),
     gltf => {

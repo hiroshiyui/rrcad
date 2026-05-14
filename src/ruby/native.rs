@@ -1215,6 +1215,17 @@ pub unsafe extern "C" fn rrcad_preview_shape(ptr: *mut c_void, error_out: *mut *
         return;
     }
 
+    let metadata_path = crate::preview::metadata_path_for_glb(&state.glb_path);
+    let metadata = crate::preview::metadata_json_for_shape(shape);
+    match serde_json::to_vec_pretty(&metadata) {
+        Ok(bytes) => {
+            if let Err(e) = std::fs::write(metadata_path, bytes) {
+                eprintln!("rrcad preview: failed to write metadata: {e}");
+            }
+        }
+        Err(e) => eprintln!("rrcad preview: failed to encode metadata: {e}"),
+    }
+
     state.reload_tx.send(()).ok();
 }
 

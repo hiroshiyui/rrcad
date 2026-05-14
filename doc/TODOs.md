@@ -245,10 +245,12 @@ size-keyed helpers accept both metric (`:m2`–`:m5`, ISO 4762 / 7380 /
 `:"10-24"`, `:"1/4-20"`, `:"5/16-18"`, `:"3/8-16"`, ASME B18 / ANSI B18.3)
 fastener names.
 
-**Preview inspection UX:** Upgrade the browser preview with face/edge hover IDs,
-click-to-print selectors, bounding box / volume / surface-area display, section
-plane controls, exploded assembly view, measurement tools, and debug overlays
-for failed operations.
+**Preview inspection UX ◐ STARTED:** The browser preview now writes and serves
+a `metadata.json` sidecar for each `preview(shape)` update and shows a compact
+model properties panel with shape type, validation status, bounding-box size,
+volume, and surface area. Remaining work: face/edge hover IDs,
+click-to-print selectors, section plane controls, exploded assembly view,
+measurement tools, and debug overlays for failed operations.
 
 **2-D drawing improvements:** Extend SVG/DXF output with dimensions, centre
 marks, hidden-line styles, multiple views on a sheet, title-block metadata, and

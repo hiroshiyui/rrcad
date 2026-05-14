@@ -3,6 +3,7 @@
 //! Routes:
 //!   GET /           — Three.js viewer HTML
 //!   GET /model.glb  — current tessellated shape (binary glTF)
+//!   GET /metadata.json — lightweight shape properties for the inspector
 //!   GET /logo.png   — rrcad logo served from doc/images/
 //!   GET /ws         — WebSocket, pushes "reload" on model update
 
@@ -35,6 +36,7 @@ pub async fn serve_with_listener(listener: tokio::net::TcpListener) {
     let app = Router::new()
         .route("/", get(handler_root))
         .route("/model.glb", get(handler_model))
+        .route("/metadata.json", get(handler_metadata))
         .route("/logo.png", get(handler_logo))
         .route("/ws", get(handler_ws));
 
@@ -55,6 +57,19 @@ async fn handler_model() -> Response {
 
     match tokio::fs::read(&state.glb_path).await {
         Ok(bytes) => ([(header::CONTENT_TYPE, "model/gltf-binary")], bytes).into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+async fn handler_metadata() -> Response {
+    let state = match crate::preview::PREVIEW.get() {
+        Some(s) => s,
+        None => return StatusCode::SERVICE_UNAVAILABLE.into_response(),
+    };
+
+    let path = crate::preview::metadata_path_for_glb(&state.glb_path);
+    match tokio::fs::read(path).await {
+        Ok(bytes) => ([(header::CONTENT_TYPE, "application/json")], bytes).into_response(),
         Err(_) => StatusCode::NOT_FOUND.into_response(),
     }
 }
