@@ -145,6 +145,22 @@
       color: #374151;
     }
     .menu-item:hover .menu-shortcut { color: #6b7280; }
+    .menu-slider {
+      display: flex; align-items: center;
+      gap: 8px;
+      padding: 4px 11px 6px;
+    }
+    .menu-slider input {
+      width: 100%;
+      accent-color: #9ca3af;
+      cursor: pointer;
+    }
+    .menu-slider-value {
+      width: 36px;
+      color: #6b7280;
+      text-align: right;
+      flex-shrink: 0;
+    }
 
     /* White scene overrides — keep UI readable on a bright background. */
     body.scene-white #status { color: #9ca3af; }
@@ -214,6 +230,25 @@
       <div class="menu-check"></div>Axes<span class="menu-shortcut">A</span>
     </div>
   </div>
+  <div class="menu-section">
+    <div class="menu-label">Section</div>
+    <div class="menu-item" id="mi-section-off">
+      <div class="menu-dot"></div>Off
+    </div>
+    <div class="menu-item" id="mi-section-x">
+      <div class="menu-dot"></div>X plane
+    </div>
+    <div class="menu-item" id="mi-section-y">
+      <div class="menu-dot"></div>Y plane
+    </div>
+    <div class="menu-item" id="mi-section-z">
+      <div class="menu-dot"></div>Z plane
+    </div>
+    <div class="menu-slider">
+      <input id="section-offset" type="range" min="-100" max="100" value="0" aria-label="Section offset">
+      <span class="menu-slider-value" id="section-offset-value">0%</span>
+    </div>
+  </div>
 </div>
 <script type="module">
 import * as THREE from 'three';
@@ -230,6 +265,7 @@ renderer.shadowMap.type      = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace    = THREE.SRGBColorSpace;
 renderer.toneMapping         = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.2;
+renderer.localClippingEnabled = true;
 document.body.prepend(renderer.domElement);
 
 // ── Scene ─────────────────────────────────────────────────────────────────
@@ -440,6 +476,40 @@ function applySceneMode() {
 // ── Menu ─────────────────────────────────────────────────────────────────
 const menuBtn   = document.getElementById('menu-btn');
 const menuPanel = document.getElementById('menu-panel');
+const sectionOffsetInput = document.getElementById('section-offset');
+const sectionOffsetValue = document.getElementById('section-offset-value');
+const sectionPlane = new THREE.Plane();
+let sectionAxis = 'off';
+let sectionOffset = 0;
+
+function sectionNormal(axis) {
+  if (axis === 'x') return new THREE.Vector3(1, 0, 0);
+  if (axis === 'y') return new THREE.Vector3(0, 1, 0);
+  return new THREE.Vector3(0, 0, 1);
+}
+
+function updateSectionPlane() {
+  if (sectionAxis === 'off' || !currentModel) {
+    renderer.clippingPlanes = [];
+    return;
+  }
+
+  const box = new THREE.Box3().setFromObject(currentModel);
+  const center = box.getCenter(new THREE.Vector3());
+  const size = box.getSize(new THREE.Vector3());
+  const normal = sectionNormal(sectionAxis);
+  const span = Math.max(size[sectionAxis] / 2, 1);
+  const point = center.clone().add(normal.clone().multiplyScalar(sectionOffset * span));
+  sectionPlane.normal.copy(normal);
+  sectionPlane.constant = -point.dot(normal);
+  renderer.clippingPlanes = [sectionPlane];
+}
+
+function setSectionAxis(axis) {
+  sectionAxis = axis;
+  updateSectionPlane();
+  syncMenu();
+}
 
 function syncMenu() {
   const normalActive   = (viewMode === 'normal');
@@ -449,6 +519,12 @@ function syncMenu() {
   document.getElementById('mi-showroom').classList.toggle('active', sceneMode === 'showroom');
   document.getElementById('mi-white')   .classList.toggle('active', sceneMode === 'white');
   document.getElementById('mi-axes')    .classList.toggle('active', axes.visible);
+  document.getElementById('mi-section-off').classList.toggle('active', sectionAxis === 'off');
+  document.getElementById('mi-section-x')  .classList.toggle('active', sectionAxis === 'x');
+  document.getElementById('mi-section-y')  .classList.toggle('active', sectionAxis === 'y');
+  document.getElementById('mi-section-z')  .classList.toggle('active', sectionAxis === 'z');
+  sectionOffsetInput.disabled = sectionAxis === 'off';
+  sectionOffsetValue.textContent = Math.round(sectionOffset * 100) + '%';
   // Show the F shortcut only on the *inactive* view item — the active one is already
   // visually selected, and showing F on both is ambiguous.
   const normalShortcut   = document.querySelector('#mi-normal .menu-shortcut');
@@ -495,6 +571,15 @@ document.getElementById('mi-white').addEventListener('click', () => {
 });
 document.getElementById('mi-axes').addEventListener('click', () => {
   axes.visible = !axes.visible;
+  syncMenu();
+});
+document.getElementById('mi-section-off').addEventListener('click', () => setSectionAxis('off'));
+document.getElementById('mi-section-x')  .addEventListener('click', () => setSectionAxis('x'));
+document.getElementById('mi-section-y')  .addEventListener('click', () => setSectionAxis('y'));
+document.getElementById('mi-section-z')  .addEventListener('click', () => setSectionAxis('z'));
+sectionOffsetInput.addEventListener('input', () => {
+  sectionOffset = Number(sectionOffsetInput.value) / 100;
+  updateSectionPlane();
   syncMenu();
 });
 
@@ -651,6 +736,7 @@ function loadModel() {
       currentModel.updateMatrixWorld(true);
       fitCamera(currentModel);
       applyViewMode(currentModel);
+      updateSectionPlane();
       status.textContent = statusText();
     },
     undefined,

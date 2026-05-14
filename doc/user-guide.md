@@ -567,6 +567,7 @@ The hamburger menu exposes the same toggles plus a **Scene** selector:
 | View | Normal (PBR studio material) · Flat-line (technical illustration style) |
 | Scene | Showroom (dark studio, default) · White (bright neutral background) |
 | Show | Axes on/off |
+| Section | Off, X/Y/Z clipping planes, and offset slider |
 
 The top-left model panel updates with each `preview(shape)` call and reports
 the shape type, BRep validation status, bounding-box size, volume, and surface

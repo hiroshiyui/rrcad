@@ -248,9 +248,10 @@ fastener names.
 **Preview inspection UX ◐ STARTED:** The browser preview now writes and serves
 a `metadata.json` sidecar for each `preview(shape)` update and shows a compact
 model properties panel with shape type, validation status, bounding-box size,
-volume, and surface area. Remaining work: face/edge hover IDs,
-click-to-print selectors, section plane controls, exploded assembly view,
-measurement tools, and debug overlays for failed operations.
+volume, and surface area. The viewer menu also has section plane controls
+for X/Y/Z clipping with an offset slider. Remaining work: face/edge hover IDs,
+click-to-print selectors, exploded assembly view, measurement tools, and debug
+overlays for failed operations.
 
 **2-D drawing improvements:** Extend SVG/DXF output with dimensions, centre
 marks, hidden-line styles, multiple views on a sheet, title-block metadata, and
