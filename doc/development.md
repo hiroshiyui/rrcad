@@ -395,6 +395,10 @@ cargo test smoke                  # name-filter: OCCT smoke tests
 cargo clippy                      # lints
 ```
 
+For long-running local runs, `./scripts/observe.sh cargo test` writes a log
+file under `/tmp/rrcad-logs` and prints periodic heartbeats while the command
+is still active.
+
 | Test file | What it covers |
 |-----------|----------------|
 | `src/occt/mod.rs` (inline) | OCCT Rust API: box→fillet→STEP, boolean cut, color, mate |

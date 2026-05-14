@@ -62,6 +62,10 @@ cargo run -- --mcp                 # MCP server over stdio (for Claude Desktop /
 cargo test
 ```
 
+For long-running commands, `./scripts/observe.sh cargo test` tees output to a
+timestamped log file under `/tmp/rrcad-logs` and prints a heartbeat while the
+command is still running.
+
 Requires OCCT 7.7+ headers and libraries, and mRuby built as a static library. See [`doc/development.md`](doc/development.md) for full build setup instructions.
 
 ## Roadmap

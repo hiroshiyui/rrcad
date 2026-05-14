@@ -15,7 +15,7 @@ MRUBY_LIB="vendor/mruby/build/host/lib/libmruby.a"
 echo "==> Removing cached libmruby.a to force a clean mruby build..."
 rm -f "$MRUBY_LIB"
 
-echo "==> Running cargo build..."
-cargo build
+echo "==> Running cargo build with live logging..."
+./scripts/observe.sh cargo build
 
 echo "==> Clean build succeeded."
