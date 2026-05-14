@@ -203,10 +203,18 @@ and reference geometry, so scripts can target `:mounting_face` or
 `:front_boss_axis` instead of relying only on broad selectors such as `:top`,
 `:vertical`, or `">Z"`.
 
-**Better diagnostics:** Improve failures from booleans, fillets, chamfers,
-shells, sweeps, imports, and exports with operation names, input shape types,
-validation context, suggested fixes, and optional debug exports of intermediate
-geometry.
+**Better diagnostics ◐ STARTED:** Errors from boolean operations
+(`fuse`/`cut`/`common`), fillets and chamfers (including selector variants
+and variable-radius/asymmetric forms), and import/export
+(`import_step`/`import_stl`, all seven export formats) now carry call-site
+context — the operation name, its numeric parameters and selector, the
+operand shape kind via `summarize`, and any file path/view name — so
+failures such as `fillet(r=10) on solid failed: ...` and
+`export_step("/bad/dir/x.step") on solid failed: ...` are diagnosable
+without guessing which site raised. Remaining work: extend the same
+treatment to sweeps, lofts, and Part Design operations (`pad`, `pocket`,
+`shell`), and add validation context (suggested fixes, optional debug
+exports of intermediate geometry).
 
 **Assembly constraints beyond `mate` ◐ STARTED:** Added transform-based
 helpers that cover most of the planned constraint set without introducing a

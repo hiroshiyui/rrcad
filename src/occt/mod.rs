@@ -305,6 +305,15 @@ pub struct Shape {
     inner: UniquePtr<ffi::OcctShape>,
 }
 
+/// Best-effort one-word shape kind ("solid", "face", "wire", …) used to
+/// enrich error messages. Falls back to `"shape"` if the type query
+/// itself fails (e.g. the inner pointer is in a degraded state).
+fn summarize(shape: &Shape) -> String {
+    ffi::shape_type_str(&shape.inner)
+        .map(|s| s.to_string())
+        .unwrap_or_else(|_| "shape".to_string())
+}
+
 impl Shape {
     // --- Constructors ---
 
@@ -349,19 +358,31 @@ impl Shape {
     pub fn fuse(&self, other: &Shape) -> Result<Shape, String> {
         ffi::shape_fuse(&self.inner, &other.inner)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                format!(
+                    "fuse({}, {}) failed: {e}",
+                    summarize(self),
+                    summarize(other)
+                )
+            })
     }
 
     pub fn cut(&self, other: &Shape) -> Result<Shape, String> {
         ffi::shape_cut(&self.inner, &other.inner)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| format!("cut({}, {}) failed: {e}", summarize(self), summarize(other)))
     }
 
     pub fn common(&self, other: &Shape) -> Result<Shape, String> {
         ffi::shape_common(&self.inner, &other.inner)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                format!(
+                    "common({}, {}) failed: {e}",
+                    summarize(self),
+                    summarize(other)
+                )
+            })
     }
 
     // --- Fillets and chamfers ---
@@ -369,27 +390,37 @@ impl Shape {
     pub fn fillet(&self, radius: f64) -> Result<Shape, String> {
         ffi::shape_fillet(&self.inner, radius)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| format!("fillet(r={radius}) on {} failed: {e}", summarize(self)))
     }
 
     pub fn chamfer(&self, dist: f64) -> Result<Shape, String> {
         ffi::shape_chamfer(&self.inner, dist)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| format!("chamfer(d={dist}) on {} failed: {e}", summarize(self)))
     }
 
     /// Fillet only edges matching `selector` (`:all` / `:vertical` / `:horizontal`).
     pub fn fillet_sel(&self, radius: f64, selector: &str) -> Result<Shape, String> {
         ffi::shape_fillet_sel(&self.inner, radius, selector)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                format!(
+                    "fillet(r={radius}, edges: {selector:?}) on {} failed: {e}",
+                    summarize(self)
+                )
+            })
     }
 
     /// Chamfer only edges matching `selector` (`:all` / `:vertical` / `:horizontal`).
     pub fn chamfer_sel(&self, dist: f64, selector: &str) -> Result<Shape, String> {
         ffi::shape_chamfer_sel(&self.inner, dist, selector)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                format!(
+                    "chamfer(d={dist}, edges: {selector:?}) on {} failed: {e}",
+                    summarize(self)
+                )
+            })
     }
 
     /// Variable-radius fillet on all edges: radius transitions from `r1` at one
@@ -397,28 +428,48 @@ impl Shape {
     pub fn fillet_var(&self, r1: f64, r2: f64) -> Result<Shape, String> {
         ffi::shape_fillet_var(&self.inner, r1, r2)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                format!(
+                    "fillet_var(r1={r1}, r2={r2}) on {} failed: {e}",
+                    summarize(self)
+                )
+            })
     }
 
     /// Variable-radius fillet on edges matching `selector`.
     pub fn fillet_var_sel(&self, r1: f64, r2: f64, selector: &str) -> Result<Shape, String> {
         ffi::shape_fillet_var_sel(&self.inner, r1, r2, selector)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                format!(
+                    "fillet_var(r1={r1}, r2={r2}, edges: {selector:?}) on {} failed: {e}",
+                    summarize(self)
+                )
+            })
     }
 
     /// Asymmetric chamfer on all edges: `d1` and `d2` are the two bevel distances.
     pub fn chamfer_asym(&self, d1: f64, d2: f64) -> Result<Shape, String> {
         ffi::shape_chamfer_asym(&self.inner, d1, d2)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                format!(
+                    "chamfer_asym(d1={d1}, d2={d2}) on {} failed: {e}",
+                    summarize(self)
+                )
+            })
     }
 
     /// Asymmetric chamfer on edges matching `selector`.
     pub fn chamfer_asym_sel(&self, d1: f64, d2: f64, selector: &str) -> Result<Shape, String> {
         ffi::shape_chamfer_asym_sel(&self.inner, d1, d2, selector)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                format!(
+                    "chamfer_asym(d1={d1}, d2={d2}, edges: {selector:?}) on {} failed: {e}",
+                    summarize(self)
+                )
+            })
     }
 
     // --- Color ---
@@ -989,51 +1040,66 @@ impl Shape {
     pub fn import_step(path: &str) -> Result<Self, String> {
         ffi::import_step(path)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| format!("import_step({path:?}) failed: {e}"))
     }
 
     pub fn import_stl(path: &str) -> Result<Self, String> {
         ffi::import_stl(path)
             .map(|p| Shape { inner: p })
-            .map_err(|e| e.to_string())
+            .map_err(|e| format!("import_stl({path:?}) failed: {e}"))
     }
 
     // --- Export ---
 
     pub fn export_step(&self, path: &str) -> Result<(), String> {
-        ffi::export_step(&self.inner, path).map_err(|e| e.to_string())
+        ffi::export_step(&self.inner, path)
+            .map_err(|e| format!("export_step({path:?}) on {} failed: {e}", summarize(self)))
     }
 
     pub fn export_stl(&self, path: &str) -> Result<(), String> {
-        ffi::export_stl(&self.inner, path).map_err(|e| e.to_string())
+        ffi::export_stl(&self.inner, path)
+            .map_err(|e| format!("export_stl({path:?}) on {} failed: {e}", summarize(self)))
     }
 
     /// Export to glTF. `linear_deflection` controls tessellation quality (e.g. `0.1` for 0.1 mm).
     pub fn export_gltf(&self, path: &str, linear_deflection: f64) -> Result<(), String> {
-        ffi::export_gltf(&self.inner, path, linear_deflection).map_err(|e| e.to_string())
+        ffi::export_gltf(&self.inner, path, linear_deflection)
+            .map_err(|e| format!("export_gltf({path:?}) on {} failed: {e}", summarize(self)))
     }
 
     /// Export to binary glTF (GLB). Single-file format suitable for HTTP serving.
     pub fn export_glb(&self, path: &str, linear_deflection: f64) -> Result<(), String> {
-        ffi::export_glb(&self.inner, path, linear_deflection).map_err(|e| e.to_string())
+        ffi::export_glb(&self.inner, path, linear_deflection)
+            .map_err(|e| format!("export_glb({path:?}) on {} failed: {e}", summarize(self)))
     }
 
     /// Export to Wavefront OBJ. Tessellates with `linear_deflection` and writes
     /// the `.obj` file plus a companion `.mtl` material file in the same directory.
     pub fn export_obj(&self, path: &str, linear_deflection: f64) -> Result<(), String> {
-        ffi::export_obj(&self.inner, path, linear_deflection).map_err(|e| e.to_string())
+        ffi::export_obj(&self.inner, path, linear_deflection)
+            .map_err(|e| format!("export_obj({path:?}) on {} failed: {e}", summarize(self)))
     }
 
     /// Export to SVG using hidden-line removal (HLRBRep_PolyAlgo).
     /// `view` is `"top"` (default), `"front"`, or `"side"`.
     pub fn export_svg(&self, path: &str, view: &str) -> Result<(), String> {
-        ffi::export_svg(&self.inner, path, view).map_err(|e| e.to_string())
+        ffi::export_svg(&self.inner, path, view).map_err(|e| {
+            format!(
+                "export_svg({path:?}, view: {view:?}) on {} failed: {e}",
+                summarize(self)
+            )
+        })
     }
 
     /// Export to DXF R12 using hidden-line removal (HLRBRep_PolyAlgo).
     /// `view` is `"top"` (default), `"front"`, or `"side"`.
     pub fn export_dxf(&self, path: &str, view: &str) -> Result<(), String> {
-        ffi::export_dxf(&self.inner, path, view).map_err(|e| e.to_string())
+        ffi::export_dxf(&self.inner, path, view).map_err(|e| {
+            format!(
+                "export_dxf({path:?}, view: {view:?}) on {} failed: {e}",
+                summarize(self)
+            )
+        })
     }
 }
 
