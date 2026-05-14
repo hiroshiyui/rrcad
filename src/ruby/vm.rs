@@ -23,7 +23,9 @@ struct VmLock {
 impl VmLock {
     fn acquire() -> Self {
         Self {
-            _guard: mruby_lock().lock().expect("mRuby mutex poisoned"),
+            _guard: mruby_lock()
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner()),
         }
     }
 }

@@ -96,6 +96,7 @@ pub fn start(glb_path: PathBuf, port: u16) -> Result<tokio::runtime::Runtime, St
 mod tests {
     use super::*;
     use crate::occt::Shape;
+    use std::{fs, process::Command, time::SystemTime};
 
     #[test]
     fn metadata_for_box_includes_core_properties() {
@@ -133,17 +134,49 @@ mod tests {
     #[test]
     fn viewer_html_rejects_stale_preview_loads() {
         let html = include_str!("viewer.html");
+        let start = html
+            .find(r#"<script type="module">"#)
+            .expect("viewer script start");
+        let end = html[start..]
+            .find("</script>")
+            .map(|offset| start + offset)
+            .expect("viewer script end");
+        let script = &html[start + r#"<script type="module">"#.len()..end];
+
+        let mut path = std::env::temp_dir();
+        path.push(format!(
+            "rrcad-viewer-{}-{}.mjs",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("system clock before unix epoch")
+                .as_nanos()
+        ));
+        fs::write(&path, script).expect("write viewer script");
+
+        let status = Command::new("node")
+            .arg("--check")
+            .arg(&path)
+            .status()
+            .expect("run node --check");
+        let _ = fs::remove_file(&path);
+        assert!(status.success(), "viewer script must be valid JavaScript");
+
         assert!(
-            html.contains("let loadGeneration = 0;"),
+            script.contains("let loadGeneration = 0;"),
             "viewer must track preview load generations"
         );
         assert!(
-            html.contains("if (loadToken !== loadGeneration) return;"),
+            script.contains("if (loadToken !== loadGeneration) return;"),
             "stale preview responses must be ignored"
         );
         assert!(
-            html.contains("const loadToken = ++loadGeneration;"),
+            script.contains("const loadToken = ++loadGeneration;"),
             "each preview load must mint a new generation token"
+        );
+        assert!(
+            script.contains("loadMetadata(loadToken);"),
+            "metadata fetches must be tied to the same load generation"
         );
     }
 }
