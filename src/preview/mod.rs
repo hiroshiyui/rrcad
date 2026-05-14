@@ -116,19 +116,17 @@ mod tests {
     fn metadata_for_named_refs_includes_selectors() {
         let shape = Shape::make_box(10.0, 20.0, 30.0).expect("make_box");
         shape.name_face("mounting_face", "top").expect("name_face");
-        shape.name_edge("vertical_edges", "vertical").expect("name_edge");
+        shape
+            .name_edge("vertical_edges", "vertical")
+            .expect("name_edge");
         let metadata = metadata_json_for_shape(&shape);
 
         let refs = metadata["named_refs"].as_array().expect("named refs array");
-        assert!(
-            refs.iter().any(|entry| entry["name"] == "mounting_face"
-                && entry["kind"] == "face"
-                && entry["selector"] == ":top")
-        );
-        assert!(
-            refs.iter().any(|entry| entry["name"] == "vertical_edges"
-                && entry["kind"] == "edge"
-                && entry["selector"] == ":vertical")
-        );
+        assert!(refs.iter().any(|entry| entry["name"] == "mounting_face"
+            && entry["kind"] == "face"
+            && entry["selector"] == ":top"));
+        assert!(refs.iter().any(|entry| entry["name"] == "vertical_edges"
+            && entry["kind"] == "edge"
+            && entry["selector"] == ":vertical"));
     }
 }

@@ -100,10 +100,16 @@ fn svg_sheet_view_renders_multiple_orthographic_views() {
     let mut vm = MrubyVm::new();
     let single = tmp("rrcad_test_single_view.svg");
     let sheet = tmp("rrcad_test_sheet_view.svg");
-    vm.eval(&format!("box(20,10,5).export('{}', view: :front)", single.display()))
-        .unwrap();
-    vm.eval(&format!("box(20,10,5).export('{}', view: :sheet)", sheet.display()))
-        .unwrap();
+    vm.eval(&format!(
+        "box(20,10,5).export('{}', view: :front)",
+        single.display()
+    ))
+    .unwrap();
+    vm.eval(&format!(
+        "box(20,10,5).export('{}', view: :sheet)",
+        sheet.display()
+    ))
+    .unwrap();
 
     let content = std::fs::read_to_string(&sheet).unwrap();
     assert!(
@@ -145,7 +151,9 @@ fn svg_sheet_dimensions_show_axis_labels() {
     .unwrap();
     let content = std::fs::read_to_string(&out).unwrap();
     assert!(
-        content.contains("±0.1") && content.contains(">X ") && content.contains(">Y ")
+        content.contains("±0.1")
+            && content.contains(">X ")
+            && content.contains(">Y ")
             && content.contains(">Z "),
         "sheet dimensions should label X/Y/Z axes and tolerances"
     );
@@ -469,10 +477,16 @@ fn dxf_sheet_view_renders_multiple_orthographic_views() {
     let mut vm = MrubyVm::new();
     let single = tmp("rrcad_test_single_view.dxf");
     let sheet = tmp("rrcad_test_sheet_view.dxf");
-    vm.eval(&format!("box(20,10,5).export('{}', view: :front)", single.display()))
-        .unwrap();
-    vm.eval(&format!("box(20,10,5).export('{}', view: :sheet)", sheet.display()))
-        .unwrap();
+    vm.eval(&format!(
+        "box(20,10,5).export('{}', view: :front)",
+        single.display()
+    ))
+    .unwrap();
+    vm.eval(&format!(
+        "box(20,10,5).export('{}', view: :sheet)",
+        sheet.display()
+    ))
+    .unwrap();
 
     assert!(
         dxf_max_abs_xy(&sheet) > dxf_max_abs_xy(&single),
@@ -507,8 +521,10 @@ fn dxf_sheet_dimensions_show_axis_labels() {
     .unwrap();
     let content = std::fs::read_to_string(&out).unwrap();
     assert!(
-        content.contains("±0.1") && content.contains("\n  1\nX ")
-            && content.contains("\n  1\nY ") && content.contains("\n  1\nZ "),
+        content.contains("±0.1")
+            && content.contains("\n  1\nX ")
+            && content.contains("\n  1\nY ")
+            && content.contains("\n  1\nZ "),
         "sheet dimensions should label X/Y/Z axes and tolerances"
     );
 }

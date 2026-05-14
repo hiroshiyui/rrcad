@@ -107,7 +107,8 @@ fn param_within_range_ok() {
 fn param_typed_length_within_range_ok() {
     let mut vm = MrubyVm::new();
     assert_eq!(
-        vm.eval("param :width, default: 10.mm, range: 1.mm..20.mm").unwrap(),
+        vm.eval("param :width, default: 10.mm, range: 1.mm..20.mm")
+            .unwrap(),
         "10.0mm"
     );
 }

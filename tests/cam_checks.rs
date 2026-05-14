@@ -460,7 +460,11 @@ fn unsupported_islands_plain_box_has_no_islands() {
              .length",
         )
         .unwrap();
-    assert_eq!(result.trim(), "0", "plain box should have no unsupported islands");
+    assert_eq!(
+        result.trim(),
+        "0",
+        "plain box should have no unsupported islands"
+    );
 }
 
 #[test]
