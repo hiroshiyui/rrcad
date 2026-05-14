@@ -131,3 +131,46 @@ fn sweep_sections_error_for_too_few_profiles() {
         "expected sweep_sections error, got: {err}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Suggested-fix hints
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fillet_error_includes_actionable_hint() {
+    let cube = Shape::make_box(1.0, 1.0, 1.0).expect("make_box");
+    let err = err_of(cube.fillet(10.0));
+    assert!(
+        err.contains("hint:") && err.contains("radius"),
+        "expected radius hint, got: {err}"
+    );
+}
+
+#[test]
+fn chamfer_error_includes_actionable_hint() {
+    let cube = Shape::make_box(1.0, 1.0, 1.0).expect("make_box");
+    let err = err_of(cube.chamfer(10.0));
+    assert!(
+        err.contains("hint:") && err.contains("distance"),
+        "expected distance hint, got: {err}"
+    );
+}
+
+#[test]
+fn extrude_error_includes_actionable_hint() {
+    let cube = Shape::make_box(1.0, 1.0, 1.0).expect("make_box");
+    let err = err_of(cube.extrude(5.0));
+    assert!(
+        err.contains("hint:") && err.contains("Face or Wire"),
+        "expected 'Face or Wire' hint, got: {err}"
+    );
+}
+
+#[test]
+fn import_step_error_includes_actionable_hint() {
+    let err = err_of(Shape::import_step("/tmp/rrcad_no_such_file_xyz.step"));
+    assert!(
+        err.contains("hint:") && err.contains("readable"),
+        "expected 'readable' hint, got: {err}"
+    );
+}

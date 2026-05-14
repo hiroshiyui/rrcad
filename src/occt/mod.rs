@@ -314,6 +314,16 @@ fn summarize(shape: &Shape) -> String {
         .unwrap_or_else(|_| "shape".to_string())
 }
 
+/// Format a one-line actionable hint for the error message. Returns the
+/// empty string when `s` is empty so callers can unconditionally append.
+fn hint(s: &str) -> String {
+    if s.is_empty() {
+        String::new()
+    } else {
+        format!("\n  hint: {s}")
+    }
+}
+
 impl Shape {
     // --- Constructors ---
 
@@ -390,13 +400,25 @@ impl Shape {
     pub fn fillet(&self, radius: f64) -> Result<Shape, String> {
         ffi::shape_fillet(&self.inner, radius)
             .map(|p| Shape { inner: p })
-            .map_err(|e| format!("fillet(r={radius}) on {} failed: {e}", summarize(self)))
+            .map_err(|e| {
+                format!(
+                    "fillet(r={radius}) on {} failed: {e}{}",
+                    summarize(self),
+                    hint("radius likely exceeds the smallest adjacent face/edge; try a smaller value or use fillet_sel with an edge selector")
+                )
+            })
     }
 
     pub fn chamfer(&self, dist: f64) -> Result<Shape, String> {
         ffi::shape_chamfer(&self.inner, dist)
             .map(|p| Shape { inner: p })
-            .map_err(|e| format!("chamfer(d={dist}) on {} failed: {e}", summarize(self)))
+            .map_err(|e| {
+                format!(
+                    "chamfer(d={dist}) on {} failed: {e}{}",
+                    summarize(self),
+                    hint("distance likely exceeds an adjacent face dimension; try a smaller value or use chamfer_sel with an edge selector")
+                )
+            })
     }
 
     /// Fillet only edges matching `selector` (`:all` / `:vertical` / `:horizontal`).
@@ -560,7 +582,15 @@ impl Shape {
     pub fn extrude(&self, height: f64) -> Result<Shape, String> {
         ffi::shape_extrude(&self.inner, height)
             .map(|p| Shape { inner: p })
-            .map_err(|e| format!("extrude(h={height}) on {} failed: {e}", summarize(self)))
+            .map_err(|e| {
+                format!(
+                    "extrude(h={height}) on {} failed: {e}{}",
+                    summarize(self),
+                    hint(
+                        "extrude requires a 2-D profile (Face or Wire); a Solid cannot be extruded"
+                    )
+                )
+            })
     }
 
     pub fn revolve(&self, angle_deg: f64) -> Result<Shape, String> {
@@ -607,8 +637,9 @@ impl Shape {
             .map(|p| Shape { inner: p })
             .map_err(|e| {
                 format!(
-                    "shell(thickness={thickness}) on {} failed: {e}",
-                    summarize(self)
+                    "shell(thickness={thickness}) on {} failed: {e}{}",
+                    summarize(self),
+                    hint("thickness must be smaller than the part's smallest dimension; reduce thickness or shell with a specific face removed")
                 )
             })
     }
@@ -714,9 +745,10 @@ impl Shape {
             .map(|p| Shape { inner: p })
             .map_err(|e| {
                 format!(
-                    "sweep({}, path={}) failed: {e}",
+                    "sweep({}, path={}) failed: {e}{}",
                     summarize(self),
-                    summarize(path)
+                    summarize(path),
+                    hint("profile must be a Face or Wire and path must be a Wire; check the path doesn't kink sharply against the profile size")
                 )
             })
     }
@@ -879,10 +911,11 @@ impl Shape {
             .map(|s| Shape { inner: s })
             .map_err(|e| {
                 format!(
-                    "pad(h={height}, face={}, sketch={}) on {} failed: {e}",
+                    "pad(h={height}, face={}, sketch={}) on {} failed: {e}{}",
                     summarize(face_ref),
                     summarize(sketch),
-                    summarize(self)
+                    summarize(self),
+                    hint("face must be a planar face of the body; sketch must lie in (or be transformed into) that face's plane")
                 )
             })
     }
@@ -893,10 +926,11 @@ impl Shape {
             .map(|s| Shape { inner: s })
             .map_err(|e| {
                 format!(
-                    "pocket(depth={depth}, face={}, sketch={}) on {} failed: {e}",
+                    "pocket(depth={depth}, face={}, sketch={}) on {} failed: {e}{}",
                     summarize(face_ref),
                     summarize(sketch),
-                    summarize(self)
+                    summarize(self),
+                    hint("face must be a planar face of the body; sketch must lie in (or be transformed into) that face's plane and fit within it")
                 )
             })
     }
@@ -1109,10 +1143,11 @@ impl Shape {
             .map(|p| Shape { inner: p })
             .map_err(|e| {
                 format!(
-                    "sweep(profile={}, path={}, guide={}) failed: {e}",
+                    "sweep(profile={}, path={}, guide={}) failed: {e}{}",
                     summarize(self),
                     summarize(path),
-                    summarize(guide)
+                    summarize(guide),
+                    hint("profile must be a Face or Wire; path and guide must both be Wires that don't kink sharply")
                 )
             })
     }
@@ -1122,13 +1157,23 @@ impl Shape {
     pub fn import_step(path: &str) -> Result<Self, String> {
         ffi::import_step(path)
             .map(|p| Shape { inner: p })
-            .map_err(|e| format!("import_step({path:?}) failed: {e}"))
+            .map_err(|e| {
+                format!(
+                    "import_step({path:?}) failed: {e}{}",
+                    hint("check that the path exists and is readable; STEP files end in .step or .stp")
+                )
+            })
     }
 
     pub fn import_stl(path: &str) -> Result<Self, String> {
         ffi::import_stl(path)
             .map(|p| Shape { inner: p })
-            .map_err(|e| format!("import_stl({path:?}) failed: {e}"))
+            .map_err(|e| {
+                format!(
+                    "import_stl({path:?}) failed: {e}{}",
+                    hint("check that the path exists and is readable; STL files end in .stl")
+                )
+            })
     }
 
     // --- Export ---

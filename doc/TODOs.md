@@ -203,20 +203,26 @@ and reference geometry, so scripts can target `:mounting_face` or
 `:front_boss_axis` instead of relying only on broad selectors such as `:top`,
 `:vertical`, or `">Z"`.
 
-**Better diagnostics ◐ STARTED:** Errors from boolean operations
-(`fuse`/`cut`/`common`), fillets and chamfers (including selector variants
-and variable-radius/asymmetric forms), import/export (`import_step`/
-`import_stl`, all seven export formats), `extrude`/`extrude_ex`/
-`extrude_draft`/`revolve`, `shell`/`offset`/`offset_2d`/`simplify`,
+**Better diagnostics ✓ COMPLETE (initial scope):** Errors from boolean
+operations (`fuse`/`cut`/`common`), fillets and chamfers (including
+selector variants and variable-radius/asymmetric forms), import/export
+(`import_step`/`import_stl`, all seven export formats),
+`extrude`/`extrude_ex`/`extrude_draft`/`revolve`,
+`shell`/`offset`/`offset_2d`/`simplify`,
 `sweep`/`sweep_guide`/`sweep_sections`, `loft`, and Part Design
-operations (`pad`, `pocket`) now carry call-site context — the
-operation name, its numeric parameters and selector, the operand shape
-kind via `summarize`, and any file path/view name — so failures such as
-`fillet(r=10) on solid failed: ...`, `pad(h=12, face=face, sketch=face)
-on solid failed: ...`, and `sweep_sections(profiles=4, path=wire) failed
-adding profile 2 (face): ...` are diagnosable without guessing which
-site raised. Remaining work: validation context (suggested fixes,
-optional debug exports of intermediate geometry).
+operations (`pad`, `pocket`) carry call-site context — the operation
+name, its numeric parameters and selector, the operand shape kind via
+`summarize`, and any file path/view name. The most common failures
+(`fillet`/`chamfer` radius too large, `extrude` on a solid, `shell`
+thickness too thick, `pad`/`pocket` planar-face requirement,
+`sweep`/`sweep_guide` profile-and-path types, `import_step`/`import_stl`
+missing/unreadable files) also carry an actionable one-line hint
+prefixed with `hint:`. Sample message:
+`fillet(r=10) on solid failed: ...\n  hint: radius likely exceeds the
+smallest adjacent face/edge; try a smaller value or use fillet_sel with
+an edge selector`. Future work: debug exports of failing intermediate
+geometry, and richer hints driven by inspecting operand bounding-box
+extents.
 
 **Assembly constraints beyond `mate` ◐ STARTED:** Added transform-based
 helpers that cover most of the planned constraint set without introducing a
