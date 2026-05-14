@@ -407,6 +407,7 @@ stud_grid  = grid_pattern(cylinder(2, 5), 4, 3, 10, 10)
 | `.min_thickness` | Float | Minimum wall thickness |
 | `.distance_to(other)` | Float | Minimum distance between two shapes (0 if touching) |
 | `.normal` (on a Face) | `[nx, ny, nz]` | Outward unit normal of a planar face; raises if the shape isn't a face |
+| `.cylinder_axis` (on a Face) | Hash | `{origin: [x,y,z], axis: [ax,ay,az], radius: r}` for a cylindrical face; raises if the face isn't cylindrical |
 
 ### CAM / 3-D Printing Checks
 
@@ -418,6 +419,7 @@ Lightweight manufacturability helpers that build on the inspection methods above
 | `print_volume_check(part, x:, y:, z:)` | Returns `{fits:, dx:, dy:, dz:, overflow_x:, overflow_y:, overflow_z:}` against a rectangular build volume |
 | `overhang_faces(part, max_angle_deg: 45)` | Faces whose outward normal tips downward more than the threshold (assumes the part is +Z-up) |
 | `draft_faces(part, axis: [0, 0, 1], min_draft_deg: 1.0)` | Faces with insufficient mould draft along the pull axis (`asin(|n·axis|) < min_draft_deg`); top/bottom faces are naturally excluded |
+| `hole_axes(part, orientation: nil, tolerance_deg: 5.0)` | Enumerate cylindrical faces as `{origin:, axis:, radius:}`. Filter with `orientation:` `:vertical` (axis ‖ Z) or `:horizontal` (axis ⊥ Z) within `tolerance_deg` |
 
 ### Import / Export
 
@@ -746,6 +748,25 @@ bolt_dia,thickness
 ---
 
 ## Troubleshooting
+
+### Reading error messages
+
+OCCT errors raised from boolean, fillet/chamfer, extrude/sweep/loft,
+Part Design, and import/export operations now lead with the call site
+and operand kind, and the most common failures carry a one-line `hint:`
+suffix.  For example:
+
+```
+fillet(r=10) on solid failed: BRepFilletAPI_MakeFillet: ...
+  hint: radius likely exceeds the smallest adjacent face/edge; try a
+        smaller value or use fillet_sel with an edge selector
+```
+
+If a sketch fails to solve, the message names the involved points and
+the actual vs expected values (e.g. `conflicting tangent constraint:
+distance from :c to line (:p1, :p2) is 2.0, expected radius 3.0`), and a
+non-convergence error lists every unresolved point with its missing
+coordinates.
 
 ### Build failures
 

@@ -324,6 +324,7 @@ let thread  = profile.sweep(&path)?;
 | `.inertia() -> Result<[f64; 6]>` | Mass moments of inertia `[Ixx, Iyy, Izz, Ixy, Ixz, Iyz]` computed by `BRepGProp::VolumeProperties` → `GProp_GProps::MatrixOfInertia`. |
 | `.min_thickness() -> Result<f64>` | Minimum wall thickness of a solid or shell via ray-casting (`IntCurvesFace_ShapeIntersector`): for each face, shoots a ray inward from the UV-centre, returns the shortest non-trivial intersection distance across all faces. Raises an error for non-solid/non-shell shapes. |
 | `.face_normal() -> Result<[f64; 3]>` | Outward unit normal of a face shape, sampled at the face's parameter-space midpoint via `BRepLProp_SLProps` and flipped when `TopAbs_REVERSED` so it points out of the parent solid. Errors if the shape is not a face or the normal is undefined. |
+| `.cylinder_axis() -> Result<[f64; 7]>` | For a cylindrical face, returns `[ox, oy, oz, ax, ay, az, radius]` — the axis origin, unit direction, and radius via `BRepAdaptor_Surface::Cylinder()`. Errors if the surface is not `GeomAbs_Cylinder`. |
 
 ```rust
 // Clearance check
@@ -499,6 +500,7 @@ fn shape_surface_area(shape: &OcctShape)               -> f64;
 fn shape_type_str   (shape: &OcctShape)                -> Result<String>;
 fn shape_centroid   (shape: &OcctShape, out: &mut [f64]) -> Result<()>;
 fn shape_face_normal(face: &OcctShape, out: &mut [f64]) -> Result<()>;
+fn shape_cylinder_axis(face: &OcctShape, out: &mut [f64]) -> Result<()>;
 fn shape_is_closed  (shape: &OcctShape)                -> Result<bool>;
 fn shape_is_manifold(shape: &OcctShape)                -> Result<bool>;
 fn shape_validate_str(shape: &OcctShape)               -> Result<String>;
@@ -648,6 +650,7 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `print_volume_check(part, x:, y:, z:)` | Returns `{fits:, dx:, dy:, dz:, overflow_x:, overflow_y:, overflow_z:}` against a rectangular build volume. Pure Ruby DSL. |
 | `overhang_faces(part, max_angle_deg: 45)` | Array of faces whose outward normal tips more than `max_angle_deg` below horizontal (assumes the part is +Z-up). Uses `Shape#normal`. Pure Ruby DSL. |
 | `draft_faces(part, axis: [0, 0, 1], min_draft_deg: 1.0)` | Array of faces with insufficient mould draft along the pull axis: `asin(|n·axis|) < min_draft_deg`. Top/bottom faces are naturally excluded (their draft is 90°). Pure Ruby DSL. |
+| `hole_axes(part, orientation: nil, tolerance_deg: 5.0)` | Enumerate cylindrical-surface faces of `part` as `{origin:, axis:, radius:}`. Filter with `orientation:` `:vertical` (axis ‖ Z) or `:horizontal` (axis ⊥ Z) within `tolerance_deg`. Pure Ruby DSL on top of `Shape#cylinder_axis`. |
 | `param(:name, default: val)` | Declare a named parameter. Returns `val` unless a `--param name=x` CLI override was supplied; coerces string overrides to the default's type (Integer/Float/String). |
 | `param(:name, default: val, range: lo..hi)` | Same with range validation; raises `ArgumentError` if the value is outside the range. |
 | `solid { ... }` | Block returning its last expression |
@@ -703,6 +706,7 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `.inertia` | Mass moments of inertia as a Hash `{ixx:, iyy:, izz:, ixy:, ixz:, iyz:}`. Computed by `BRepGProp::VolumeProperties` + `MatrixOfInertia`. |
 | `.min_thickness` | Minimum wall thickness of a Solid or Shell (Float). Uses `IntCurvesFace_ShapeIntersector` ray-casting: shoots a ray inward from each face centroid along the face normal; returns the shortest non-trivial hit distance. Raises `ArgumentError` for non-solid/non-shell shapes. |
 | `.normal` (on a Face) | Outward unit normal as `[nx, ny, nz]`. Sampled at the face's parameter-space midpoint via `BRepLProp_SLProps` and flipped when the face orientation is `TopAbs_REVERSED` so the vector points out of the parent solid. Raises if the shape is not a face or the normal is undefined at the sample point. |
+| `.cylinder_axis` (on a Face) | For a cylindrical face, returns `{origin: [ox,oy,oz], axis: [ax,ay,az], radius: r}` via `BRepAdaptor_Surface::Cylinder()`. Raises if the shape is not a face or the underlying surface is not a cylinder. |
 | `.export("out.step")` | Write file; format determined by extension: `.step`/`.stp` → STEP, `.stl` → STL, `.glb` → GLB, `.gltf` → glTF, `.obj` → OBJ, `.svg` → SVG 2-D drawing, `.dxf` → DXF R12 2-D drawing |
 | `.export("out.svg", view: :top\|:front\|:side)` | SVG 2-D drawing via `HLRBRep_PolyAlgo` hidden-line removal. `:top` (default) looks down −Z; `:front` looks along −Y; `:side` looks along +X. Outputs `<polyline>` elements with Y-down SVG coordinates. |
 | `.export("out.dxf", view: :top\|:front\|:side)` | DXF R12 ASCII drawing via the same HLR pipeline. Outputs `LINE` entities with Y-up CAD coordinates. |

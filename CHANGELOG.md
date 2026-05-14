@@ -82,6 +82,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pull axis (`asin(|n·axis|) < min_draft_deg`). Top/bottom faces are
   naturally excluded; the pull direction is configurable so non-Z pull
   setups work without rotation tricks.
+- **CAM / 3-D printing — hole orientation analysis**
+  (`src/occt/bridge.{h,cpp}`, `src/occt/mod.rs`, `src/ruby/native.rs`,
+  `src/ruby/glue.c`, `src/ruby/prelude.rb`, `tests/cam_checks.rs`): new
+  `shape_cylinder_axis` bridge call extracts the axis (origin + unit
+  direction) and radius of cylindrical faces via
+  `BRepAdaptor_Surface::Cylinder()`. Surfaced to Ruby as
+  `Shape#cylinder_axis` returning `{origin:, axis:, radius:}`. Built on
+  top: `hole_axes(part, orientation: :vertical | :horizontal,
+  tolerance_deg:)` enumerates and filters cylindrical faces by axis
+  direction.
+- **OCCT diagnostics — call-site context + actionable hints**
+  (`src/occt/mod.rs`, `tests/error_diagnostics.rs`): errors from
+  Boolean ops (`fuse`/`cut`/`common`), fillets and chamfers (including
+  selector / variable-radius / asymmetric variants),
+  `extrude`/`revolve`/`shell`/`offset`/`offset_2d`/`simplify`,
+  `sweep`/`sweep_guide`/`sweep_sections`, `loft`, Part Design (`pad`,
+  `pocket`), and import/export now lead with the operation name, its
+  numeric parameters, the operand shape kind (via a `summarize()`
+  helper), and any file path or view name. The most common failures
+  (`fillet`/`chamfer` radius too large, `extrude` on a solid, `shell`
+  thickness too thick, `pad`/`pocket` planar-face requirement,
+  `sweep`/`sweep_guide` profile-and-path types,
+  `import_step`/`import_stl` missing files) also carry an actionable
+  one-line `hint: …` suffix. The original `"X failed: …"` substring is
+  preserved so existing substring matchers keep working.
+
+### Fixed
+
+- **CI — install g++ explicitly** (`.github/workflows/rust.yml`):
+  Debian sid's `gcc` meta-package no longer pulls `g++` as a transitive
+  dependency, so the CI container was missing a C++ compiler and
+  `link-cplusplus` / cxx bridge builds failed with `failed to find tool
+  "c++"`. Add `g++` to the apt install line.
 
 ---
 
