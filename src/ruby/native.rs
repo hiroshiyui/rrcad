@@ -24,150 +24,16 @@
 //! - `error_out` is a valid non-null pointer to a `*const c_char` slot.
 //! - All string/slice pointers (`path`, `pts`, `selector`, `plane`) are valid
 //!   for the duration of the call.
-use std::ffi::{CString, c_char, c_void};
-use std::path::{Path, PathBuf};
+#[path = "native_helpers.rs"]
+mod native_helpers;
 
+use std::ffi::{c_char, c_void};
+
+use self::native_helpers::{
+    DEFAULT_LINEAR_DEFLECTION, cstr_arg, resolve_path, set_err, set_str, shape_result_to_ptr,
+    split_csv_list,
+};
 use crate::occt::{GdtDatumSpec, GdtFeatureControlSpec, GdtRenderSpec, GdtStandard, Shape};
-
-// ---------------------------------------------------------------------------
-// Path-traversal guard
-// ---------------------------------------------------------------------------
-
-/// Resolve `raw` to a canonical absolute path and verify it is inside the
-/// current working directory.
-///
-/// Security rationale: DSL scripts run arbitrary Ruby code, so a malicious
-/// (or buggy) script could pass a path like `"../../etc/passwd"` to an export
-/// or import function.  This helper ensures every file I/O path stays within
-/// the process working directory, blocking directory-traversal attacks.
-///
-/// For files that do not yet exist (export paths), we canonicalize only the
-/// parent directory and rejoin the filename, because `canonicalize` requires
-/// the target to exist.
-fn safe_path(raw: &str) -> Result<PathBuf, String> {
-    let p = PathBuf::from(raw);
-    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    let canon_cwd = cwd
-        .canonicalize()
-        .map_err(|e| format!("cannot resolve cwd: {e}"))?;
-
-    let canonical = if p.exists() {
-        // File exists: full canonicalization resolves all symlinks.
-        p.canonicalize()
-            .map_err(|e| format!("cannot resolve path '{raw}': {e}"))?
-    } else {
-        // File does not exist yet (typical for export).  Canonicalize only the
-        // parent directory, then re-attach the filename component.
-        let parent = p.parent().unwrap_or(Path::new(""));
-        let canon_parent = if parent == Path::new("") {
-            // No directory component — file lives in the current directory.
-            canon_cwd.clone()
-        } else {
-            parent
-                .canonicalize()
-                .map_err(|e| format!("cannot resolve directory for '{raw}': {e}"))?
-        };
-        canon_parent.join(
-            p.file_name()
-                .ok_or_else(|| format!("invalid path (no filename component): '{raw}'"))?,
-        )
-    };
-
-    if !canonical.starts_with(&canon_cwd) {
-        return Err(format!(
-            "path '{raw}' is outside the working directory (path traversal rejected)"
-        ));
-    }
-    Ok(canonical)
-}
-
-// ---------------------------------------------------------------------------
-// Thread-local error slot
-// ---------------------------------------------------------------------------
-
-thread_local! {
-    static LAST_ERR: std::cell::RefCell<Option<CString>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-/// Store `msg` in the thread-local slot and write its pointer to `*error_out`.
-/// The pointer is valid until the next call to `set_err` on this thread.
-unsafe fn set_err(error_out: *mut *const c_char, msg: &str) {
-    let cstr = CString::new(msg).unwrap_or_else(|_| c"<error contains nul>".to_owned());
-    LAST_ERR.with(|cell| {
-        // Rust 2024: an `unsafe fn` body is not implicitly unsafe — raw pointer
-        // writes still require an explicit `unsafe` block inside a closure.
-        unsafe {
-            *error_out = cstr.as_ptr();
-        }
-        *cell.borrow_mut() = Some(cstr);
-    });
-}
-
-/// Convert a `Result<Shape, String>` into a raw pointer for the C FFI return value.
-///
-/// On success: boxes the shape and returns the raw pointer.
-/// On error: writes the error message into `*error_out` and returns null.
-///
-/// Callers must clear `*error_out` (set it to null) before calling this.
-unsafe fn shape_result_to_ptr(
-    result: Result<Shape, String>,
-    error_out: *mut *const c_char,
-) -> *mut c_void {
-    match result {
-        Ok(shape) => Box::into_raw(Box::new(shape)) as *mut c_void,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
-}
-
-/// Default linear deflection for mesh tessellation (export_gltf, export_glb, export_obj).
-///
-/// Controls the maximum distance between the tessellated mesh and the exact BRep surface.
-/// Smaller values produce finer meshes; 0.1 mm is a good balance for CAD preview.
-const DEFAULT_LINEAR_DEFLECTION: f64 = 0.1;
-
-/// Decode the raw C `path` pointer and validate it with `safe_path`.
-///
-/// Returns the resolved `PathBuf` on success.  On any error, writes the error
-/// message into `*error_out` and returns `None` — the caller should return early.
-/// This eliminates the three-step boilerplate that was copy-pasted across every
-/// import/export entry point.
-unsafe fn resolve_path(path: *const c_char, error_out: *mut *const c_char) -> Option<PathBuf> {
-    // SAFETY: `path` is a valid null-terminated C string produced by glue.c.
-    let path_str = match unsafe { std::ffi::CStr::from_ptr(path) }.to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            unsafe { set_err(error_out, "path is not valid UTF-8") };
-            return None;
-        }
-    };
-    match safe_path(path_str) {
-        Ok(p) => Some(p),
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            None
-        }
-    }
-}
-
-unsafe fn cstr_arg(ptr: *const c_char) -> Result<String, String> {
-    unsafe { std::ffi::CStr::from_ptr(ptr) }
-        .to_str()
-        .map(|s| s.to_string())
-        .map_err(|_| "value is not valid UTF-8".to_string())
-}
-
-fn split_csv_list(value: &str) -> Vec<String> {
-    value
-        .split(',')
-        .map(|item| item.trim())
-        .filter(|item| !item.is_empty())
-        .map(|item| item.to_string())
-        .collect()
-}
 
 // ---------------------------------------------------------------------------
 // Constructors
@@ -1736,26 +1602,6 @@ pub unsafe extern "C" fn rrcad_sew(
 // ---------------------------------------------------------------------------
 // Phase 7 Tier 2: validation & introspection
 // ---------------------------------------------------------------------------
-
-thread_local! {
-    /// Holds the last string return value so its pointer remains valid until
-    /// the next call on this thread.  Separate from LAST_ERR so that an error
-    /// and a string result can coexist if needed.
-    static LAST_STR: std::cell::RefCell<Option<CString>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-/// Store `s` in the LAST_STR slot and write its pointer to `*out`.
-/// The pointer is valid until the next call to `set_str` on this thread.
-unsafe fn set_str(out: *mut *const c_char, s: &str) {
-    let cstr = CString::new(s).unwrap_or_else(|_| c"<string contains nul>".to_owned());
-    LAST_STR.with(|cell| {
-        unsafe {
-            *out = cstr.as_ptr();
-        }
-        *cell.borrow_mut() = Some(cstr);
-    });
-}
 
 /// Returns a C string pointer to the shape type name (e.g. "solid", "shell").
 /// The pointer is valid until the next call on this thread.
