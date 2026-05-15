@@ -147,7 +147,7 @@ See `tests/phase8_tier5.rs` (11 tests).
 
 ## Phase 9 — Model Context Protocol (MCP) Server ✓ COMPLETE
 
-**Implemented in** `src/mcp/mod.rs`. Start with `cargo run -- --mcp`.
+**Implemented in** `src/mcp/mod.rs` for the public wiring, with focused helpers under `src/mcp/`. Start with `cargo run -- --mcp`.
 
 Tools: `cad_eval` (shape properties JSON), `cad_export` (file to `/tmp/rrcad_mcp/`),
 `cad_preview` (Three.js live URL), `cad_validate` (BRepCheck result).

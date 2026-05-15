@@ -42,6 +42,7 @@ Rust binding layer          (src/ruby/)
       │ cxx bridge (C++ ABI)
 OCCT geometry kernel        (src/occt/)
   • BRep modeling, splines, tessellation
+  • Shape logic split across focused Rust modules under src/occt/
   • STEP / STL / glTF (text) / GLB (binary) export
       │
 Live preview               (src/preview/)
@@ -58,7 +59,7 @@ Live preview               (src/preview/)
 - **mRuby FFI** — use raw C FFI (chosen; not `mruby-sys` or `mrusty`). Vendored at `vendor/mruby`; glue shim in `src/ruby/glue.c` hides `mrb_value` from Rust. Wire Ruby classes to Rust via `mrb_define_class` / `mrb_define_method`.
 - **OCCT bindings** — use the `cxx` crate with a hand-written C++ bridge. Bind only what is needed incrementally; do not attempt full OCCT coverage. Header: `src/occt/bridge.h`, implementation: `src/occt/bridge.cpp`.
 - **Preview** — `axum` HTTP server + WebSocket + Three.js. OCCT tessellates to binary GLB via `RWGltf_CafWriter` (isBinary=true); `notify` watches the `.rb` script; `preview(shape)` writes the GLB and fires a WebSocket reload. Activated with `rrcad --preview <script.rb>`. `preview(shape)` is a no-op outside this mode. The web-based preview is the long-term approach; a native egui/wgpu viewer is not planned.
-- **MCP server** — `rmcp` crate (stdio transport). All logic in `src/mcp/mod.rs`. A fresh `MrubyVm` is created per tool call (no shared state). Security prelude strips dangerous Kernel methods at runtime; `tokio::time::timeout` enforces 30 s limit; CWD is changed to `/tmp/rrcad_mcp/` at startup so export paths satisfy `safe_path()`. Do not share a VM across requests.
+- **MCP server** — `rmcp` crate (stdio transport). Public wiring lives in `src/mcp/mod.rs`; implementation is split across focused helpers in `src/mcp/`. A fresh `MrubyVm` is created per tool call (no shared state). Security prelude strips dangerous Kernel methods at runtime; `tokio::time::timeout` enforces 30 s limit; CWD is changed to `/tmp/rrcad_mcp/` at startup so export paths satisfy `safe_path()`. Do not share a VM across requests.
 
 ## While Coding
 
