@@ -87,3 +87,90 @@ pub(crate) fn build_examples_content() -> String {
     }
     buf
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{api_doc, build_examples_content, code_format_schema, code_schema};
+
+    #[test]
+    fn api_doc_mentions_core_dsl_entrypoints() {
+        let doc = api_doc();
+        assert!(doc.contains("box("), "api doc should mention primitives");
+        assert!(
+            doc.contains("preview(shape)"),
+            "api doc should mention preview"
+        );
+    }
+
+    #[test]
+    fn code_schema_defines_code_object() {
+        let schema = code_schema();
+        let props = schema
+            .get("properties")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert!(props.contains_key("code"));
+        assert_eq!(
+            props
+                .get("code")
+                .and_then(|v| v.get("type"))
+                .and_then(|v| v.as_str()),
+            Some("string")
+        );
+        let required = schema.get("required").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(required, &vec![serde_json::Value::from("code")]);
+    }
+
+    #[test]
+    fn code_format_schema_defines_export_formats() {
+        let schema = code_format_schema();
+        let props = schema
+            .get("properties")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        let format = props.get("format").and_then(|v| v.as_object()).unwrap();
+        assert_eq!(
+            format.get("enum").and_then(|v| v.as_array()).unwrap(),
+            &vec![
+                serde_json::Value::from("step"),
+                serde_json::Value::from("stl"),
+                serde_json::Value::from("glb"),
+                serde_json::Value::from("gltf"),
+                serde_json::Value::from("obj"),
+            ]
+        );
+        let required = schema.get("required").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(
+            required,
+            &vec![
+                serde_json::Value::from("code"),
+                serde_json::Value::from("format"),
+            ]
+        );
+    }
+
+    #[test]
+    fn build_examples_content_lists_all_sample_scripts() {
+        let content = build_examples_content();
+        let names = [
+            "01_hello_box.rb",
+            "02_boolean_ops.rb",
+            "03_transforms.rb",
+            "04_bracket.rb",
+            "05_export_formats.rb",
+            "06_live_preview.rb",
+            "07_teapot.rb",
+            "08_parametric_box.rb",
+        ];
+
+        let mut last = 0usize;
+        for name in names {
+            let needle = format!("# ===== {name} =====");
+            let idx = content[last..]
+                .find(&needle)
+                .map(|offset| last + offset)
+                .unwrap_or_else(|| panic!("missing sample header {needle}"));
+            last = idx + needle.len();
+        }
+    }
+}
