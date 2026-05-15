@@ -393,3 +393,80 @@ impl FeatureNode {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    fn node(
+        op: FeatureOp,
+        parents: Vec<Arc<FeatureNode>>,
+        history_entry: &str,
+    ) -> Arc<FeatureNode> {
+        FeatureNode::new(op, parents, history_entry.to_string())
+    }
+
+    #[test]
+    fn rebuild_translates_feature_tree() {
+        let base = node(
+            FeatureOp::Box {
+                dx: 10.0,
+                dy: 20.0,
+                dz: 30.0,
+            },
+            Vec::new(),
+            "box(dx=10, dy=20, dz=30)",
+        );
+        let translated = node(
+            FeatureOp::Translate {
+                dx: 5.0,
+                dy: 0.0,
+                dz: 0.0,
+            },
+            vec![base],
+            "translate(dx=5, dy=0, dz=0)",
+        );
+
+        let rebuilt = translated.rebuild().expect("translate rebuild failed");
+        let bb = rebuilt.bounding_box().expect("bounding_box failed");
+        assert!(
+            (bb[0] - 5.0).abs() < 1.0e-6 && (bb[3] - 15.0).abs() < 1.0e-6,
+            "expected translated box to shift by 5mm, got {bb:?}"
+        );
+    }
+
+    #[test]
+    fn rebuild_reports_missing_parent_and_opaque() {
+        let missing_parent = FeatureNode {
+            id: 1,
+            op: FeatureOp::Translate {
+                dx: 1.0,
+                dy: 0.0,
+                dz: 0.0,
+            },
+            parents: Vec::new(),
+            history_entry: "translate(dx=1, dy=0, dz=0)".to_string(),
+        };
+        match missing_parent.rebuild() {
+            Ok(_) => panic!("expected missing parent error"),
+            Err(err) => assert_eq!(err, "translate feature missing parent"),
+        }
+
+        let opaque = FeatureNode {
+            id: 2,
+            op: FeatureOp::Opaque {
+                label: "manual".to_string(),
+            },
+            parents: Vec::new(),
+            history_entry: "manual".to_string(),
+        };
+        match opaque.rebuild() {
+            Ok(_) => panic!("expected opaque rebuild error"),
+            Err(err) => assert_eq!(
+                err,
+                "cannot rebuild opaque feature 'manual' from history entry: manual"
+            ),
+        }
+    }
+}
