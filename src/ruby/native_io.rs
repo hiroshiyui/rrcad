@@ -384,3 +384,202 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
         unsafe { set_err(error_out, &e) };
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        rrcad_import_step, rrcad_import_stl, rrcad_shape_export_dxf, rrcad_shape_export_step,
+        rrcad_shape_export_svg,
+    };
+    use crate::occt::Shape;
+    use std::{
+        ffi::{CStr, CString},
+        fs,
+        os::raw::c_char,
+        path::PathBuf,
+        ptr,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+
+    static TEST_SEQ: AtomicUsize = AtomicUsize::new(1);
+
+    fn unique_test_dir(prefix: &str) -> PathBuf {
+        let seq = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("{prefix}-{}-{seq}", std::process::id()))
+    }
+
+    fn with_cwd<T>(dir: &PathBuf, f: impl FnOnce() -> T) -> T {
+        let original = std::env::current_dir().expect("current dir");
+        std::env::set_current_dir(dir).expect("enter temp dir");
+        let result = f();
+        std::env::set_current_dir(original).expect("restore cwd");
+        result
+    }
+
+    fn cstr(value: &str) -> CString {
+        CString::new(value).expect("CString")
+    }
+
+    unsafe fn error_message(err: *const c_char) -> Option<String> {
+        if err.is_null() {
+            None
+        } else {
+            Some(
+                unsafe { CStr::from_ptr(err) }
+                    .to_str()
+                    .expect("utf8")
+                    .to_string(),
+            )
+        }
+    }
+
+    unsafe fn reclaim_shape(ptr: *mut std::ffi::c_void) {
+        if !ptr.is_null() {
+            unsafe {
+                drop(Box::from_raw(ptr as *mut Shape));
+            }
+        }
+    }
+
+    #[test]
+    fn export_step_creates_file_and_import_step_round_trips() {
+        let dir = unique_test_dir("rrcad-native-io-step");
+        fs::create_dir_all(&dir).expect("create temp dir");
+
+        with_cwd(&dir, || {
+            let shape = Box::into_raw(Box::new(Shape::make_box(10.0, 20.0, 30.0).unwrap()))
+                as *mut std::ffi::c_void;
+            let mut err: *const c_char = ptr::null();
+
+            unsafe {
+                rrcad_shape_export_step(shape, cstr("part.step").as_ptr(), &mut err);
+            }
+            assert!(
+                unsafe { error_message(err) }.is_none(),
+                "unexpected export error"
+            );
+            assert!(dir.join("part.step").exists(), "STEP file was not created");
+
+            let mut import_err: *const c_char = ptr::null();
+            let imported =
+                unsafe { rrcad_import_step(cstr("part.step").as_ptr(), &mut import_err) };
+            assert!(
+                !imported.is_null(),
+                "importing the exported STEP file should succeed"
+            );
+            assert!(unsafe { error_message(import_err) }.is_none());
+
+            unsafe {
+                reclaim_shape(shape);
+                reclaim_shape(imported);
+            }
+        });
+    }
+
+    #[test]
+    fn export_svg_and_dxf_create_documents() {
+        let dir = unique_test_dir("rrcad-native-io-draw");
+        fs::create_dir_all(&dir).expect("create temp dir");
+
+        with_cwd(&dir, || {
+            let shape = Box::into_raw(Box::new(Shape::make_box(10.0, 20.0, 30.0).unwrap()))
+                as *mut std::ffi::c_void;
+            let mut err: *const c_char = ptr::null();
+
+            unsafe {
+                rrcad_shape_export_svg(
+                    shape,
+                    cstr("part.svg").as_ptr(),
+                    cstr("top").as_ptr(),
+                    1.0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    cstr("").as_ptr(),
+                    0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    cstr("").as_ptr(),
+                    0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    &mut err,
+                );
+            }
+            assert!(
+                unsafe { error_message(err) }.is_none(),
+                "unexpected SVG error"
+            );
+            let svg = fs::read_to_string(dir.join("part.svg")).expect("read SVG");
+            assert!(
+                svg.contains("<svg"),
+                "SVG output is missing the root element"
+            );
+
+            let mut err: *const c_char = ptr::null();
+            unsafe {
+                rrcad_shape_export_dxf(
+                    shape,
+                    cstr("part.dxf").as_ptr(),
+                    cstr("top").as_ptr(),
+                    1.0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    cstr("").as_ptr(),
+                    0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    cstr("").as_ptr(),
+                    0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    &mut err,
+                );
+            }
+            assert!(
+                unsafe { error_message(err) }.is_none(),
+                "unexpected DXF error"
+            );
+            let dxf = fs::read_to_string(dir.join("part.dxf")).expect("read DXF");
+            assert!(
+                dxf.contains("SECTION"),
+                "DXF output is missing section markers"
+            );
+
+            unsafe { reclaim_shape(shape) };
+        });
+    }
+
+    #[test]
+    fn import_missing_step_and_stl_report_errors() {
+        let dir = unique_test_dir("rrcad-native-io-missing");
+        fs::create_dir_all(&dir).expect("create temp dir");
+
+        with_cwd(&dir, || {
+            let mut err: *const c_char = ptr::null();
+            let step = unsafe { rrcad_import_step(cstr("missing.step").as_ptr(), &mut err) };
+            assert!(step.is_null(), "missing STEP file should not import");
+            let step_err = unsafe { error_message(err) }.expect("missing STEP error");
+            assert!(step_err.contains("missing.step") || step_err.contains("not found"));
+
+            let mut err: *const c_char = ptr::null();
+            let stl = unsafe { rrcad_import_stl(cstr("missing.stl").as_ptr(), &mut err) };
+            assert!(stl.is_null(), "missing STL file should not import");
+            let stl_err = unsafe { error_message(err) }.expect("missing STL error");
+            assert!(stl_err.contains("missing.stl") || stl_err.contains("not found"));
+        });
+    }
+}
