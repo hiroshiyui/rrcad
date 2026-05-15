@@ -294,6 +294,16 @@ overlap the previous layer.
 
 ---
 
+## Project Improvements
+
+- [ ] Add CI coverage for MCP security invariants, including `create_mcp_vm()` and the file/process constant removal checks.
+- [ ] Keep the Claude skill definitions in `.claude/skills` and maintain the repo-local `.codex/skills` mirror if Codex-callable copies are needed again.
+- [ ] Make CSV design-table parsing fail fast on row width mismatches instead of silently truncating with `zip()`.
+- [ ] Add explicit tests and documentation for the intentionally strict export-path confinement behavior.
+- [ ] Consider consolidating repetitive Ruby-to-native FFI wrapper patterns into shared helpers or generated bindings.
+- [ ] Make the preview port configurable or auto-select a free port to reduce local port conflicts.
+- [ ] Add a short maintainer note for the OCCT bridge and mRuby lifetime invariants so future low-level edits stay consistent.
+
 ## Future Works
 
 Open items deferred from completed or partially-complete tracks above.
@@ -313,3 +323,5 @@ development guide.
 - **Preview:** OCCT tessellation → GLB → `axum` HTTP → Three.js browser viewer
   → WebSocket live reload. Web-based preview is the long-term approach; a
   native egui/wgpu viewer is not planned.
+
+---
