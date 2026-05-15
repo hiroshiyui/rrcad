@@ -349,6 +349,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 mod feature;
+mod feature_op_impl;
 
 pub(crate) use self::feature::{
     FeatureNode, FeatureOp, GdtDatumSpec, GdtFeatureControlSpec, GdtRenderSpec, GdtStandard,
