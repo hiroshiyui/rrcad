@@ -70,14 +70,23 @@ cargo build --release && cargo install --path .
 This uses the optimized release build and then installs the `rrcad` binary into
 the standard Cargo bin directory for your user account.
 
+## Running
+
+```sh
+rrcad                              # start REPL
+rrcad script.rb                    # run a .rb script
+rrcad --preview script.rb          # live browser preview (auto-reloads on save)
+rrcad --mcp                        # MCP server over stdio (for Claude Desktop / Claude Code)
+```
+
+If you have not installed the binary yet, the equivalent `cargo run` forms are
+`cargo run`, `cargo run -- script.rb`, `cargo run -- --preview script.rb`, and
+`cargo run -- --mcp`.
+
 ## Building
 
 ```sh
 cargo build
-cargo run                          # start REPL
-cargo run -- script.rb             # run a .rb script
-cargo run -- --preview script.rb   # live browser preview (auto-reloads on save)
-cargo run -- --mcp                 # MCP server over stdio (for Claude Desktop / Claude Code)
 cargo test
 ```
 
