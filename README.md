@@ -59,6 +59,17 @@ metadata, and export helpers can evolve independently.
 
 **Memory model:** Each native `Shape` value wraps a heap-allocated `Box<occt::Shape>`. The raw pointer is stored directly in the mRuby `RData void*` slot. The `dfree` GC callback calls `rrcad_shape_drop` to run `drop(Box::from_raw(ptr))`. No SlotMap, no cross-language reference counting.
 
+## Install
+
+Build and install the release binary into Cargo's default installation path:
+
+```sh
+cargo build --release && cargo install --path .
+```
+
+This uses the optimized release build and then installs the `rrcad` binary into
+the standard Cargo bin directory for your user account.
+
 ## Building
 
 ```sh
