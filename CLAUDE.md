@@ -54,6 +54,8 @@ Live preview               (src/preview/)
 
 **Memory model:** Each native `Shape` is a heap-allocated `Box<occt::Shape>`. The raw pointer is stored directly in the mRuby `RData void*` slot — no SlotMap. The `dfree` GC callback drops the Box. No cross-language reference counting.
 
+**Bridge invariants:** Keep OCCT bridge and mRuby lifetime changes one-way: Rust owns the `Shape` box, mRuby only holds the opaque pointer, `dfree` remains the only drop path, and live `MrubyVm` / `mrb_state` values must never be shared across threads.
+
 ## Key Technology Choices
 
 - **mRuby FFI** — use raw C FFI (chosen; not `mruby-sys` or `mrusty`). Vendored at `vendor/mruby`; glue shim in `src/ruby/glue.c` hides `mrb_value` from Rust. Wire Ruby classes to Rust via `mrb_define_class` / `mrb_define_method`.
