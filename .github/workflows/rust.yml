@@ -25,7 +25,7 @@ jobs:
       run: |
         apt-get update
         apt-get install -y \
-          curl git ruby rake clang-format \
+          curl git ruby rake clang-format nodejs \
           libocct-foundation-dev \
           libocct-modeling-data-dev \
           libocct-modeling-algorithms-dev \
