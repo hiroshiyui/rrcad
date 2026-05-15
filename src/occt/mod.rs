@@ -360,6 +360,7 @@ mod construction_ops;
 mod file_ops;
 mod primitive_ops;
 mod primitive_refs;
+mod primitive_shape_ops;
 mod query;
 mod shape_core;
 mod surface_ops;
