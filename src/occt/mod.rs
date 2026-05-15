@@ -368,6 +368,7 @@ mod primitive_refs;
 mod primitive_shape_ops;
 mod query;
 mod shape_core;
+mod shape_core_diagnostics;
 mod surface_ops;
 
 /// Owned handle to a live OCCT shape.
