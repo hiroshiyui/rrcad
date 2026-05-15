@@ -2,6 +2,7 @@
 /// integration tests (and future embedders) can import them without going
 /// through main.rs.
 pub mod mcp;
+pub mod project_config;
 pub mod occt;
 pub mod preview;
 pub mod ruby;

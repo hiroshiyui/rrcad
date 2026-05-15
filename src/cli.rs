@@ -1,4 +1,4 @@
-use rrcad::ruby::vm::MrubyVm;
+use rrcad::{project_config, ruby::vm::MrubyVm};
 use rustyline::{
     Context, Editor, Helper,
     completion::{Completer, Pair},
@@ -452,7 +452,15 @@ fn run_repl() {
     println!("rrcad {} — mRuby interpreter", env!("CARGO_PKG_VERSION"));
     println!("Type 'exit' or press Ctrl-D to quit.\n");
 
+    let project = load_project_config_for_cwd().unwrap_or_else(|e| {
+        eprintln!("{e}");
+        std::process::exit(1);
+    });
     let mut vm = MrubyVm::new();
+    if let Err(e) = vm.set_params(&project.params) {
+        eprintln!("error loading project config params: {e}");
+        std::process::exit(1);
+    }
     let mut rl = Editor::<DslHelper, _>::with_history(
         rustyline::Config::default(),
         rustyline::history::DefaultHistory::new(),
@@ -495,6 +503,10 @@ fn run_repl() {
 fn run_script(path: &str, params: &[(String, String)]) {
     // The CLI input script may live anywhere the user can read — no CWD restriction.
     // Export paths produced *inside* the script are still guarded by safe_path in native.rs.
+    let project = load_project_config_for_script(path).unwrap_or_else(|e| {
+        eprintln!("{path}: {e}");
+        std::process::exit(1);
+    });
     let code = match std::fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -503,7 +515,8 @@ fn run_script(path: &str, params: &[(String, String)]) {
         }
     };
     let mut vm = MrubyVm::new();
-    if let Err(e) = vm.set_params(params) {
+    let effective_params = merge_params(&project.params, params);
+    if let Err(e) = vm.set_params(&effective_params) {
         eprintln!("{path}: error setting params: {e}");
         std::process::exit(1);
     }
@@ -570,6 +583,7 @@ fn run_design_table(
 ) -> Result<(), String> {
     // CLI input files may live anywhere the user can read — no CWD restriction.
     // Export paths produced *inside* the script are still guarded by safe_path in native.rs.
+    let project = load_project_config_for_script(script_path)?;
     let table_src = std::fs::read_to_string(table_path)
         .map_err(|e| format!("error: could not read '{table_path}': {e}"))?;
     let code = std::fs::read_to_string(script_path)
@@ -583,10 +597,11 @@ fn run_design_table(
     );
 
     let mut errors: usize = 0;
+    let effective_base_params = merge_params(&project.params, base_params);
 
     for (i, row) in rows.iter().enumerate() {
         // Start with base_params then let row columns override.
-        let mut params: Vec<(String, String)> = base_params.to_vec();
+        let mut params: Vec<(String, String)> = effective_base_params.clone();
         for (col, val) in headers.iter().zip(row.iter()) {
             if let Some(entry) = params.iter_mut().find(|(k, _)| k == col) {
                 entry.1 = val.clone();
@@ -640,12 +655,18 @@ fn run_preview(script_path: &str, params: &[(String, String)], port: Option<u16>
 
     // The CLI input script may live anywhere the user can read — no CWD restriction.
     // Export paths produced *inside* the script are still guarded by safe_path in native.rs.
+    let project = load_project_config_for_script(script_path).unwrap_or_else(|e| {
+        eprintln!("{path}: {e}", path = script_path);
+        std::process::exit(1);
+    });
 
     // Use a randomised temp-file name to prevent symlink attacks (Fix 3).
     let glb_path = make_preview_glb_path();
     // Keep a copy so we can delete the file when the process exits.
     let glb_path_for_cleanup = glb_path.clone();
-    let _rt = match preview::start(glb_path, port.unwrap_or(0)) {
+    let effective_params = merge_params(&project.params, params);
+    let preview_port = port.or(project.preview_port).unwrap_or(0);
+    let _rt = match preview::start(glb_path, preview_port) {
         Ok(rt) => rt,
         Err(e) => {
             eprintln!("error: failed to start preview server: {e}");
@@ -659,7 +680,7 @@ fn run_preview(script_path: &str, params: &[(String, String)], port: Option<u16>
     let eval_script = |path: &str| match std::fs::read_to_string(path) {
         Ok(code) => {
             let mut vm = MrubyVm::new();
-            if let Err(e) = vm.set_params(params) {
+            if let Err(e) = vm.set_params(&effective_params) {
                 eprintln!("{path}: error setting params: {e}");
             } else if let Err(e) = vm.eval(&code) {
                 eprintln!("{path}: {e}");
@@ -732,6 +753,28 @@ fn run_preview(script_path: &str, params: &[(String, String)], port: Option<u16>
     // Best-effort cleanup: remove the randomised temp GLB file so it does not
     // accumulate in /tmp across restarts.  Errors are silently ignored.
     std::fs::remove_file(&glb_path_for_cleanup).ok();
+}
+
+fn load_project_config_for_cwd() -> Result<project_config::ProjectConfig, String> {
+    project_config::load_for_cwd()
+}
+
+fn load_project_config_for_script(script_path: &str) -> Result<project_config::ProjectConfig, String> {
+    project_config::load_for_script(std::path::Path::new(script_path))
+}
+
+fn merge_params(
+    base: &[(String, String)],
+    overrides: &[(String, String)],
+) -> Vec<(String, String)> {
+    let mut merged = base.to_vec();
+    for (key, value) in overrides {
+        match merged.iter_mut().find(|(existing, _)| existing == key) {
+            Some(entry) => entry.1 = value.clone(),
+            None => merged.push((key.clone(), value.clone())),
+        }
+    }
+    merged
 }
 
 #[cfg(test)]

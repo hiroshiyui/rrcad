@@ -302,6 +302,7 @@ overlap the previous layer.
 - [ ] Add explicit tests and documentation for the intentionally strict export-path confinement behavior.
 - [ ] Consider consolidating repetitive Ruby-to-native FFI wrapper patterns into shared helpers or generated bindings.
 - [x] Make the preview port configurable or auto-select a free port to reduce local port conflicts.
+- [x] Add support for project-local `rrcad.toml` files with `preview_port` and default `[params]`, discovered from the script directory or current working directory.
 - [x] Add a short maintainer note for the OCCT bridge and mRuby lifetime invariants so future low-level edits stay consistent.
 
 ## Future Works

@@ -105,6 +105,25 @@ cargo run -- --mcp                            # MCP server (stdio JSON-RPC)
 | `--design-table <csv>` | Run the script once per CSV row, substituting named columns as params |
 | `--mcp` | Serve the CAD engine over the Model Context Protocol |
 
+### Project Configuration
+
+`rrcad` will also read an optional `rrcad.toml` from the script directory or any
+parent directory when you run a script, open the REPL, or launch live preview.
+It is intended for standalone CAD projects that want a small local config file
+checked into the project root.
+
+```toml
+preview_port = 3000
+
+[params]
+width = 50
+label = "bracket"
+```
+
+`preview_port` sets the default browser preview port for `--preview`. The
+`[params]` table provides default `param()` overrides. Command-line `--param`
+and `--preview-port` flags still win over the file.
+
 ---
 
 ## DSL Reference
