@@ -1,5 +1,5 @@
 use super::{FeatureOp, Shape, ffi};
-use crate::occt::shape_core::{hint, summarize};
+use crate::occt::shape_core::summarize;
 
 impl Shape {
     pub fn fuse_all(shapes: &[&Shape]) -> Result<Shape, String> {
