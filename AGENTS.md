@@ -30,6 +30,8 @@ Add or update integration tests in `tests/` for every new DSL or geometry operat
 
 Recent history uses Conventional Commit-style messages, for example `fix(preview): ...`, `test(cut_all): ...`, `refactor: ...`, and `chore: release v0.2.1`. Keep commits scoped and imperative. Pull requests should describe behavior changes, list test commands run, link relevant issues, and include screenshots or generated model notes for preview/UI-visible changes.
 
+- When you create a commit, include a descriptive commit message body with the concrete change details, not just the short title. Use the body to explain what changed, why, and any notable tradeoffs or test coverage.
+
 ## Security & Configuration Tips
 
 Do not bypass MCP sandbox constraints or export path confinement. Avoid committing generated CAD outputs unless they are intentional fixtures or documentation assets.
