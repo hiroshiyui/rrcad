@@ -266,3 +266,57 @@ pub fn run_worker(kind: &str) -> i32 {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{worker_eval_json, worker_export, worker_validate_json};
+    use std::{
+        fs,
+        path::PathBuf,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+
+    static TEST_SEQ: AtomicUsize = AtomicUsize::new(1);
+
+    fn unique_test_dir(prefix: &str) -> PathBuf {
+        let seq = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("{prefix}-{}-{seq}", std::process::id()))
+    }
+
+    #[test]
+    fn worker_eval_json_reports_shape_metadata() {
+        let value = worker_eval_json("box(2, 3, 4)").expect("worker eval should succeed");
+        assert_eq!(value["shape_type"], "solid");
+        assert!(value["volume"].as_f64().unwrap_or(0.0) > 0.0);
+        assert_eq!(value["valid"], true);
+    }
+
+    #[test]
+    fn worker_validate_json_reports_ok_for_valid_shape() {
+        let value = worker_validate_json("box(2, 3, 4)").expect("worker validate should succeed");
+        assert_eq!(value["status"], "ok");
+    }
+
+    #[test]
+    fn worker_validate_json_reports_errors_for_invalid_code() {
+        let value =
+            worker_validate_json("box(2, 3, 4").expect("worker validate should return json");
+        assert!(value["errors"].as_array().is_some());
+        assert!(!value["errors"].as_array().unwrap_or(&Vec::new()).is_empty());
+    }
+
+    #[test]
+    fn worker_export_writes_file_in_current_dir() {
+        let dir = unique_test_dir("rrcad-worker-export");
+        fs::create_dir_all(&dir).expect("create temp dir");
+        let original = std::env::current_dir().expect("current dir");
+        std::env::set_current_dir(&dir).expect("enter temp dir");
+
+        worker_export("box(2, 3, 4)", "step", "worker_export.step")
+            .expect("worker export should succeed");
+        assert!(dir.join("worker_export.step").exists());
+
+        std::env::set_current_dir(original).expect("restore cwd");
+        let _ = fs::remove_dir_all(&dir);
+    }
+}
