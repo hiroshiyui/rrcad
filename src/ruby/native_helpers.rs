@@ -134,3 +134,53 @@ pub(crate) fn split_csv_list(value: &str) -> Vec<String> {
         .map(|item| item.to_string())
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::safe_path;
+    use std::{
+        fs,
+        path::PathBuf,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+
+    static TEST_SEQ: AtomicUsize = AtomicUsize::new(1);
+
+    fn unique_test_dir(prefix: &str) -> PathBuf {
+        let seq = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("{prefix}-{}-{seq}", std::process::id()))
+    }
+
+    #[test]
+    fn safe_path_accepts_relative_paths_inside_cwd() {
+        let dir = unique_test_dir("rrcad-safe-path");
+        fs::create_dir_all(&dir).expect("create temp dir");
+        fs::create_dir_all(dir.join("exports")).expect("create exports dir");
+        let original = std::env::current_dir().expect("current dir");
+        std::env::set_current_dir(&dir).expect("enter temp dir");
+
+        let path = safe_path("exports/part.step").expect("path inside cwd");
+        assert_eq!(path, dir.join("exports/part.step"));
+
+        std::env::set_current_dir(original).expect("restore cwd");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn safe_path_rejects_path_traversal() {
+        let dir = unique_test_dir("rrcad-safe-path");
+        fs::create_dir_all(&dir).expect("create temp dir");
+
+        let original = std::env::current_dir().expect("current dir");
+        std::env::set_current_dir(&dir).expect("enter temp dir");
+
+        let err = safe_path("../outside.step").expect_err("path traversal should be rejected");
+        assert!(
+            err.contains("outside the working directory"),
+            "unexpected error: {err}"
+        );
+
+        std::env::set_current_dir(original).expect("restore cwd");
+        let _ = fs::remove_dir_all(&dir);
+    }
+}
