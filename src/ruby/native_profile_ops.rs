@@ -172,3 +172,129 @@ pub unsafe extern "C" fn rrcad_make_spline_3d_tan(
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        rrcad_make_arc, rrcad_make_circle_face, rrcad_make_ellipse_face, rrcad_make_polygon,
+        rrcad_make_rect, rrcad_make_spline_2d, rrcad_make_spline_2d_tan, rrcad_make_spline_3d,
+        rrcad_make_spline_3d_tan, rrcad_shape_extrude, rrcad_shape_mirror, rrcad_shape_revolve,
+    };
+    use crate::occt::Shape;
+    use std::{
+        ffi::{CStr, CString},
+        os::raw::c_char,
+        ptr,
+    };
+
+    unsafe fn reclaim_shape(ptr: *mut std::ffi::c_void) {
+        if !ptr.is_null() {
+            unsafe {
+                drop(Box::from_raw(ptr as *mut Shape));
+            }
+        }
+    }
+
+    fn boxed_shape(shape: Shape) -> *mut std::ffi::c_void {
+        Box::into_raw(Box::new(shape)) as *mut std::ffi::c_void
+    }
+
+    unsafe fn error_message(err: *const c_char) -> Option<String> {
+        if err.is_null() {
+            None
+        } else {
+            Some(
+                unsafe { CStr::from_ptr(err) }
+                    .to_str()
+                    .expect("utf8")
+                    .to_string(),
+            )
+        }
+    }
+
+    #[test]
+    fn constructors_return_shapes() {
+        let mut err: *const c_char = ptr::null();
+        let rect = unsafe { rrcad_make_rect(10.0, 20.0, &mut err) };
+        let circle = unsafe { rrcad_make_circle_face(5.0, &mut err) };
+        let ellipse = unsafe { rrcad_make_ellipse_face(6.0, 4.0, &mut err) };
+        let arc = unsafe { rrcad_make_arc(5.0, 0.0, 180.0, &mut err) };
+        let polygon_points = [0.0, 0.0, 10.0, 0.0, 5.0, 5.0];
+        let polygon = unsafe { rrcad_make_polygon(polygon_points.as_ptr(), 3, &mut err) };
+
+        assert!(unsafe { error_message(err) }.is_none());
+        assert!(!rect.is_null());
+        assert!(!circle.is_null());
+        assert!(!ellipse.is_null());
+        assert!(!arc.is_null());
+        assert!(!polygon.is_null());
+
+        unsafe {
+            reclaim_shape(rect);
+            reclaim_shape(circle);
+            reclaim_shape(ellipse);
+            reclaim_shape(arc);
+            reclaim_shape(polygon);
+        }
+    }
+
+    #[test]
+    fn extrude_revolve_and_mirror_wrappers_return_shapes() {
+        let profile = boxed_shape(Shape::make_rect(10.0, 20.0).unwrap());
+        let mut err: *const c_char = ptr::null();
+
+        let extruded = unsafe { rrcad_shape_extrude(profile, 5.0, &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert!(!extruded.is_null());
+
+        let revolved = unsafe { rrcad_shape_revolve(profile, 180.0, &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert!(!revolved.is_null());
+
+        let mirror =
+            unsafe { rrcad_shape_mirror(profile, CString::new("xy").unwrap().as_ptr(), &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert!(!mirror.is_null());
+
+        unsafe {
+            reclaim_shape(profile);
+            reclaim_shape(extruded);
+            reclaim_shape(revolved);
+            reclaim_shape(mirror);
+        }
+    }
+
+    #[test]
+    fn spline_wrappers_return_shapes() {
+        let pts2d = [0.0, 0.0, 5.0, 5.0, 10.0, 0.0];
+        let pts3d = [0.0, 0.0, 0.0, 5.0, 0.0, 2.0, 10.0, 0.0, 0.0];
+        let tan2d = [1.0, 0.0, -1.0, 0.0];
+        let tan3d = [1.0, 0.0, 0.0, -1.0, 0.0, 0.0];
+        let mut err: *const c_char = ptr::null();
+
+        let spline2d = unsafe { rrcad_make_spline_2d(pts2d.as_ptr(), 3, &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert!(!spline2d.is_null());
+
+        let spline3d = unsafe { rrcad_make_spline_3d(pts3d.as_ptr(), 3, &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert!(!spline3d.is_null());
+
+        let spline2d_tan =
+            unsafe { rrcad_make_spline_2d_tan(pts2d.as_ptr(), 3, tan2d.as_ptr(), &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert!(!spline2d_tan.is_null());
+
+        let spline3d_tan =
+            unsafe { rrcad_make_spline_3d_tan(pts3d.as_ptr(), 3, tan3d.as_ptr(), &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert!(!spline3d_tan.is_null());
+
+        unsafe {
+            reclaim_shape(spline2d);
+            reclaim_shape(spline3d);
+            reclaim_shape(spline2d_tan);
+            reclaim_shape(spline3d_tan);
+        }
+    }
+}
