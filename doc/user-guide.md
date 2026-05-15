@@ -110,17 +110,20 @@ cargo run -- --mcp                            # MCP server (stdio JSON-RPC)
 `rrcad` will also read an optional `rrcad.toml` from the script directory or any
 parent directory when you run a script, open the REPL, or launch live preview.
 It is intended for standalone CAD projects that want a small local config file
-checked into the project root.
+checked into the project root. The repository includes
+[`rrcad.toml.example`](../rrcad.toml.example) as a copy-then-edit template.
 
 ```toml
-preview_port = 3000
+# preview_port = 3000
 
 [params]
 width = 50
 label = "bracket"
 ```
 
-`preview_port` sets the default browser preview port for `--preview`. The
+`preview_port` sets the default browser preview port for `--preview` when you
+set it in `rrcad.toml`; if you leave it out, preview auto-selects a free local
+port. The
 `[params]` table provides default `param()` overrides. Command-line `--param`
 and `--preview-port` flags still win over the file.
 

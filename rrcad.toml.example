@@ -1,0 +1,8 @@
+# Copy this file to `rrcad.toml` in your project root and adjust it for your CAD project.
+# Omit `preview_port` if you want `--preview` to auto-select a free localhost port.
+
+# preview_port = 3000
+
+[params]
+width = 50
+label = "bracket"
