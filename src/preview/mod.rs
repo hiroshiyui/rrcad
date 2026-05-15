@@ -96,7 +96,7 @@ pub fn start(glb_path: PathBuf, port: u16) -> Result<tokio::runtime::Runtime, St
 mod tests {
     use super::*;
     use crate::occt::Shape;
-    use std::{fs, process::Command, time::SystemTime};
+    use std::{fs, io::ErrorKind, process::Command, time::SystemTime};
 
     #[test]
     fn metadata_for_box_includes_core_properties() {
@@ -154,14 +154,6 @@ mod tests {
         ));
         fs::write(&path, script).expect("write viewer script");
 
-        let status = Command::new("node")
-            .arg("--check")
-            .arg(&path)
-            .status()
-            .expect("run node --check");
-        let _ = fs::remove_file(&path);
-        assert!(status.success(), "viewer script must be valid JavaScript");
-
         assert!(
             script.contains("let loadGeneration = 0;"),
             "viewer must track preview load generations"
@@ -178,5 +170,25 @@ mod tests {
             script.contains("loadMetadata(loadToken);"),
             "metadata fetches must be tied to the same load generation"
         );
+
+        if let Some(node) = find_node() {
+            let status = Command::new(node)
+                .arg("--check")
+                .arg(&path)
+                .status()
+                .expect("run node --check");
+            assert!(status.success(), "viewer script must be valid JavaScript");
+        }
+
+        let _ = fs::remove_file(&path);
+    }
+
+    fn find_node() -> Option<&'static str> {
+        match Command::new("node").arg("--version").status() {
+            Ok(status) if status.success() => Some("node"),
+            Err(err) if err.kind() == ErrorKind::NotFound => None,
+            Ok(status) => panic!("node --version failed: {status}"),
+            Err(err) => panic!("failed to probe node: {err}"),
+        }
     }
 }
