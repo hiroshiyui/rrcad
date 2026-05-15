@@ -359,6 +359,7 @@ mod builder_ops;
 mod construction_ops;
 mod file_ops;
 mod primitive_ops;
+mod primitive_refs;
 mod query;
 mod shape_core;
 mod surface_ops;
