@@ -108,3 +108,123 @@ async fn handle_socket(mut socket: WebSocket) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::preview::{PreviewState, metadata_path_for_glb};
+    use axum::body::to_bytes;
+    use std::{
+        fs,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+    use tokio::sync::broadcast;
+
+    static TEST_SEQ: AtomicUsize = AtomicUsize::new(1);
+
+    fn unique_test_dir(prefix: &str) -> std::path::PathBuf {
+        let seq = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("{prefix}-{}-{seq}", std::process::id()))
+    }
+
+    fn preview_state() -> &'static PreviewState {
+        crate::preview::PREVIEW.get_or_init(|| {
+            let dir = unique_test_dir("rrcad-preview-server");
+            fs::create_dir_all(&dir).expect("create preview temp dir");
+
+            let glb_path = dir.join("preview.glb");
+            fs::write(&glb_path, b"glb-bytes").expect("write preview glb");
+            fs::write(metadata_path_for_glb(&glb_path), br#"{"hello":"world"}"#)
+                .expect("write preview metadata");
+
+            let (reload_tx, _) = broadcast::channel(4);
+            PreviewState {
+                glb_path,
+                reload_tx,
+            }
+        })
+    }
+
+    async fn body_bytes(response: Response) -> Vec<u8> {
+        to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read response body")
+            .to_vec()
+    }
+
+    #[tokio::test]
+    async fn handler_root_serves_viewer_html() {
+        let response = handler_root().await.into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "text/html; charset=utf-8"
+        );
+        assert_eq!(body_bytes(response).await, VIEWER_HTML.as_bytes());
+    }
+
+    #[tokio::test]
+    async fn handler_logo_serves_png() {
+        let response = handler_logo().await.into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "image/png"
+        );
+        assert_eq!(body_bytes(response).await, LOGO_PNG);
+    }
+
+    #[tokio::test]
+    async fn preview_file_response_reads_existing_file() {
+        let dir = unique_test_dir("rrcad-preview-file");
+        fs::create_dir_all(&dir).expect("create temp dir");
+        let path = dir.join("model.glb");
+        fs::write(&path, b"preview-bytes").expect("write preview file");
+
+        let response = preview_file_response(&path, "model/gltf-binary").await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "model/gltf-binary"
+        );
+        assert_eq!(body_bytes(response).await, b"preview-bytes");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn preview_file_response_returns_not_found_for_missing_file() {
+        let dir = unique_test_dir("rrcad-preview-missing");
+        fs::create_dir_all(&dir).expect("create temp dir");
+        let path = dir.join("missing.glb");
+
+        let response = preview_file_response(&path, "model/gltf-binary").await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn handler_model_serves_preview_glb() {
+        let _ = preview_state();
+        let response = handler_model().await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "model/gltf-binary"
+        );
+        assert_eq!(body_bytes(response).await, b"glb-bytes");
+    }
+
+    #[tokio::test]
+    async fn handler_metadata_serves_preview_metadata() {
+        let _ = preview_state();
+        let response = handler_metadata().await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get(header::CONTENT_TYPE).unwrap(),
+            "application/json"
+        );
+        assert_eq!(body_bytes(response).await, br#"{"hello":"world"}"#);
+    }
+}
