@@ -358,6 +358,7 @@ pub(crate) use self::feature::{
 mod builder_ops;
 mod construction_ops;
 mod construction_splines;
+mod construction_surface_ops;
 mod file_ops;
 mod primitive_ops;
 mod primitive_refs;
