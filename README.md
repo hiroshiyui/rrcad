@@ -17,6 +17,10 @@ preview bucket
 
 See [`samples/`](samples/) for more complete examples.
 
+For standalone CAD projects, copy [`rrcad.toml.example`](rrcad.toml.example)
+to `rrcad.toml` in your project root to set default `preview_port` and
+`[params]` values.
+
 > **3D preview:** open [`doc/bucket.stl`](doc/bucket.stl) or [`doc/split_tkl_keyboard.stl`](doc/split_tkl_keyboard.stl) in GitHub to view the models interactively in your browser.
 
 ![Three.js live preview of the bucket sample](doc/images/Screenshot%202026-03-22%20at%2014-39-04%20rrcad%20preview.png)
