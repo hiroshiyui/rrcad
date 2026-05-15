@@ -137,10 +137,13 @@ pub(crate) fn split_csv_list(value: &str) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::safe_path;
+    use super::{cstr_arg, resolve_path, safe_path, split_csv_list};
     use std::{
+        ffi::CString,
         fs,
+        os::raw::c_char,
         path::PathBuf,
+        ptr,
         sync::atomic::{AtomicUsize, Ordering},
     };
 
@@ -182,5 +185,54 @@ mod tests {
 
         std::env::set_current_dir(original).expect("restore cwd");
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn split_csv_list_trims_and_drops_empty_items() {
+        let values = split_csv_list(" alpha, ,beta,, gamma ,");
+        assert_eq!(values, vec!["alpha", "beta", "gamma"]);
+    }
+
+    #[test]
+    fn cstr_arg_accepts_valid_utf8() {
+        let c = CString::new("hello").expect("CString");
+        let value = unsafe { cstr_arg(c.as_ptr()) }.expect("utf8");
+        assert_eq!(value, "hello");
+    }
+
+    #[test]
+    fn cstr_arg_rejects_invalid_utf8() {
+        let bytes = [0xffu8, 0x00];
+        let ptr = bytes.as_ptr() as *const c_char;
+        let err = unsafe { cstr_arg(ptr) }.expect_err("invalid utf8 should fail");
+        assert!(err.contains("valid UTF-8"));
+    }
+
+    #[test]
+    fn resolve_path_accepts_safe_relative_path() {
+        let dir = unique_test_dir("rrcad-resolve-path");
+        fs::create_dir_all(&dir).expect("create temp dir");
+        fs::create_dir_all(dir.join("exports")).expect("create exports dir");
+        let original = std::env::current_dir().expect("current dir");
+        std::env::set_current_dir(&dir).expect("enter temp dir");
+
+        let c_path = CString::new("exports/shape.step").expect("CString");
+        let mut err: *const c_char = ptr::null();
+        let resolved = unsafe { resolve_path(c_path.as_ptr(), &mut err as *mut *const c_char) }
+            .expect("safe path");
+        assert_eq!(resolved, dir.join("exports/shape.step"));
+        assert!(err.is_null(), "error pointer should remain null");
+
+        std::env::set_current_dir(original).expect("restore cwd");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolve_path_rejects_invalid_utf8() {
+        let bytes = [0xffu8, 0x00];
+        let mut err: *const c_char = ptr::null();
+        let result = unsafe { resolve_path(bytes.as_ptr() as *const c_char, &mut err) };
+        assert!(result.is_none());
+        assert!(!err.is_null());
     }
 }

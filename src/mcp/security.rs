@@ -186,3 +186,45 @@ pub fn create_mcp_vm() -> Result<MrubyVm, String> {
     vm.eval(MCP_SECURITY_PRELUDE)?;
     Ok(vm)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        MCP_MAX_CODE_BYTES, create_mcp_vm, validate_code_length, validate_code_nulls,
+        validate_format,
+    };
+
+    #[test]
+    fn validate_code_length_accepts_limit_and_rejects_over_limit() {
+        let ok = "a".repeat(MCP_MAX_CODE_BYTES);
+        validate_code_length(&ok).expect("exact limit should pass");
+
+        let too_long = "a".repeat(MCP_MAX_CODE_BYTES + 1);
+        let err = validate_code_length(&too_long).expect_err("over limit should fail");
+        assert!(err.contains("64 KB size limit"));
+    }
+
+    #[test]
+    fn validate_code_nulls_rejects_nul_bytes() {
+        let err = validate_code_nulls("abc\0def").expect_err("nul bytes should fail");
+        assert!(err.contains("null bytes"));
+    }
+
+    #[test]
+    fn validate_format_accepts_known_exports_and_rejects_unknown() {
+        for format in ["step", "stl", "glb", "gltf", "obj"] {
+            validate_format(format).expect("known export format should pass");
+        }
+        let err = validate_format("exe").expect_err("unknown format should fail");
+        assert!(err.contains("Unsupported export format"));
+    }
+
+    #[test]
+    fn create_mcp_vm_loads_security_prelude() {
+        let mut vm = create_mcp_vm().expect("VM should initialise");
+        let err = vm
+            .eval("system('id')")
+            .expect_err("system should be undefined");
+        assert!(err.contains("undefined method"));
+    }
+}
