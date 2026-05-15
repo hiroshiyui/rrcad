@@ -16,6 +16,24 @@ fn tmp(name: &str) -> String {
     std::env::temp_dir().join(name).to_str().unwrap().to_owned()
 }
 
+fn assert_rebuild_round_trips(shape: &Shape) {
+    let rebuilt = shape.rebuild().expect("rebuild failed");
+    assert_eq!(
+        shape.shape_type_name().unwrap(),
+        rebuilt.shape_type_name().unwrap(),
+        "rebuild changed shape type"
+    );
+
+    let a = shape.bounding_box().unwrap();
+    let b = rebuilt.bounding_box().unwrap();
+    for (lhs, rhs) in a.iter().zip(b.iter()) {
+        assert!(
+            (lhs - rhs).abs() < 1.0e-6,
+            "rebuild changed bounding box: original={a:?}, rebuilt={b:?}"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Primitives
 // ---------------------------------------------------------------------------
@@ -102,6 +120,99 @@ fn feature_rebuild_round_trips_geometry() {
         (v0 - v1).abs() < 1.0e-6,
         "rebuild changed volume: original={v0}, rebuilt={v1}"
     );
+}
+
+#[test]
+fn feature_rebuild_round_trips_boolean_fuse() {
+    let a = Shape::make_box(10.0, 10.0, 10.0).unwrap();
+    let b = Shape::make_box(10.0, 10.0, 10.0)
+        .unwrap()
+        .translate(5.0, 0.0, 0.0)
+        .unwrap();
+    let fused = a.fuse(&b).expect("fuse failed");
+    assert_rebuild_round_trips(&fused);
+}
+
+#[test]
+fn feature_rebuild_round_trips_boolean_cut() {
+    let base = Shape::make_box(20.0, 20.0, 20.0).unwrap();
+    let cyl = Shape::make_cylinder(5.0, 25.0).unwrap();
+    let cut = base.cut(&cyl).expect("cut failed");
+    assert_rebuild_round_trips(&cut);
+}
+
+#[test]
+fn feature_rebuild_round_trips_boolean_common() {
+    let a = Shape::make_box(20.0, 10.0, 10.0).unwrap();
+    let b = Shape::make_box(10.0, 20.0, 10.0).unwrap();
+    let common = a.common(&b).expect("common failed");
+    assert_rebuild_round_trips(&common);
+}
+
+#[test]
+fn feature_rebuild_round_trips_rotate_and_mirror() {
+    let rotated = Shape::make_box(10.0, 10.0, 10.0)
+        .unwrap()
+        .rotate(0.0, 0.0, 1.0, 45.0)
+        .unwrap();
+    assert_rebuild_round_trips(&rotated);
+
+    let mirrored = Shape::make_box(10.0, 10.0, 10.0)
+        .unwrap()
+        .mirror("xy")
+        .unwrap();
+    assert_rebuild_round_trips(&mirrored);
+}
+
+#[test]
+fn feature_rebuild_round_trips_extrude_and_revolve() {
+    let extruded = Shape::make_circle_face(2.0).unwrap().extrude(5.0).unwrap();
+    assert_rebuild_round_trips(&extruded);
+
+    let revolved = Shape::make_rect(4.0, 2.0).unwrap().revolve(180.0).unwrap();
+    assert_rebuild_round_trips(&revolved);
+}
+
+#[test]
+fn feature_rebuild_round_trips_pattern_and_slice() {
+    let linear = Shape::make_box(2.0, 2.0, 2.0)
+        .unwrap()
+        .linear_pattern(3, 5.0, 0.0, 0.0)
+        .unwrap();
+    assert_rebuild_round_trips(&linear);
+
+    let polar = Shape::make_box(1.0, 1.0, 5.0)
+        .unwrap()
+        .translate(3.0, 0.0, 0.0)
+        .unwrap()
+        .polar_pattern(4, 360.0)
+        .unwrap();
+    assert_rebuild_round_trips(&polar);
+
+    let sliced = Shape::make_box(10.0, 10.0, 10.0)
+        .unwrap()
+        .slice("xy", 5.0)
+        .unwrap();
+    assert_rebuild_round_trips(&sliced);
+}
+
+#[test]
+fn feature_rebuild_round_trips_surface_ops() {
+    let ruled_a = Shape::make_spline_3d(&[
+        0.0, 0.0, 0.0, //
+        2.0, 0.0, 0.0, //
+        2.0, 1.0, 0.0, //
+        0.0, 1.0, 0.0, //
+        0.0, 0.0, 0.0,
+    ])
+    .unwrap();
+    let ruled_b = ruled_a.translate(0.0, 0.0, 3.0).unwrap();
+    let ruled = Shape::ruled_surface(&ruled_a, &ruled_b).expect("ruled_surface failed");
+    assert_rebuild_round_trips(&ruled);
+
+    let boundary = Shape::make_arc(5.0, 0.0, 360.0).unwrap();
+    let filled = Shape::fill_surface(&boundary).expect("fill_surface failed");
+    assert_rebuild_round_trips(&filled);
 }
 
 #[test]
