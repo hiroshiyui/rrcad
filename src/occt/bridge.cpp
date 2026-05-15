@@ -177,11 +177,35 @@
 #include <XCAFDoc_DocumentTool.hxx>
 #include <XCAFDoc_ShapeTool.hxx>
 
+#include <atomic>
+#include <filesystem>
 #include <cmath>
+#include <unistd.h>
 #include <stdexcept>
 #include <string>
 
 namespace rrcad {
+
+namespace {
+
+std::filesystem::path atomic_export_temp_path(const std::string& final_path) {
+    static std::atomic<unsigned long long> seq{1};
+    std::filesystem::path final(final_path);
+    auto id = seq.fetch_add(1, std::memory_order_relaxed);
+    auto pid = static_cast<unsigned long long>(::getpid());
+    auto name = final.stem().string() + ".rrcad-tmp." + std::to_string(pid) + "." +
+                std::to_string(id) + final.extension().string();
+    return final.parent_path() / name;
+}
+
+void rename_export_artifact(const std::filesystem::path& from,
+                            const std::filesystem::path& to) {
+    if (std::filesystem::exists(from)) {
+        std::filesystem::rename(from, to);
+    }
+}
+
+} // namespace
 
 // ---------------------------------------------------------------------------
 // Primitives
@@ -2675,9 +2699,11 @@ void export_step(const OcctShape& shape, rust::Str path) {
             throw std::runtime_error("STEPControl_Writer::Transfer failed");
 
         std::string path_str(path.data(), path.size());
-        status = writer.Write(path_str.c_str());
+        auto temp_path = atomic_export_temp_path(path_str);
+        status = writer.Write(temp_path.string().c_str());
         if (status != IFSelect_RetDone)
             throw std::runtime_error("STEPControl_Writer::Write failed for: " + path_str);
+        rename_export_artifact(temp_path, path_str);
     } catch (const Standard_Failure& e) {
         throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
     } catch (const std::exception&) {
@@ -2695,9 +2721,11 @@ void export_stl(const OcctShape& shape, rust::Str path) {
 
         std::string path_str(path.data(), path.size());
         StlAPI_Writer writer;
-        Standard_Boolean ok = writer.Write(shape.get(), path_str.c_str());
+        auto temp_path = atomic_export_temp_path(path_str);
+        Standard_Boolean ok = writer.Write(shape.get(), temp_path.string().c_str());
         if (!ok)
             throw std::runtime_error("StlAPI_Writer::Write failed for: " + path_str);
+        rename_export_artifact(temp_path, path_str);
     } catch (const Standard_Failure& e) {
         throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
     } catch (const std::exception&) {
@@ -2737,12 +2765,19 @@ void export_gltf(const OcctShape& shape, rust::Str path, double linear_deflectio
     try {
         Handle(TDocStd_Document) doc = make_xde_doc(shape, linear_deflection, "glTF export");
         std::string path_str(path.data(), path.size());
-        TCollection_AsciiString gltf_path(path_str.c_str());
+        auto temp_path = atomic_export_temp_path(path_str);
+        TCollection_AsciiString gltf_path(temp_path.string().c_str());
         RWGltf_CafWriter writer(gltf_path, /*isBinary=*/Standard_False);
         TColStd_IndexedDataMapOfStringString metadata;
         Message_ProgressRange progress;
         if (!writer.Perform(doc, metadata, progress))
             throw std::runtime_error("RWGltf_CafWriter::Perform failed for: " + path_str);
+        rename_export_artifact(temp_path, path_str);
+        auto temp_bin = temp_path;
+        temp_bin.replace_extension(".bin");
+        auto final_bin = std::filesystem::path(path_str);
+        final_bin.replace_extension(".bin");
+        rename_export_artifact(temp_bin, final_bin);
     } catch (const Standard_Failure& e) {
         throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
     } catch (const std::exception&) {
@@ -2761,7 +2796,8 @@ void export_glb(const OcctShape& shape, rust::Str path, double linear_deflection
 
         Handle(TDocStd_Document) doc = make_xde_doc(shape, linear_deflection, "GLB export");
         std::string path_str(path.data(), path.size());
-        TCollection_AsciiString glb_path(path_str.c_str());
+        auto temp_path = atomic_export_temp_path(path_str);
+        TCollection_AsciiString glb_path(temp_path.string().c_str());
         RWGltf_CafWriter writer(glb_path, /*isBinary=*/Standard_True);
         // TRS decomposition (translation/rotation/scale) is lighter and more
         // interoperable with animation tools than the default 4×4 matrix.
@@ -2770,6 +2806,7 @@ void export_glb(const OcctShape& shape, rust::Str path, double linear_deflection
         Message_ProgressRange progress;
         if (!writer.Perform(doc, metadata, progress))
             throw std::runtime_error("RWGltf_CafWriter::Perform (GLB) failed for: " + path_str);
+        rename_export_artifact(temp_path, path_str);
     } catch (const Standard_Failure& e) {
         throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
     } catch (const std::exception&) {
@@ -2783,12 +2820,19 @@ void export_obj(const OcctShape& shape, rust::Str path, double linear_deflection
     try {
         Handle(TDocStd_Document) doc = make_xde_doc(shape, linear_deflection, "OBJ export");
         std::string path_str(path.data(), path.size());
-        TCollection_AsciiString obj_path(path_str.c_str());
+        auto temp_path = atomic_export_temp_path(path_str);
+        TCollection_AsciiString obj_path(temp_path.string().c_str());
         RWObj_CafWriter writer(obj_path);
         TColStd_IndexedDataMapOfStringString metadata;
         Message_ProgressRange progress;
         if (!writer.Perform(doc, metadata, progress))
             throw std::runtime_error("RWObj_CafWriter::Perform failed for: " + path_str);
+        rename_export_artifact(temp_path, path_str);
+        auto temp_mtl = temp_path;
+        temp_mtl.replace_extension(".mtl");
+        auto final_mtl = std::filesystem::path(path_str);
+        final_mtl.replace_extension(".mtl");
+        rename_export_artifact(temp_mtl, final_mtl);
     } catch (const Standard_Failure& e) {
         throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
     } catch (const std::exception&) {
