@@ -145,7 +145,7 @@ See `tests/phase8_tier5.rs` (11 tests).
 
 ---
 
-## Phase 9 — Model Context Protocol (MCP) Server ✓ COMPLETE
+## ✓ Phase 9 — Model Context Protocol (MCP) Server
 
 **Implemented in** `src/mcp/mod.rs` for the public wiring, with focused helpers under `src/mcp/`. Start with `cargo run -- --mcp`.
 
@@ -165,7 +165,7 @@ Test coverage: 10 unit tests in `src/mcp/mod.rs`, 13 integration tests in
 
 ---
 
-## Phase 10 — Usability and Robust Parametric CAD
+## ✓ Phase 10 — Usability and Robust Parametric CAD
 
 These are forward-looking CAD enhancements intended to move `rrcad` from a
 powerful scripted geometry engine toward a more complete, inspectable CAD
