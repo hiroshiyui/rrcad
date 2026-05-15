@@ -361,6 +361,7 @@ mod construction_ops;
 mod construction_splines;
 mod construction_surface_ops;
 mod drawing_ops;
+mod feature_node_rebuild;
 mod file_ops;
 mod primitive_boolean_ops;
 mod primitive_constructors;
