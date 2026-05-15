@@ -1,5 +1,5 @@
 use super::{GdtFeatureControlSpec, GdtRenderSpec, Shape, ffi};
-use crate::occt::shape_core::{
+use crate::occt::shape_core_debug::{
     DEBUG_EXPORT_SEQ, debug_export_component, debug_exports_enabled, debug_exports_root,
 };
 use std::collections::BTreeSet;

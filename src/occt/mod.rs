@@ -372,6 +372,7 @@ mod primitive_refs;
 mod primitive_shape_ops;
 mod query;
 mod shape_core;
+mod shape_core_debug;
 mod shape_core_diagnostics;
 mod shape_core_named_refs;
 mod surface_ops;

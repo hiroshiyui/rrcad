@@ -2,10 +2,7 @@ use super::{FeatureNode, FeatureOp, Shape, ffi};
 use cxx::UniquePtr;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
-use std::env;
-use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
 
 /// Best-effort one-word shape kind ("solid", "face", "wire", …) used to
 /// enrich error messages. Falls back to `"shape"` if the type query
@@ -23,47 +20,6 @@ pub(crate) fn hint(s: &str) -> String {
         String::new()
     } else {
         format!("\n  hint: {s}")
-    }
-}
-
-pub(crate) static DEBUG_EXPORT_SEQ: AtomicUsize = AtomicUsize::new(1);
-
-pub(crate) fn debug_exports_enabled() -> bool {
-    matches!(
-        env::var("RRCAD_DEBUG_EXPORTS")
-            .ok()
-            .as_deref()
-            .map(|v| v.to_ascii_lowercase())
-            .as_deref(),
-        Some("1") | Some("true") | Some("yes") | Some("on")
-    )
-}
-
-pub(crate) fn debug_exports_root() -> PathBuf {
-    env::var_os("RRCAD_DEBUG_EXPORTS_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| env::temp_dir().join("rrcad-debug"))
-}
-
-pub(crate) fn debug_export_component(s: &str) -> String {
-    let mut out = String::new();
-    for ch in s.chars() {
-        if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
-            out.push(ch);
-        } else {
-            out.push('_');
-        }
-    }
-    while out.starts_with('_') {
-        out.remove(0);
-    }
-    while out.ends_with('_') {
-        out.pop();
-    }
-    if out.is_empty() {
-        "shape".to_string()
-    } else {
-        out
     }
 }
 
