@@ -70,6 +70,11 @@ fn query_or_error<T: serde::Serialize>(result: Result<T, String>) -> serde_json:
 /// lifetime (drop it to shut down the server). Returns `Err` if the preview
 /// state was already initialised or the tokio runtime could not be created.
 pub fn start(glb_path: PathBuf, port: u16) -> Result<tokio::runtime::Runtime, String> {
+    let listener = server::bind_listener(port)?;
+    let actual_port = listener
+        .local_addr()
+        .map_err(|e| format!("failed to get preview port address: {e}"))?
+        .port();
     let (reload_tx, _) = broadcast::channel(16);
     PREVIEW
         .set(PreviewState {
@@ -77,15 +82,14 @@ pub fn start(glb_path: PathBuf, port: u16) -> Result<tokio::runtime::Runtime, St
             reload_tx,
         })
         .map_err(|_| "preview::start called more than once".to_string())?;
-
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| format!("failed to create tokio runtime: {e}"))?;
-    rt.spawn(server::serve(port));
+    rt.spawn(server::serve_with_listener(listener));
 
     // Give the server a moment to bind before opening the browser.
     std::thread::sleep(std::time::Duration::from_millis(300));
 
-    let url = format!("http://localhost:{port}");
+    let url = format!("http://localhost:{actual_port}");
     println!("Preview server: {url}  (Ctrl-C to quit)");
     open::that(&url).ok();
 

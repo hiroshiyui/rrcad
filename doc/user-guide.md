@@ -90,7 +90,8 @@ That creates a 10 × 20 × 30 mm box, exports it as STEP, and (in `--preview` mo
 ```bash
 cargo run                                     # interactive REPL
 cargo run -- script.rb                        # run script
-cargo run -- --preview script.rb              # live browser preview
+cargo run -- --preview script.rb              # live browser preview (auto-selects a free port)
+cargo run -- --preview --preview-port 3000 script.rb  # use a fixed preview port
 cargo run -- --param width=80 script.rb       # run with parameter override
 cargo run -- --design-table table.csv script.rb  # batch export from CSV
 cargo run -- --mcp                            # MCP server (stdio JSON-RPC)
@@ -99,6 +100,7 @@ cargo run -- --mcp                            # MCP server (stdio JSON-RPC)
 | Flag | Description |
 |------|-------------|
 | `--preview` | Starts a local HTTP server and browser viewer; auto-reloads on script save |
+| `--preview-port <n>` | Override the preview port when using `--preview` |
 | `--param name=value` | Override a `param` declaration in the script (can repeat) |
 | `--design-table <csv>` | Run the script once per CSV row, substituting named columns as params |
 | `--mcp` | Serve the CAD engine over the Model Context Protocol |

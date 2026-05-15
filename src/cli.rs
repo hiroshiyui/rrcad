@@ -304,7 +304,10 @@ impl Helper for DslHelper {}
 enum Mode {
     Repl,
     Script(String),
-    Preview(String),
+    Preview {
+        path: String,
+        port: Option<u16>,
+    },
     DesignTable {
         table: String,
         script: String,
@@ -329,7 +332,7 @@ struct CliArgs {
 ///   rrcad                                            # REPL
 ///   rrcad --repl                                     # REPL (explicit)
 ///   rrcad [--param k=v]... <script.rb>               # run script
-///   rrcad --preview [--param k=v]... <script.rb>     # live preview
+///   rrcad --preview [--preview-port N] [--param k=v]... <script.rb>  # live preview
 ///   rrcad --design-table table.csv <script.rb>       # batch export
 fn parse_args() -> CliArgs {
     match parse_args_from(std::env::args().skip(1)) {
@@ -347,6 +350,7 @@ where
 {
     let raw: Vec<String> = raw.into_iter().collect();
     let mut params: Vec<(String, String)> = Vec::new();
+    let mut preview_port: Option<u16> = None;
     // Non-param args that determine the run mode.
     let mut rest: Vec<String> = Vec::new();
 
@@ -366,6 +370,16 @@ where
                     ));
                 }
             }
+        } else if raw[i] == "--preview-port" {
+            i += 1;
+            if i >= raw.len() {
+                return Err("error: --preview-port requires a port number".to_string());
+            }
+            preview_port = Some(
+                raw[i]
+                    .parse::<u16>()
+                    .map_err(|_| format!("error: invalid --preview-port value: {}", raw[i]))?,
+            );
         } else {
             rest.push(raw[i].clone());
         }
@@ -382,9 +396,15 @@ where
             }
         },
         Some("--preview") => match rest.get(1) {
-            Some(path) => Mode::Preview(path.clone()),
+            Some(path) => Mode::Preview {
+                path: path.clone(),
+                port: preview_port,
+            },
             None => {
-                return Err("usage: rrcad --preview [--param key=val]... <script.rb>".to_string());
+                return Err(
+                    "usage: rrcad --preview [--preview-port N] [--param key=val]... <script.rb>"
+                        .to_string(),
+                );
             }
         },
         Some("--design-table") => match (rest.get(1), rest.get(2)) {
@@ -411,7 +431,7 @@ pub fn run() {
     match mode {
         Mode::Repl => run_repl(),
         Mode::Script(path) => run_script(&path, &params),
-        Mode::Preview(path) => run_preview(&path, &params),
+        Mode::Preview { path, port } => run_preview(&path, &params, port),
         Mode::DesignTable { table, script } => {
             if let Err(e) = run_design_table(&table, &script, &params) {
                 eprintln!("{e}");
@@ -614,7 +634,7 @@ fn make_preview_glb_path() -> std::path::PathBuf {
     std::env::temp_dir().join(format!("rrcad_preview_{token}.glb"))
 }
 
-fn run_preview(script_path: &str, params: &[(String, String)]) {
+fn run_preview(script_path: &str, params: &[(String, String)], port: Option<u16>) {
     use notify::{RecursiveMode, Watcher};
     use rrcad::preview;
 
@@ -625,7 +645,7 @@ fn run_preview(script_path: &str, params: &[(String, String)]) {
     let glb_path = make_preview_glb_path();
     // Keep a copy so we can delete the file when the process exits.
     let glb_path_for_cleanup = glb_path.clone();
-    let _rt = match preview::start(glb_path, 3000) {
+    let _rt = match preview::start(glb_path, port.unwrap_or(0)) {
         Ok(rt) => rt,
         Err(e) => {
             eprintln!("error: failed to start preview server: {e}");
@@ -806,7 +826,19 @@ mod parse_args_tests {
     #[test]
     fn parse_args_supports_preview_and_design_table_modes() {
         let preview = parse_args_from(args(&["--preview", "script.rb"])).expect("preview args");
-        assert!(matches!(preview.mode, Mode::Preview(ref path) if path == "script.rb"));
+        assert!(
+            matches!(preview.mode, Mode::Preview { ref path, port: None } if path == "script.rb")
+        );
+
+        let preview = parse_args_from(args(&["--preview-port", "4321", "--preview", "script.rb"]))
+            .expect("preview args with port");
+        assert!(matches!(
+            preview.mode,
+            Mode::Preview {
+                ref path,
+                port: Some(4321)
+            } if path == "script.rb"
+        ));
 
         let table = parse_args_from(args(&["--design-table", "table.csv", "script.rb"]))
             .expect("design table args");
@@ -841,6 +873,13 @@ mod parse_args_tests {
     fn parse_args_rejects_missing_mode_args() {
         let err = parse_args_from(args(&["--preview"])).expect_err("missing preview path");
         assert!(err.contains("usage: rrcad --preview"));
+
+        let err = parse_args_from(args(&["--preview-port"])).expect_err("missing preview port");
+        assert!(err.contains("requires a port number"));
+
+        let err = parse_args_from(args(&["--preview-port", "oops", "--preview", "script.rb"]))
+            .expect_err("invalid preview port");
+        assert!(err.contains("invalid --preview-port value"));
 
         let err = parse_args_from(args(&["--design-table", "table.csv"]))
             .expect_err("missing design-table script");

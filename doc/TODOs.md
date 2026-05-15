@@ -301,7 +301,7 @@ overlap the previous layer.
 - [ ] Make CSV design-table parsing fail fast on row width mismatches instead of silently truncating with `zip()`.
 - [ ] Add explicit tests and documentation for the intentionally strict export-path confinement behavior.
 - [ ] Consider consolidating repetitive Ruby-to-native FFI wrapper patterns into shared helpers or generated bindings.
-- [ ] Make the preview port configurable or auto-select a free port to reduce local port conflicts.
+- [x] Make the preview port configurable or auto-select a free port to reduce local port conflicts.
 - [x] Add a short maintainer note for the OCCT bridge and mRuby lifetime invariants so future low-level edits stay consistent.
 
 ## Future Works

@@ -15,17 +15,32 @@ use axum::{
     routing::get,
 };
 use std::path::Path;
+use std::net::TcpListener as StdTcpListener;
 use tokio::sync::broadcast;
 
 const VIEWER_HTML: &str = include_str!("viewer.html");
 const LOGO_PNG: &[u8] = include_bytes!("../../doc/images/rrcad-logo.png");
 
 pub async fn serve(port: u16) {
-    let addr = format!("127.0.0.1:{port}");
-    match tokio::net::TcpListener::bind(&addr).await {
+    match bind_listener(port) {
         Ok(listener) => serve_with_listener(listener).await,
-        Err(e) => eprintln!("rrcad preview: failed to bind {addr}: {e}"),
+        Err(e) => eprintln!("rrcad preview: failed to bind 127.0.0.1:{port}: {e}"),
     }
+}
+
+/// Bind the preview server to localhost, optionally requesting a specific port.
+///
+/// Passing `0` asks the OS to choose a free port, which avoids conflicts when
+/// the default preview port is already in use.
+pub fn bind_listener(port: u16) -> Result<tokio::net::TcpListener, String> {
+    let addr = format!("127.0.0.1:{port}");
+    let listener = StdTcpListener::bind(&addr)
+        .map_err(|e| format!("{e}"))?;
+    listener
+        .set_nonblocking(true)
+        .map_err(|e| format!("failed to set nonblocking mode: {e}"))?;
+    tokio::net::TcpListener::from_std(listener)
+        .map_err(|e| format!("failed to convert listener: {e}"))
 }
 
 /// Start the axum preview server on a pre-bound listener.
@@ -227,4 +242,5 @@ mod tests {
         );
         assert_eq!(body_bytes(response).await, br#"{"hello":"world"}"#);
     }
+
 }
