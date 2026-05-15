@@ -594,4 +594,28 @@ mod tests {
         let result = vm.eval("$__s.validate").unwrap();
         assert_eq!(result, ":ok", "a simple box should be valid");
     }
+
+    #[tokio::test]
+    async fn server_info_advertises_tools_and_resources() {
+        let info = McpServer.get_info();
+        assert!(info.capabilities.tools.is_some());
+        assert!(info.capabilities.resources.is_some());
+        assert_eq!(info.server_info.name, "rmcp");
+    }
+
+    #[test]
+    fn ok_json_wraps_payload_as_text_content() {
+        let result = ok_json(json!({"answer": 42}));
+        assert_eq!(result.is_error, Some(false));
+        let text = result.content[0].as_text().expect("text content");
+        assert_eq!(text.text, r#"{"answer":42}"#);
+    }
+
+    #[test]
+    fn err_result_marks_tool_failure() {
+        let result = err_result("bad input");
+        assert_eq!(result.is_error, Some(true));
+        let text = result.content[0].as_text().expect("text content");
+        assert_eq!(text.text, "bad input");
+    }
 }
