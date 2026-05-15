@@ -90,6 +90,14 @@ Module.module_eval do
     undef_method(m) rescue nil
   end
 end
+
+class Object
+  [
+    :File, :IO, :Dir, :FileTest, :Process, :Tempfile, :Open3
+  ].each do |const|
+    remove_const(const) rescue nil
+  end
+end
 "#;
 
 // ---------------------------------------------------------------------------

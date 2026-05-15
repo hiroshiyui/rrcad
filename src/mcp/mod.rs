@@ -550,16 +550,18 @@ mod tests {
         );
     }
 
-    /// Verify that File.read is absent when compiled with the mcp_safe gembox.
-    ///
-    /// This test is **ignored** when the binary was built with the default
-    /// gembox (which includes mruby-io).  Delete `vendor/mruby/build/host/lib/
-    /// libmruby.a` and rebuild with `MRUBY_CONFIG=build_config/rrcad` to make
-    /// it pass (Mitigation 1).
     #[test]
-    #[ignore = "requires mcp_safe gembox rebuild (rm vendor/mruby/build/host/lib/libmruby.a && cargo build)"]
     fn test_mcp_vm_no_file_read() {
         let mut vm = create_mcp_vm().expect("VM should initialise");
+        for constant in ["File", "IO", "Dir", "FileTest", "Process"] {
+            let err = vm
+                .eval(constant)
+                .unwrap_err();
+            assert!(
+                err.contains("uninitialized constant") || err.contains("constant"),
+                "{constant} should be removed from MCP VM, got: {err}"
+            );
+        }
         let err = vm.eval("File.read('/etc/passwd')").unwrap_err();
         assert!(
             err.contains("uninitialized") || err.contains("constant") || err.contains("File"),
