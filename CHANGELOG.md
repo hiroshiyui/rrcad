@@ -62,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   radius, angle_deg)` registers a construction point at polar coordinates
   around `center`; once `center` resolves the solver derives `(cx +
   r·cos θ, cy + r·sin θ)`. Useful for bolt circles and angular layouts.
-  Closes the constraint-based-sketching MVP entry in `doc/TODOs.md`.
+  Closes the constraint-based-sketching MVP entry in `doc/ROADMAP.md`.
 - **CAM / 3-D printing — mass and build-volume helpers**
   (`src/ruby/prelude.rb`, `tests/cam_checks.rs`):
   `mass_estimate(part, density: 1.24)` computes a rough mass in grams from

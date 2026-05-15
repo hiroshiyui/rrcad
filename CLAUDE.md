@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**rrcad** is a Ruby DSL-driven 3D CAD language. Users write `.rb` scripts; mRuby executes them; Rust binds mRuby to OCCT (the geometry kernel). See `doc/TODOs.md` for the full phased roadmap.
+**rrcad** is a Ruby DSL-driven 3D CAD language. Users write `.rb` scripts; mRuby executes them; Rust binds mRuby to OCCT (the geometry kernel). See `doc/ROADMAP.md` for the full phased roadmap.
 
 ## Build & Run
 

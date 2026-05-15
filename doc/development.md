@@ -112,7 +112,7 @@ rrcad/
 ├── vendor/
 │   └── mruby/              # git submodule — mRuby 3.4.0
 └── doc/
-    ├── TODOs.md            # phased roadmap
+    ├── ROADMAP.md          # phased roadmap
     ├── development.md      # this file
     ├── api.md              # API reference
     └── troubleshooting.md  # common issues

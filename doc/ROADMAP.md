@@ -1,4 +1,4 @@
-# rrcad — Implementation History
+# rrcad — Roadmap
 
 A Ruby DSL-driven 3D CAD language. Rust as the glue layer, mRuby as the
 scripting engine, OCCT as the geometry kernel.

@@ -76,23 +76,6 @@ command is still running.
 
 Requires OCCT 7.7+ headers and libraries, and mRuby built as a static library. See [`doc/development.md`](doc/development.md) for full build setup instructions.
 
-## Roadmap
-
-See [`doc/TODOs.md`](doc/TODOs.md) for the phased implementation plan:
-
-- **Phase 0** ✓ — OCCT Rust bindings via `cxx` (primitives, boolean ops, fillets, transforms, STEP/STL/glTF export)
-- **Phase 1** ✓ — mRuby embedded; end-to-end Ruby → STEP; REPL with tab-completion and `help`
-- **Phase 2** ✓ — DSL enrichment (transforms, fillets, mirror, assemblies, sketches, extrude/revolve)
-- **Phase 3** ✓ — Spline profiles + sweep; sub-shape selectors (`.faces`, `.edges`); live browser preview (`axum` + Three.js + WebSocket file watcher; `--preview` CLI)
-- **Phase 4** ✓ — OCCT coverage: `cone`, `torus`, `wedge`, `polygon`, `ellipse`, `arc`, `loft`, `shell`, `offset`, `simplify`; selective fillet/chamfer; linear/polar patterns; STEP/STL import; bounding box / volume / surface area queries
-- **Phase 5** ✓ — Parametric design: `param` DSL + `--param` CLI override; design table batch export (`--design-table`); GLB color/material (`.color(r,g,b)`); assembly mating (`Shape#mate`, `Assembly#mate`); spline tangent constraints; feature removal (`.simplify`)
-- **Phase 6** ✓ — Variable-section sweep (`sweep_sections`); Bézier surface patches (`bezier_patch`); face/shell sewing (`sew`); Utah Teapot rebuild from 28 Newell patches
-- **Phase 7** ✓ — Asymmetric chamfer; 2D profile offset; grid pattern; `fuse_all`/`cut_all`; shape type / `closed?` / `manifold?` / `centroid` / `validate`; surface modeling (`ruled_surface`, `fill_surface`, `.slice`)
-- **Phase 8** ✓ — Part Design: `.pad`, `.pocket`, `.fillet_wire`, `datum_plane`; manufacturing: draft extrude, `helix`, thread, cbore/csink macros; inspection: `.distance_to`, `.inertia`, `.min_thickness`; 2-D drawing: `.export("part.svg")` / `.export("part.dxf")` via `HLRBRep_PolyAlgo`; advanced composition: `fragment`, `.convex_hull`, `path_pattern`, guided `.sweep`
-- **Phase 9** ✓ — MCP server: `rrcad --mcp` exposes four tools (`cad_eval`, `cad_export`, `cad_preview`, `cad_validate`) and two resources (`rrcad://api`, `rrcad://examples`) over stdio; full security hardening (sandboxed VM per call, 30 s timeout, 64 KB input cap, export path confinement)
-- **Phase 10** ✓ — Usability and robust parametric CAD: constraint-based sketching MVP (`sketch do … end` with `fixed`, `horizontal`, `vertical`, `coincident`, `dimension`, `equal_length`, `parallel`, `perpendicular`, `symmetric`, `mirror_x`/`mirror_y`, `tangent`, construction points/lines, `polar_point` for bolt circles, `circle_at`/`arc_at`/`rectangle`/`centered_rectangle`/`slot_between`, and richer solver diagnostics that name points and conflicting values); units helpers (`1.6.mm`, `2.inch`, `15.deg`); hardware helpers (`clearance_hole`, `tap_drill`, `heat_set_insert`, `socket_head_cbore`, `flat_head_csink`, `bearing_bore`, `shaft`, `screw` for `:m2`–`:m5` and standard ball-bearing sizes); assembly constraint helpers (`Assembly#distance_mate`, `axis_align`, `angle_mate`, `Shape#rotate_about`); CAM / 3-D-printing checks (`mass_estimate`, `print_volume_check`, `overhang_faces`, `draft_faces`, `hole_axes` built on `Shape#normal` and `Shape#cylinder_axis`); enriched OCCT diagnostics with operation context and actionable hints across booleans, fillets/chamfers, extrudes, sweeps, lofts, Part Design, and import/export
-- **Project-local config** ✓ COMPLETE — optional `rrcad.toml` files are loaded from the script directory or current working directory, walking up parent directories. `preview_port` sets the default browser preview port for `--preview`, `[params]` provides default `param()` overrides, and `rrcad.toml.example` is the repo template for standalone projects.
-
 ## Third-party components
 
 | Component | Version | License |

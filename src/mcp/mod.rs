@@ -2,7 +2,7 @@
 //!
 //! Activated with `rrcad --mcp`. Communicates over stdio using the standard
 //! MCP JSON-RPC protocol. All security mitigations described in Phase 9 of
-//! `doc/TODOs.md` are implemented here.
+//! `doc/ROADMAP.md` are implemented here.
 //!
 //! # Tools exposed
 //!
@@ -22,7 +22,7 @@
 //!
 //! # Security mitigations
 //!
-//! See `doc/TODOs.md § Phase 9 → Security` for the full threat model.
+//! See `doc/ROADMAP.md § Phase 9 → Security` for the full threat model.
 //!
 //! | # | Mitigation | Implementation |
 //! |---|-----------|----------------|

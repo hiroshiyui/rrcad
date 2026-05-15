@@ -984,4 +984,4 @@ puts part.manifold?
 - `doc/development.md` — Architecture and contributor guide
 - `doc/troubleshooting.md` — Extended troubleshooting reference
 - `samples/` — Eight annotated example scripts
-- `doc/TODOs.md` — Roadmap and phase status
+- `doc/ROADMAP.md` — Roadmap and phase status
