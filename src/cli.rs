@@ -300,6 +300,7 @@ impl Helper for DslHelper {}
 // CLI argument parsing
 // ---------------------------------------------------------------------------
 
+#[derive(Debug)]
 enum Mode {
     Repl,
     Script(String),
@@ -314,6 +315,7 @@ enum Mode {
     McpWorker(String),
 }
 
+#[derive(Debug)]
 struct CliArgs {
     mode: Mode,
     /// Key-value pairs from --param key=value flags.
@@ -330,7 +332,20 @@ struct CliArgs {
 ///   rrcad --preview [--param k=v]... <script.rb>     # live preview
 ///   rrcad --design-table table.csv <script.rb>       # batch export
 fn parse_args() -> CliArgs {
-    let raw: Vec<String> = std::env::args().skip(1).collect();
+    match parse_args_from(std::env::args().skip(1)) {
+        Ok(args) => args,
+        Err(message) => {
+            eprintln!("{message}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn parse_args_from<I>(raw: I) -> Result<CliArgs, String>
+where
+    I: IntoIterator<Item = String>,
+{
+    let raw: Vec<String> = raw.into_iter().collect();
     let mut params: Vec<(String, String)> = Vec::new();
     // Non-param args that determine the run mode.
     let mut rest: Vec<String> = Vec::new();
@@ -340,14 +355,15 @@ fn parse_args() -> CliArgs {
         if raw[i] == "--param" {
             i += 1;
             if i >= raw.len() {
-                eprintln!("error: --param requires a key=value argument");
-                std::process::exit(1);
+                return Err("error: --param requires a key=value argument".to_string());
             }
             match raw[i].split_once('=') {
                 Some((k, v)) => params.push((k.to_string(), v.to_string())),
                 None => {
-                    eprintln!("error: --param requires key=value format, got: {}", raw[i]);
-                    std::process::exit(1);
+                    return Err(format!(
+                        "error: --param requires key=value format, got: {}",
+                        raw[i]
+                    ));
                 }
             }
         } else {
@@ -362,15 +378,13 @@ fn parse_args() -> CliArgs {
         Some("--mcp-worker") => match rest.get(1) {
             Some(kind) => Mode::McpWorker(kind.clone()),
             None => {
-                eprintln!("usage: rrcad --mcp-worker <eval|export|preview|validate>");
-                std::process::exit(1);
+                return Err("usage: rrcad --mcp-worker <eval|export|preview|validate>".to_string());
             }
         },
         Some("--preview") => match rest.get(1) {
             Some(path) => Mode::Preview(path.clone()),
             None => {
-                eprintln!("usage: rrcad --preview [--param key=val]... <script.rb>");
-                std::process::exit(1);
+                return Err("usage: rrcad --preview [--param key=val]... <script.rb>".to_string());
             }
         },
         Some("--design-table") => match (rest.get(1), rest.get(2)) {
@@ -379,14 +393,16 @@ fn parse_args() -> CliArgs {
                 script: script.clone(),
             },
             _ => {
-                eprintln!("usage: rrcad --design-table <table.csv> [--param k=v]... <script.rb>");
-                std::process::exit(1);
+                return Err(
+                    "usage: rrcad --design-table <table.csv> [--param k=v]... <script.rb>"
+                        .to_string(),
+                );
             }
         },
         Some(path) => Mode::Script(path.to_string()),
     };
 
-    CliArgs { mode, params }
+    Ok(CliArgs { mode, params })
 }
 
 pub fn run() {
@@ -742,5 +758,95 @@ mod design_table_tests {
     #[test]
     fn parse_csv_header_only_returns_error() {
         assert!(parse_csv("name,width\n").is_err());
+    }
+}
+
+#[cfg(test)]
+mod parse_args_tests {
+    use super::{Mode, parse_args_from};
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|v| (*v).to_string()).collect()
+    }
+
+    #[test]
+    fn parse_args_defaults_to_repl() {
+        let parsed = parse_args_from(Vec::<String>::new()).expect("parse args");
+        assert!(matches!(parsed.mode, Mode::Repl));
+        assert!(parsed.params.is_empty());
+    }
+
+    #[test]
+    fn parse_args_accepts_explicit_repl() {
+        let parsed = parse_args_from(args(&["--repl"])).expect("parse args");
+        assert!(matches!(parsed.mode, Mode::Repl));
+    }
+
+    #[test]
+    fn parse_args_collects_params_and_script_mode() {
+        let parsed = parse_args_from(args(&[
+            "--param",
+            "width=42",
+            "--param",
+            "height=30",
+            "script.rb",
+        ]))
+        .expect("parse args");
+
+        assert!(matches!(parsed.mode, Mode::Script(ref path) if path == "script.rb"));
+        assert_eq!(
+            parsed.params,
+            vec![
+                ("width".to_string(), "42".to_string()),
+                ("height".to_string(), "30".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_args_supports_preview_and_design_table_modes() {
+        let preview = parse_args_from(args(&["--preview", "script.rb"])).expect("preview args");
+        assert!(matches!(preview.mode, Mode::Preview(ref path) if path == "script.rb"));
+
+        let table = parse_args_from(args(&["--design-table", "table.csv", "script.rb"]))
+            .expect("design table args");
+        assert!(matches!(
+            table.mode,
+            Mode::DesignTable {
+                ref table,
+                ref script
+            } if table == "table.csv" && script == "script.rb"
+        ));
+    }
+
+    #[test]
+    fn parse_args_supports_mcp_modes() {
+        let mcp = parse_args_from(args(&["--mcp"])).expect("mcp args");
+        assert!(matches!(mcp.mode, Mode::Mcp));
+
+        let worker = parse_args_from(args(&["--mcp-worker", "validate"])).expect("worker args");
+        assert!(matches!(worker.mode, Mode::McpWorker(ref kind) if kind == "validate"));
+    }
+
+    #[test]
+    fn parse_args_rejects_bad_param_flags() {
+        let err = parse_args_from(args(&["--param"])).expect_err("bad param should fail");
+        assert!(err.contains("requires a key=value argument"));
+
+        let err = parse_args_from(args(&["--param", "width"])).expect_err("bad param should fail");
+        assert!(err.contains("key=value format"));
+    }
+
+    #[test]
+    fn parse_args_rejects_missing_mode_args() {
+        let err = parse_args_from(args(&["--preview"])).expect_err("missing preview path");
+        assert!(err.contains("usage: rrcad --preview"));
+
+        let err = parse_args_from(args(&["--design-table", "table.csv"]))
+            .expect_err("missing design-table script");
+        assert!(err.contains("usage: rrcad --design-table"));
+
+        let err = parse_args_from(args(&["--mcp-worker"])).expect_err("missing worker kind");
+        assert!(err.contains("usage: rrcad --mcp-worker"));
     }
 }
