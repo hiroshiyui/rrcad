@@ -68,10 +68,15 @@ rrcad/
 │   │   ├── native.rs       # Rust extern "C" fns called from glue.c
 │   │   ├── glue.c          # C shim hiding mrb_value from Rust
 │   │   └── prelude.rb      # DSL prelude embedded via include_str!
-│   ├── occt/               # OCCT geometry bindings
-│   │   ├── mod.rs          # cxx::bridge + safe Shape wrapper + tests
+│   ├── occt/               # OCCT geometry bindings + focused Rust helpers
+│   │   ├── mod.rs          # cxx::bridge, safe Shape wrapper, module wiring, tests
 │   │   ├── bridge.h        # C++ header: OcctShape class + fn declarations
-│   │   └── bridge.cpp      # C++ implementation of all OCCT operations
+│   │   ├── bridge.cpp      # C++ implementation of all OCCT operations
+│   │   ├── feature_*.rs    # feature graph enum, node, impl, metadata helpers
+│   │   ├── shape_core*.rs   # core Shape construction, diagnostics, named refs, debug exports
+│   │   ├── builder_*.rs     # pattern / aggregate helper ops
+│   │   ├── primitive_*.rs   # primitives, booleans, refs, and shape modifiers
+│   │   └── *_ops.rs         # construction, file, drawing, query, and surface helpers
 │   ├── preview/            # Live browser preview (Phase 3)
 │   │   ├── mod.rs          # PreviewState, PREVIEW global, start()
 │   │   ├── server.rs       # axum routes: /, /model.glb, /ws
@@ -218,6 +223,12 @@ a thread-local `CString`; the C handler checks it and calls `mrb_raise`.
 struct that manages the `mrb_state *` lifetime via `Drop`.
 
 ### OCCT layer (`src/occt/`)
+
+`src/occt/mod.rs` is the public wiring point for the OCCT layer. The actual
+`Shape` implementation is split across focused helper modules so that
+constructor logic, feature history, preview metadata, diagnostics, and export
+operations can change independently without turning `mod.rs` back into a
+monolith.
 
 **Bridge type — `rrcad::OcctShape`:**
 

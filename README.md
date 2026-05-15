@@ -49,6 +49,10 @@ OCCT geometry kernel
   • STEP / STL / glTF export
 ```
 
+The OCCT Rust layer is intentionally split across small modules under
+`src/occt/` so that shape construction, feature history, diagnostics, preview
+metadata, and export helpers can evolve independently.
+
 **Memory model:** Each native `Shape` value wraps a heap-allocated `Box<occt::Shape>`. The raw pointer is stored directly in the mRuby `RData void*` slot. The `dfree` GC callback calls `rrcad_shape_drop` to run `drop(Box::from_raw(ptr))`. No SlotMap, no cross-language reference counting.
 
 ## Building
