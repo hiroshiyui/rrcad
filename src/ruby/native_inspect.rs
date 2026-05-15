@@ -273,3 +273,160 @@ pub unsafe extern "C" fn rrcad_shape_rebuild(
     let shape = unsafe { &*(ptr as *const Shape) };
     unsafe { shape_result_to_ptr(shape.rebuild(), error_out) }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::occt::Shape;
+    use std::{ffi::CStr, os::raw::c_char, ptr};
+
+    fn boxed_shape(shape: Shape) -> *mut c_void {
+        Box::into_raw(Box::new(shape)) as *mut c_void
+    }
+
+    unsafe fn reclaim_shape(ptr: *mut c_void) {
+        if !ptr.is_null() {
+            unsafe {
+                drop(Box::from_raw(ptr as *mut Shape));
+            }
+        }
+    }
+
+    unsafe fn error_message(err: *const c_char) -> Option<String> {
+        if err.is_null() {
+            None
+        } else {
+            Some(
+                unsafe { CStr::from_ptr(err) }
+                    .to_str()
+                    .expect("utf8")
+                    .to_string(),
+            )
+        }
+    }
+
+    #[test]
+    fn inspect_wrappers_cover_success_and_error_paths() {
+        let solid = boxed_shape(Shape::make_box(10.0, 20.0, 30.0).unwrap());
+        let top_face = boxed_shape(
+            Shape::make_box(10.0, 20.0, 30.0)
+                .unwrap()
+                .faces("top")
+                .unwrap()
+                .into_iter()
+                .next()
+                .unwrap(),
+        );
+        let cyl_face = boxed_shape(
+            Shape::make_cylinder(5.0, 10.0)
+                .unwrap()
+                .faces("all")
+                .unwrap()
+                .into_iter()
+                .next()
+                .unwrap(),
+        );
+        let translated = boxed_shape(
+            Shape::make_box(10.0, 20.0, 30.0)
+                .unwrap()
+                .translate(15.0, 0.0, 0.0)
+                .unwrap(),
+        );
+        let mut err: *const c_char = ptr::null();
+
+        let ty = unsafe { rrcad_shape_type_name(solid, &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert_eq!(unsafe { CStr::from_ptr(ty) }.to_str().unwrap(), "solid");
+
+        let mut centroid = [0.0; 3];
+        unsafe { rrcad_shape_centroid(solid, centroid.as_mut_ptr(), &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert_eq!(centroid, [5.0, 10.0, 15.0]);
+
+        let mut normal = [0.0; 3];
+        unsafe { rrcad_shape_face_normal(top_face, normal.as_mut_ptr(), &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert!(normal[2] > 0.0);
+
+        let mut axis = [0.0; 7];
+        unsafe { rrcad_shape_cylinder_axis(cyl_face, axis.as_mut_ptr(), &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert!((axis[6] - 5.0).abs() < 1.0e-6);
+
+        assert_eq!(unsafe { rrcad_shape_is_closed(solid, &mut err) }, 1);
+        assert!(unsafe { error_message(err) }.is_none());
+        assert_eq!(unsafe { rrcad_shape_is_manifold(solid, &mut err) }, 1);
+        assert!(unsafe { error_message(err) }.is_none());
+
+        let mut bb = [0.0; 6];
+        unsafe { rrcad_shape_bounding_box(solid, bb.as_mut_ptr(), &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert_eq!(bb, [0.0, 0.0, 0.0, 10.0, 20.0, 30.0]);
+
+        let vol = unsafe { rrcad_shape_volume(solid, &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert!((vol - 6000.0).abs() < 0.1);
+
+        let area = unsafe { rrcad_shape_surface_area(solid, &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert!((area - 2200.0).abs() < 1.0);
+
+        let dist = unsafe { rrcad_shape_distance_to(solid, translated, &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert!((dist - 5.0).abs() < 0.1);
+
+        let mut inertia = [0.0; 6];
+        unsafe { rrcad_shape_inertia(solid, inertia.as_mut_ptr(), &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert!(inertia.iter().all(|v| *v >= 0.0));
+
+        let thickness = unsafe { rrcad_shape_min_thickness(solid, &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert!(thickness > 0.0);
+
+        let validate = unsafe { rrcad_shape_validate(solid, &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert_eq!(unsafe { CStr::from_ptr(validate) }.to_str().unwrap(), "ok");
+
+        let history = unsafe { rrcad_shape_history(translated, &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert!(
+            unsafe { CStr::from_ptr(history) }
+                .to_str()
+                .unwrap()
+                .contains("translate")
+        );
+
+        let graph = unsafe { rrcad_shape_feature_graph(translated, &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert!(
+            unsafe { CStr::from_ptr(graph) }
+                .to_str()
+                .unwrap()
+                .contains("translate")
+        );
+
+        let rebuilt = unsafe { rrcad_shape_rebuild(translated, &mut err) };
+        assert!(unsafe { error_message(err) }.is_none());
+        assert!(!rebuilt.is_null());
+
+        let mut bad_err: *const c_char = ptr::null();
+        let mut out = [0.0; 3];
+        let face_err = unsafe { rrcad_shape_face_normal(solid, out.as_mut_ptr(), &mut bad_err) };
+        assert_eq!(face_err, ());
+        assert!(unsafe { error_message(bad_err) }.is_some());
+
+        let mut bad_err: *const c_char = ptr::null();
+        let axis_err = unsafe { rrcad_shape_cylinder_axis(solid, axis.as_mut_ptr(), &mut bad_err) };
+        assert_eq!(axis_err, ());
+        assert!(unsafe { error_message(bad_err) }.is_some());
+
+        unsafe {
+            reclaim_shape(solid);
+            reclaim_shape(top_face);
+            reclaim_shape(cyl_face);
+            reclaim_shape(translated);
+            reclaim_shape(rebuilt);
+        }
+    }
+}

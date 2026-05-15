@@ -407,6 +407,10 @@ mod tests {
         FeatureNode::new(op, parents, history_entry.to_string())
     }
 
+    fn leaf(op: FeatureOp, history_entry: &str) -> Arc<FeatureNode> {
+        node(op, Vec::new(), history_entry)
+    }
+
     #[test]
     fn rebuild_translates_feature_tree() {
         let base = node(
@@ -467,6 +471,323 @@ mod tests {
                 err,
                 "cannot rebuild opaque feature 'manual' from history entry: manual"
             ),
+        }
+    }
+
+    #[test]
+    fn rebuild_covers_common_feature_branches() {
+        let box_a = leaf(
+            FeatureOp::Box {
+                dx: 10.0,
+                dy: 20.0,
+                dz: 30.0,
+            },
+            "box(dx=10, dy=20, dz=30)",
+        );
+        let box_b = leaf(
+            FeatureOp::Box {
+                dx: 6.0,
+                dy: 8.0,
+                dz: 10.0,
+            },
+            "box(dx=6, dy=8, dz=10)",
+        );
+        let face_a = leaf(FeatureOp::Rect { w: 10.0, h: 10.0 }, "rect(w=10, h=10)");
+        let face_b = leaf(FeatureOp::Rect { w: 12.0, h: 12.0 }, "rect(w=12, h=12)");
+        let face_c = leaf(FeatureOp::Circle { r: 5.0 }, "circle(r=5)");
+        let path = leaf(
+            FeatureOp::Spline3D {
+                points: vec![
+                    0.0, 0.0, 0.0, //
+                    5.0, 0.0, 2.0, //
+                    10.0, 0.0, 0.0,
+                ],
+                tangents: None,
+            },
+            "spline_3d",
+        );
+        let guide = leaf(
+            FeatureOp::Spline3D {
+                points: vec![
+                    0.0, 0.0, 0.0, //
+                    5.0, 2.0, 2.0, //
+                    10.0, 0.0, 0.0,
+                ],
+                tangents: None,
+            },
+            "spline_3d_guide",
+        );
+
+        for node in [
+            node(
+                FeatureOp::Translate {
+                    dx: 5.0,
+                    dy: 0.0,
+                    dz: 0.0,
+                },
+                vec![box_a.clone()],
+                "translate(dx=5, dy=0, dz=0)",
+            ),
+            node(
+                FeatureOp::Rotate {
+                    axis_x: 0.0,
+                    axis_y: 0.0,
+                    axis_z: 1.0,
+                    angle_deg: 45.0,
+                },
+                vec![box_a.clone()],
+                "rotate(axis=1)",
+            ),
+            node(
+                FeatureOp::Scale { factor: 2.0 },
+                vec![box_a.clone()],
+                "scale(factor=2)",
+            ),
+            node(
+                FeatureOp::ScaleXyz {
+                    sx: 2.0,
+                    sy: 3.0,
+                    sz: 4.0,
+                },
+                vec![box_a.clone()],
+                "scale_xyz",
+            ),
+            node(
+                FeatureOp::Mirror {
+                    plane: "xy".to_string(),
+                },
+                vec![box_a.clone()],
+                "mirror(plane=xy)",
+            ),
+            node(FeatureOp::Fuse, vec![box_a.clone(), box_b.clone()], "fuse"),
+            node(FeatureOp::Cut, vec![box_a.clone(), box_b.clone()], "cut"),
+            node(
+                FeatureOp::Common,
+                vec![box_a.clone(), box_b.clone()],
+                "common",
+            ),
+            node(
+                FeatureOp::Extrude {
+                    height: 5.0,
+                    twist_deg: 0.0,
+                    scale: 1.0,
+                },
+                vec![face_c.clone()],
+                "extrude",
+            ),
+            node(
+                FeatureOp::Revolve { angle_deg: 180.0 },
+                vec![face_a.clone()],
+                "revolve",
+            ),
+            node(
+                FeatureOp::Loft {
+                    ruled: false,
+                    profile_count: 2,
+                },
+                vec![face_a.clone(), face_b.clone()],
+                "loft",
+            ),
+            node(
+                FeatureOp::Shell { thickness: 2.0 },
+                vec![box_a.clone()],
+                "shell",
+            ),
+            node(
+                FeatureOp::Offset { distance: 1.0 },
+                vec![box_a.clone()],
+                "offset",
+            ),
+            node(
+                FeatureOp::Offset2D { distance: 1.0 },
+                vec![face_a.clone()],
+                "offset_2d",
+            ),
+            node(
+                FeatureOp::Simplify {
+                    min_feature_size: 0.5,
+                },
+                vec![box_a.clone()],
+                "simplify",
+            ),
+            node(
+                FeatureOp::Sweep,
+                vec![face_a.clone(), path.clone()],
+                "sweep",
+            ),
+            node(
+                FeatureOp::PatternLinear {
+                    n: 3,
+                    dx: 5.0,
+                    dy: 0.0,
+                    dz: 0.0,
+                },
+                vec![box_a.clone()],
+                "linear_pattern",
+            ),
+            node(
+                FeatureOp::PatternPolar {
+                    n: 3,
+                    angle_deg: 360.0,
+                },
+                vec![box_a.clone()],
+                "polar_pattern",
+            ),
+            node(
+                FeatureOp::Slice {
+                    plane: "xy".to_string(),
+                    offset: 5.0,
+                },
+                vec![box_a.clone()],
+                "slice",
+            ),
+            node(FeatureOp::ConvexHull, vec![box_a.clone()], "convex_hull"),
+            node(
+                FeatureOp::PathPattern { n: 3 },
+                vec![face_a.clone(), path.clone()],
+                "path_pattern",
+            ),
+            node(
+                FeatureOp::Fillet { radius: 1.0 },
+                vec![box_a.clone()],
+                "fillet",
+            ),
+            node(
+                FeatureOp::FilletSel {
+                    radius: 1.0,
+                    selector: "vertical".to_string(),
+                },
+                vec![box_a.clone()],
+                "fillet_sel",
+            ),
+            node(
+                FeatureOp::FilletVar { r1: 1.0, r2: 2.0 },
+                vec![box_a.clone()],
+                "fillet_var",
+            ),
+            node(
+                FeatureOp::FilletVarSel {
+                    r1: 1.0,
+                    r2: 2.0,
+                    selector: "vertical".to_string(),
+                },
+                vec![box_a.clone()],
+                "fillet_var_sel",
+            ),
+            node(
+                FeatureOp::Chamfer { dist: 1.0 },
+                vec![box_a.clone()],
+                "chamfer",
+            ),
+            node(
+                FeatureOp::ChamferSel {
+                    dist: 1.0,
+                    selector: "vertical".to_string(),
+                },
+                vec![box_a.clone()],
+                "chamfer_sel",
+            ),
+            node(
+                FeatureOp::ChamferAsym { d1: 1.0, d2: 2.0 },
+                vec![box_a.clone()],
+                "chamfer_asym",
+            ),
+            node(
+                FeatureOp::ChamferAsymSel {
+                    d1: 1.0,
+                    d2: 2.0,
+                    selector: "vertical".to_string(),
+                },
+                vec![box_a.clone()],
+                "chamfer_asym_sel",
+            ),
+            node(
+                FeatureOp::FilletWire { radius: 1.0 },
+                vec![face_a.clone()],
+                "fillet_wire",
+            ),
+            node(
+                FeatureOp::Pad { height: 5.0 },
+                vec![box_a.clone(), face_a.clone(), face_c.clone()],
+                "pad",
+            ),
+            node(
+                FeatureOp::Pocket { depth: 3.0 },
+                vec![box_a.clone(), face_a.clone(), face_c.clone()],
+                "pocket",
+            ),
+            node(
+                FeatureOp::DatumPlane {
+                    ox: 0.0,
+                    oy: 0.0,
+                    oz: 0.0,
+                    nx: 0.0,
+                    ny: 0.0,
+                    nz: 1.0,
+                    xx: 1.0,
+                    xy: 0.0,
+                    xz: 0.0,
+                },
+                Vec::new(),
+                "datum_plane",
+            ),
+            node(
+                FeatureOp::ExtrudeDraft {
+                    height: 5.0,
+                    draft_deg: 3.0,
+                },
+                vec![face_a.clone()],
+                "extrude_draft",
+            ),
+            node(
+                FeatureOp::BezierPatch {
+                    points: vec![
+                        0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, 0.0, 3.0, 0.0, 0.0, //
+                        0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 2.0, 1.0, 0.0, 3.0, 1.0, 0.0, //
+                        0.0, 2.0, 0.0, 1.0, 2.0, 0.0, 2.0, 2.0, 0.0, 3.0, 2.0, 0.0, //
+                        0.0, 3.0, 0.0, 1.0, 3.0, 0.0, 2.0, 3.0, 0.0, 3.0, 3.0, 0.0,
+                    ],
+                },
+                Vec::new(),
+                "bezier_patch",
+            ),
+            node(
+                FeatureOp::Sew {
+                    face_count: 2,
+                    tolerance: 0.01,
+                },
+                vec![face_a.clone(), face_b.clone()],
+                "sew",
+            ),
+            node(
+                FeatureOp::SweepSections { profile_count: 2 },
+                vec![face_a.clone(), face_b.clone(), path.clone()],
+                "sweep_sections",
+            ),
+            node(
+                FeatureOp::RuledSurface,
+                vec![path.clone(), guide.clone()],
+                "ruled_surface",
+            ),
+            node(
+                FeatureOp::FillSurface,
+                vec![leaf(
+                    FeatureOp::Arc {
+                        r: 5.0,
+                        start_deg: 0.0,
+                        end_deg: 360.0,
+                    },
+                    "arc",
+                )],
+                "fill_surface",
+            ),
+        ] {
+            let label = node.op.name();
+            assert!(
+                node.rebuild().is_ok(),
+                "expected rebuild to succeed for {}",
+                label
+            );
         }
     }
 }

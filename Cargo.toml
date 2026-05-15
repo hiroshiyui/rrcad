@@ -11,6 +11,7 @@ rustyline = "14"
 # Phase 3: live preview
 axum = { version = "0.7", features = ["ws"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "fs", "time", "io-std", "io-util", "process"] }
+tokio-util = "0.7"
 notify = "6"
 open = "5"
 

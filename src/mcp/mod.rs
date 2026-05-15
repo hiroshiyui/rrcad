@@ -469,6 +469,22 @@ pub fn start() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::security::MCP_MAX_CODE_BYTES;
     use super::*;
+    use rmcp::model::{NumberOrString, ReadResourceRequestParam};
+    use rmcp::service::{AtomicU32RequestIdProvider, RequestContext};
+    use std::{borrow::Cow, sync::Arc};
+    use tokio_util::sync::CancellationToken;
+
+    fn test_context() -> RequestContext<rmcp::RoleServer> {
+        let (peer, _rx) = rmcp::Peer::new(
+            Arc::new(AtomicU32RequestIdProvider::default()),
+            Default::default(),
+        );
+        RequestContext {
+            ct: CancellationToken::new(),
+            id: NumberOrString::Number(1),
+            peer,
+        }
+    }
 
     // --- Input validation ---------------------------------------------------
 
@@ -617,5 +633,92 @@ mod tests {
         assert_eq!(result.is_error, Some(true));
         let text = result.content[0].as_text().expect("text content");
         assert_eq!(text.text, "bad input");
+    }
+
+    #[tokio::test]
+    async fn list_tools_and_resources_expose_expected_entries() {
+        let server = McpServer;
+        let tools = server
+            .list_tools(None, test_context())
+            .await
+            .expect("list_tools");
+        let tool_names: Vec<_> = tools.tools.iter().map(|tool| tool.name.as_ref()).collect();
+        assert_eq!(
+            tool_names,
+            vec!["cad_eval", "cad_export", "cad_preview", "cad_validate"]
+        );
+
+        let resources = server
+            .list_resources(None, test_context())
+            .await
+            .expect("list_resources");
+        let uris: Vec<_> = resources
+            .resources
+            .iter()
+            .map(|resource| resource.raw.uri.as_str())
+            .collect();
+        assert_eq!(uris, vec!["rrcad://api", "rrcad://examples"]);
+    }
+
+    #[tokio::test]
+    async fn read_resource_and_call_tool_cover_dispatch_paths() {
+        let server = McpServer;
+
+        let api = server
+            .read_resource(
+                ReadResourceRequestParam {
+                    uri: "rrcad://api".to_string(),
+                },
+                test_context(),
+            )
+            .await
+            .expect("read api resource");
+        assert_eq!(api.contents.len(), 1);
+
+        let examples = server
+            .read_resource(
+                ReadResourceRequestParam {
+                    uri: "rrcad://examples".to_string(),
+                },
+                test_context(),
+            )
+            .await
+            .expect("read examples resource");
+        assert_eq!(examples.contents.len(), 1);
+
+        let err = server
+            .read_resource(
+                ReadResourceRequestParam {
+                    uri: "rrcad://missing".to_string(),
+                },
+                test_context(),
+            )
+            .await
+            .expect_err("unknown resource should fail");
+        assert_eq!(err.code.0, -32602);
+
+        let err = server
+            .call_tool(
+                CallToolRequestParam {
+                    name: Cow::Borrowed("cad_eval"),
+                    arguments: Some(serde_json::json!({}).as_object().cloned().unwrap()),
+                },
+                test_context(),
+            )
+            .await
+            .expect_err("cad_eval should reject missing args");
+        assert_eq!(err.code.0, -32602);
+
+        let err = server
+            .call_tool(
+                CallToolRequestParam {
+                    name: Cow::Borrowed("unknown_tool"),
+                    arguments: None,
+                },
+                test_context(),
+            )
+            .await
+            .expect_err("unknown tool should fail");
+        assert_eq!(err.code.0, -32602);
     }
 }

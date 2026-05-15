@@ -235,3 +235,148 @@ pub unsafe extern "C" fn rrcad_preview_shape(ptr: *mut c_void, error_out: *mut *
 
     state.reload_tx.send(()).ok();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::occt::Shape;
+    use std::{
+        ffi::{CStr, CString},
+        os::raw::c_char,
+        ptr,
+    };
+
+    fn boxed_shape(shape: Shape) -> *mut c_void {
+        Box::into_raw(Box::new(shape)) as *mut c_void
+    }
+
+    unsafe fn reclaim_shape(ptr: *mut c_void) {
+        if !ptr.is_null() {
+            unsafe {
+                drop(Box::from_raw(ptr as *mut Shape));
+            }
+        }
+    }
+
+    unsafe fn error_message(err: *const c_char) -> Option<String> {
+        if err.is_null() {
+            None
+        } else {
+            Some(
+                unsafe { CStr::from_ptr(err) }
+                    .to_str()
+                    .expect("utf8")
+                    .to_string(),
+            )
+        }
+    }
+
+    #[test]
+    fn selector_wrappers_cover_counts_getters_and_errors() {
+        let solid = boxed_shape(Shape::make_box(10.0, 20.0, 30.0).unwrap());
+        let face = boxed_shape(
+            Shape::make_box(10.0, 20.0, 30.0)
+                .unwrap()
+                .faces("top")
+                .unwrap()
+                .into_iter()
+                .next()
+                .unwrap(),
+        );
+        let edge = boxed_shape(
+            Shape::make_box(10.0, 20.0, 30.0)
+                .unwrap()
+                .edges("vertical")
+                .unwrap()
+                .into_iter()
+                .next()
+                .unwrap(),
+        );
+        let vertex = boxed_shape(
+            Shape::make_box(10.0, 20.0, 30.0)
+                .unwrap()
+                .vertices("all")
+                .unwrap()
+                .into_iter()
+                .next()
+                .unwrap(),
+        );
+        let mut err: *const c_char = ptr::null();
+
+        let faces = unsafe {
+            rrcad_shape_faces_count(solid, CString::new("top").unwrap().as_ptr(), &mut err)
+        };
+        assert_eq!(faces, 1);
+        assert!(unsafe { error_message(err) }.is_none());
+
+        let face_ptr = unsafe {
+            rrcad_shape_faces_get(solid, CString::new("top").unwrap().as_ptr(), 0, &mut err)
+        };
+        assert!(!face_ptr.is_null());
+        assert!(unsafe { error_message(err) }.is_none());
+
+        let edges = unsafe {
+            rrcad_shape_edges_count(solid, CString::new("vertical").unwrap().as_ptr(), &mut err)
+        };
+        assert_eq!(edges, 4);
+        assert!(unsafe { error_message(err) }.is_none());
+
+        let edge_ptr = unsafe {
+            rrcad_shape_edges_get(
+                solid,
+                CString::new("vertical").unwrap().as_ptr(),
+                0,
+                &mut err,
+            )
+        };
+        assert!(!edge_ptr.is_null());
+        assert!(unsafe { error_message(err) }.is_none());
+
+        let vertices = unsafe {
+            rrcad_shape_vertices_count(solid, CString::new("all").unwrap().as_ptr(), &mut err)
+        };
+        assert_eq!(vertices, 8);
+        assert!(unsafe { error_message(err) }.is_none());
+
+        let vertex_ptr = unsafe {
+            rrcad_shape_vertices_get(solid, CString::new("all").unwrap().as_ptr(), 0, &mut err)
+        };
+        assert!(!vertex_ptr.is_null());
+        assert!(unsafe { error_message(err) }.is_none());
+
+        let mut err2: *const c_char = ptr::null();
+        let bad = unsafe {
+            rrcad_shape_faces_count(solid, CString::new("bad").unwrap().as_ptr(), &mut err2)
+        };
+        assert_eq!(bad, -1);
+        assert!(unsafe { error_message(err2) }.is_some());
+
+        let utf8 = b"\xff\0";
+        let mut err3: *const c_char = ptr::null();
+        let bad =
+            unsafe { rrcad_shape_edges_count(solid, utf8.as_ptr() as *const c_char, &mut err3) };
+        assert_eq!(bad, -1);
+        assert!(unsafe { error_message(err3) }.is_some());
+
+        let mut err4: *const c_char = ptr::null();
+        let bad = unsafe {
+            rrcad_shape_vertices_get(solid, CString::new("all").unwrap().as_ptr(), 99, &mut err4)
+        };
+        assert!(bad.is_null());
+        assert!(unsafe { error_message(err4) }.is_some());
+
+        let mut preview_err: *const c_char = ptr::null();
+        unsafe { rrcad_preview_shape(solid, &mut preview_err) };
+        assert!(unsafe { error_message(preview_err) }.is_none());
+
+        unsafe {
+            reclaim_shape(solid);
+            reclaim_shape(face);
+            reclaim_shape(edge);
+            reclaim_shape(vertex);
+            reclaim_shape(face_ptr);
+            reclaim_shape(edge_ptr);
+            reclaim_shape(vertex_ptr);
+        }
+    }
+}

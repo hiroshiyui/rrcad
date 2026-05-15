@@ -850,3 +850,117 @@ mod parse_args_tests {
         assert!(err.contains("usage: rrcad --mcp-worker"));
     }
 }
+
+#[cfg(test)]
+mod completion_tests {
+    use super::DslHelper;
+    use rustyline::{Context, completion::Completer, history::DefaultHistory};
+
+    fn ctx() -> Context<'static> {
+        let history = Box::leak(Box::new(DefaultHistory::new()));
+        Context::new(history)
+    }
+
+    fn words(pairs: Vec<rustyline::completion::Pair>) -> Vec<String> {
+        pairs.into_iter().map(|p| p.replacement).collect()
+    }
+
+    #[test]
+    fn top_level_completion_filters_by_prefix() {
+        let helper = DslHelper;
+        let (_, pairs) = helper.complete("bo", 2, &ctx()).expect("completion");
+        assert!(words(pairs).contains(&"box".to_string()));
+    }
+
+    #[test]
+    fn method_completion_uses_shape_methods_after_dot() {
+        let helper = DslHelper;
+        let line = "box(1, 2, 3).sc";
+        let (_, pairs) = helper
+            .complete(line, line.len(), &ctx())
+            .expect("completion");
+        assert_eq!(words(pairs), vec!["scale".to_string()]);
+    }
+
+    #[test]
+    fn method_completion_handles_trimmed_dot_prefix() {
+        let helper = DslHelper;
+        let (_, pairs) = helper
+            .complete("shape.  re", 10, &ctx())
+            .expect("completion");
+        let words = words(pairs);
+        assert!(words.contains(&"revolve".to_string()));
+        assert!(words.contains(&"respond_to?".to_string()));
+    }
+}
+
+#[cfg(test)]
+mod runtime_tests {
+    use super::{make_preview_glb_path, run_design_table, run_script};
+    use std::{
+        fs,
+        path::PathBuf,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+
+    static TEST_SEQ: AtomicUsize = AtomicUsize::new(1);
+
+    fn unique_test_dir(prefix: &str) -> PathBuf {
+        let seq = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("{prefix}-{}-{seq}", std::process::id()))
+    }
+
+    fn with_cwd<T>(dir: &PathBuf, f: impl FnOnce() -> T) -> T {
+        let original = std::env::current_dir().expect("current dir");
+        std::env::set_current_dir(dir).expect("enter temp dir");
+        let result = f();
+        std::env::set_current_dir(original).expect("restore cwd");
+        result
+    }
+
+    #[test]
+    fn run_script_executes_successfully() {
+        let dir = unique_test_dir("rrcad-cli-script");
+        fs::create_dir_all(&dir).expect("create temp dir");
+        let script_path = dir.join("script.rb");
+        fs::write(&script_path, "box(1, 2, 3).export('out.step')").expect("write script");
+
+        with_cwd(&dir, || run_script(script_path.to_str().unwrap(), &[]));
+        assert!(dir.join("out.step").exists());
+    }
+
+    #[test]
+    fn run_design_table_exports_one_file_per_row() {
+        let dir = unique_test_dir("rrcad-cli-design-table");
+        fs::create_dir_all(&dir).expect("create temp dir");
+        let table = dir.join("table.csv");
+        let script = dir.join("script.rb");
+        fs::write(
+            &table,
+            "name,width,depth,height,fillet_r\nsmall,30,20,15,1.5\nlarge,50,30,20,2.0\n",
+        )
+        .expect("write table");
+        fs::write(
+            &script,
+            "name = param :name, default: \"box_part\"\nwidth = param :width, default: 50, range: 1..500\ndepth = param :depth, default: 30, range: 1..500\nheight = param :height, default: 20, range: 1..500\nfillet_r = param :fillet_r, default: 2.0, range: 0.0..10.0\n\npart = box(width, depth, height)\npart = part.fillet(fillet_r) if fillet_r > 0.0\npart.export(\"#{name}.step\")",
+        )
+        .expect("write script");
+
+        with_cwd(&dir, || {
+            run_design_table(table.to_str().unwrap(), script.to_str().unwrap(), &[])
+                .expect("design table run")
+        });
+
+        assert!(dir.join("small.step").exists());
+        assert!(dir.join("large.step").exists());
+    }
+
+    #[test]
+    fn preview_glb_paths_are_randomized() {
+        let a = make_preview_glb_path();
+        let b = make_preview_glb_path();
+        assert_ne!(a, b);
+        assert!(a.starts_with(std::env::temp_dir()));
+        assert!(b.starts_with(std::env::temp_dir()));
+    }
+}
