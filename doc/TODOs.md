@@ -296,8 +296,8 @@ overlap the previous layer.
 
 ## Project Improvements
 
-- [ ] Add CI coverage for MCP security invariants, including `create_mcp_vm()` and the file/process constant removal checks.
-- [ ] Keep the Claude skill definitions in `.claude/skills` and maintain the repo-local `.codex/skills` mirror if Codex-callable copies are needed again.
+- [x] Add CI coverage for MCP security invariants, including `create_mcp_vm()` and the file/process constant removal checks.
+- [x] Keep the Claude skill definitions in `.claude/skills` and maintain the repo-local `.codex/skills` mirror if Codex-callable copies are needed again.
 - [ ] Make CSV design-table parsing fail fast on row width mismatches instead of silently truncating with `zip()`.
 - [ ] Add explicit tests and documentation for the intentionally strict export-path confinement behavior.
 - [ ] Consider consolidating repetitive Ruby-to-native FFI wrapper patterns into shared helpers or generated bindings.
