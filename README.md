@@ -83,6 +83,9 @@ If you have not installed the binary yet, the equivalent `cargo run` forms are
 `cargo run`, `cargo run -- script.rb`, `cargo run -- --preview script.rb`, and
 `cargo run -- --mcp`.
 
+For a task-oriented walkthrough of the DSL with worked examples for CAD
+engineers, see the [User Guide](doc/user-guide.md).
+
 ## Building
 
 ```sh

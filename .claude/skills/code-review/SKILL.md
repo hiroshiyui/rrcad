@@ -32,7 +32,7 @@ When performing a project-wide code review, always follow these steps:
 6. **Documentation quality** — Confirm that:
    - Public Rust items that form the DSL API are covered by doc comments (`///`).
    - Non-obvious C++ bridge functions carry inline comments explaining the relevant OCCT behavior.
-   - `CLAUDE.md`, `doc/user-guide.md`, and `doc/TODOs.md` are updated to reflect any new architectural or behavioral changes.
+   - `CLAUDE.md`, `doc/user-guide.md` (and the chapter files under `doc/user-guide/`), and `doc/TODOs.md` are updated to reflect any new architectural or behavioral changes.
 
 7. **UI/UX (preview server)** — Review the Three.js HTML and WebSocket reload flow for:
    - *Control usability:* orbit, zoom, wireframe toggle, flat-line view, and scene background controls should behave intuitively.
