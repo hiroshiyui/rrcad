@@ -89,26 +89,11 @@ rrcad/
 │   ├── 01_hello_box.rb … 07_teapot.rb
 │   ├── 08_parametric_box.rb  # Phase 5: param DSL demo
 │   └── 08_box_sizes.csv      # design-table CSV for the parametric box
-├── tests/                  # integration test suites
-│   ├── occt_layer.rs       # OCCT Rust API smoke tests
-│   ├── vm_layer.rs         # MrubyVm eval smoke tests
-│   ├── prelude_layer.rs    # DSL prelude + native override tests
-│   ├── e2e_dsl.rs          # Phase 1–5 end-to-end tests (export, color, mate, simplify)
-│   ├── phase2_dsl.rs       # Phase 2 end-to-end tests
-│   ├── teapot_dsl.rs       # Phase 3 spline/sweep (incl. tangent variants)
-│   ├── teapot_sample.rs    # Full Utah teapot sample smoke tests
-│   ├── phase3_selectors.rs # Phase 3 face/edge sub-shape selector tests
-│   ├── phase4_3d_ops.rs    # Phase 4: shell, offset, loft, extrude_ex, patterns
-│   ├── phase5_params.rs    # Phase 5: param DSL, --param overrides, design table
-│   ├── phase7_tier1.rs    # Phase 7 Tier 1: chamfer_asym, offset_2d, grid_pattern, fuse_all, cut_all
-│   ├── phase7_tier2.rs    # Phase 7 Tier 2: shape_type, centroid, closed?, manifold?, validate
-│   ├── phase7_tier3.rs    # Phase 7 Tier 3: ruled_surface, fill_surface, slice
-│   ├── phase8_tier1.rs    # Phase 8 Tier 1: pad, pocket, fillet_wire, datum_plane (11 tests)
-│   ├── phase8_tier2.rs    # Phase 8 Tier 2: draft angle, helix, thread, cbore/csink (13 tests)
-│   ├── phase8_tier3.rs    # Phase 8 Tier 3: distance_to, inertia, min_thickness (10 tests)
-│   ├── phase8_tier4.rs    # Phase 8 Tier 4: SVG/DXF 2-D drawing export (11 tests)
-│   ├── phase8_tier5.rs    # Phase 8 Tier 5: fragment, convex_hull, path_pattern, guided sweep (11 tests)
-│   └── mcp_tools.rs       # Phase 9 MCP security + DSL-in-VM integration tests (12 tests)
+├── tests/                  # integration test suites — one file per feature area,
+│                           # named after the phase that introduced it
+│                           # (phase2_dsl.rs … phase11_profile_offset.rs) or after
+│                           # what it covers (script_output.rs, cam_checks.rs).
+│                           # See "Testing" below for the full index.
 ├── vendor/
 │   └── mruby/              # git submodule — mRuby 3.4.0
 └── doc/
@@ -412,28 +397,44 @@ is still active.
 
 | Test file | What it covers |
 |-----------|----------------|
-| `src/occt/mod.rs` (inline) | OCCT Rust API: box→fillet→STEP, boolean cut, color, mate |
-| `tests/occt_layer.rs` | All OCCT primitives, booleans, transforms, fillets, export |
+| `src/` (inline) | Rust unit tests co-located with their modules: OCCT shape ops, drawing layout, MCP helpers, project config, preview metadata |
+| `tests/occt_layer.rs` | OCCT Rust API: all primitives, booleans, transforms, fillets, export |
 | `tests/vm_layer.rs` | `MrubyVm` eval: types, errors, persistence, multiple VMs |
-| `tests/prelude_layer.rs` | DSL prelude stubs; native overrides for all implemented methods (Phases 1–5); Assembly |
+| `tests/prelude_layer.rs` | DSL prelude stubs; native overrides for all implemented methods; Assembly |
 | `tests/e2e_dsl.rs` | Phase 1–5 end-to-end: export formats, color, mate, simplify |
-| `tests/phase2_dsl.rs` | Phase 2 end-to-end: transforms, mirror, rect/circle, extrude/revolve |
-| `tests/teapot_dsl.rs` | Phase 3: spline_2d/3d (incl. tangent variants), sweep |
-| `tests/teapot_sample.rs` | `bezier_patch` and `sew` unit tests; full Utah teapot sample (body, spout, handle, lid + assembly); 9 tests total |
-| `tests/phase3_selectors.rs` | Phase 3: `.faces(:top|:bottom|:side|:all)`, `.edges(:vertical|:horizontal|:all)` |
-| `tests/phase4_3d_ops.rs` | Phase 4: shell, offset, loft, extrude_ex (twist/scale), linear/polar patterns |
-| `tests/phase5_params.rs` | Phase 5: `param` DSL, `--param` overrides, design table batch export |
-| `tests/phase7_tier1.rs` | Phase 7 Tier 1: asymmetric chamfer, `offset_2d`, `grid_pattern`, `fuse_all`, `cut_all`; 12 tests |
-| `tests/phase7_tier2.rs` | Phase 7 Tier 2: `shape_type`, `centroid`, `closed?`, `manifold?`, `validate`; 12 tests |
-| `tests/phase7_tier3.rs` | Phase 7 Tier 3: `ruled_surface`, `fill_surface`, `slice`; 10 tests |
-| `tests/sketch_profiles.rs` | `arc`, `polygon`, `ellipse` geometry (bounding box, shape type, volume after extrude); 16 tests |
-| `tests/phase8_tier1.rs` | Phase 8 Tier 1: `pad`, `pocket`, `fillet_wire`, `datum_plane`; 11 tests |
-| `tests/phase8_tier2.rs` | Phase 8 Tier 2: draft-angle extrude, `helix`, `thread`, `cbore`/`csink`; 13 tests |
-| `tests/phase8_tier3.rs` | Phase 8 Tier 3: `distance_to`, `inertia`, `min_thickness`; 10 tests |
-| `tests/phase8_tier4.rs` | Phase 8 Tier 4: SVG/DXF 2-D drawing export (HLR projection, 3 view directions); 11 tests |
-| `tests/phase8_tier5.rs` | Phase 8 Tier 5: `fragment`, `convex_hull`, `path_pattern`, guided `sweep`; 11 tests |
-| `tests/mcp_tools.rs` | Phase 9 MCP security + DSL-in-VM integration (input validation, timeout, safe_path, export); 13 tests |
-| `tests/mcp_stress.rs` | MCP stress/concurrency: sequential VM churn, error recovery, deep booleans, `MRUBY_EVAL_LOCK` proof; 10 tests |
+| `tests/phase2_dsl.rs` | Phase 2: transforms, mirror, rect/circle, extrude/revolve |
+| `tests/teapot_dsl.rs` | Phase 3: `spline_2d`/`spline_3d` (incl. tangent variants), sweep |
+| `tests/teapot_sample.rs` | `bezier_patch` and `sew` units; the full Utah teapot sample |
+| `tests/phase3_selectors.rs` | Phase 3: `.faces(:top\|:bottom\|:side\|:all)`, `.edges(:vertical\|:horizontal\|:all)` |
+| `tests/phase4_3d_ops.rs` | Phase 4: shell, offset, loft, `extrude_ex` (twist/scale), linear/polar patterns |
+| `tests/phase5_params.rs` | Phase 5: `param` DSL, `--param` overrides, design-table batch export |
+| `tests/sketch_profiles.rs` | `arc`, `polygon`, `ellipse` geometry (bounding box, shape type, volume after extrude) |
+| `tests/phase7_tier1.rs` | Phase 7 Tier 1: asymmetric chamfer, `offset_2d`, `grid_pattern`, `fuse_all`, `cut_all` |
+| `tests/phase7_tier2.rs` | Phase 7 Tier 2: `shape_type`, `centroid`, `closed?`, `manifold?`, `validate` |
+| `tests/phase7_tier3.rs` | Phase 7 Tier 3: `ruled_surface`, `fill_surface`, `slice` |
+| `tests/phase8_tier1.rs` | Phase 8 Tier 1: `pad`, `pocket`, `fillet_wire`, `datum_plane` |
+| `tests/phase8_tier2.rs` | Phase 8 Tier 2: draft-angle extrude, `helix`, `thread`, `cbore`/`csink`, hardware helpers |
+| `tests/phase8_tier3.rs` | Phase 8 Tier 3: `distance_to`, `inertia`, `min_thickness` |
+| `tests/phase8_tier4.rs` | Phase 8 Tier 4: SVG/DXF drawing export — HLR projection, view directions, sheets, GD&T frames, section views |
+| `tests/phase8_tier5.rs` | Phase 8 Tier 5: `fragment`, `convex_hull`, `path_pattern`, guided `sweep` |
+| `tests/mcp_tools.rs` | Phase 9 MCP security + DSL-in-VM integration (input validation, timeout, `safe_path`, export) |
+| `tests/mcp_stress.rs` | MCP stress/concurrency: sequential VM churn, error recovery, deep booleans, `MRUBY_EVAL_LOCK` proof |
+| `tests/assembly_constraints.rs` | Phase 10: assembly constraints beyond `mate` — `rotate_about`, distance/axis/angle |
+| `tests/assembly_solver.rs` | Declarative assembly DSL: `a.ground` / `a.part` with a solved constraint graph |
+| `tests/cam_checks.rs` | Phase 10 CAM / 3-D printing checks: `mass_estimate`, build-volume fit, unsupported islands |
+| `tests/error_diagnostics.rs` | Phase 10: OCCT errors carry operation name, parameters, and operand context |
+| `tests/imperial_hardware.rs` | Phase 10: UNC/UNF imperial hardware sizes per ASME B18 / ANSI B18.3 |
+| `tests/phase10_named_topology.rs` | Named face/edge references surviving transforms and rebuilds |
+| `tests/phase10_sketch_constraints.rs` | Phase 10 constraint sketching: solver, constraint types, diagnostics, conflict messages |
+| `tests/phase11_sketch_corners.rs` | Phase 11 Track A: sketch corner `fillet` / `chamfer` |
+| `tests/phase11_sketch_edits.rs` | Phase 11 Track A: sketch segment `trim` / `extend` |
+| `tests/phase11_profile_offset.rs` | Phase 11 Track A: sketch `offset` and `Shape#offset_2d` |
+| `tests/export_confinement.rs` | Import/export path confinement: working-directory rule, symlink escapes, missing directories |
+| `tests/project_config_integration.rs` | `rrcad.toml` discovery, parent-directory walk-up, `[params]` and `preview_port` |
+| `tests/script_output.rs` | `puts`, `print`, `p`, `pp` formatting rules and the output sink |
+
+Per-file test counts go stale quickly and are deliberately left out; run
+`cargo test` for the current totals (770 at the time of writing).
 
 Output files are written to `std::env::temp_dir()` (typically `/tmp` on Linux).
 
