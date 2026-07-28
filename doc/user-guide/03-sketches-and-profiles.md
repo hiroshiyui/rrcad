@@ -61,6 +61,7 @@ through the same entry point.
 | `slot_between(a, b, radius)` | Build a rounded slot between two resolved points |
 | `line(a, b)` | Add a line segment between two sketch points |
 | `construction_line(a, b)` | Reference line for constraints; does not add profile edges |
+| `spline(a, b, through: [...])` | Add a curved segment through the given interior points ([below](#spline-segments)) |
 | `rectangle(origin, width, height)` | Add a constrained rectangular line loop from an origin point |
 | `centered_rectangle(center, width, height)` | Add a constrained rectangle around a center point |
 | `fixed(point, x = point.x, y = point.y)` | Lock a point coordinate |
@@ -278,6 +279,58 @@ than the profile raises rather than returning an empty shape.
 `Shape#offset_2d(distance)` is the same operation on an already-built profile,
 including profiles with holes; see
 [Features and Modifiers](04-features-and-modifiers.md).
+
+### Spline segments
+
+`spline` draws a curved segment of the outline. It takes the two endpoints and
+the interior points the curve must pass through:
+
+```ruby
+scoop = sketch do
+  a = point(:a, 0, 0)
+  b = point(:b, 10.mm, 0)
+  c = point(:c, 10.mm, 10.mm)
+  d = point(:d, 0, 10.mm)
+  line a, b
+  line b, c
+  spline c, d, through: [[5.mm, 14.mm]]   # top edge bows up
+  line d, a
+end.extrude(2.mm)
+```
+
+The curve reaches the profile as a real interpolated BSpline edge, not a
+polyline standing in for one, so it stays smooth through export and every
+later pad, pocket, or boolean. A four-segment sketch gives a four-edge
+profile whether or not one of those segments is curved.
+
+Interior points may be sketch points as well as literal pairs, so the solver
+can place them:
+
+```ruby
+sketch do
+  # …
+  mid  = midpoint(:mid, c, d)
+  peak = point(:peak, nil, 14.mm)
+  vertical mid, peak            # peak.x follows the midpoint's
+  spline c, d, through: [peak]
+end
+```
+
+Because a curve can close a loop on its own, a sketch with a spline needs only
+two segments rather than the usual three — one curve and one straight edge is
+a valid outline.
+
+Two limits follow from what the other operations measure:
+
+- `fillet` and `chamfer` set back along a straight run, so a corner where a
+  spline meets another segment cannot be modified (`cannot fillet :d: it joins
+  a spline segment`). Corners between two straight segments are unaffected,
+  even in a sketch that has curves elsewhere.
+- `trim` and `extend` slide an endpoint along a straight segment, so they
+  reject spline segments.
+
+`offset` and the patterns work on the finished profile and apply to curved
+sketches unchanged.
 
 ### Patterning the profile
 

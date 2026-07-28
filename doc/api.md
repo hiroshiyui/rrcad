@@ -47,6 +47,7 @@ let w = Shape::make_wedge(10.0, 8.0, 6.0, 4.0)?;
 | `Shape::make_rect(w, h) -> Result<Shape>` | Rectangular face in the XY plane |
 | `Shape::make_circle_face(r) -> Result<Shape>` | Circular face in the XY plane |
 | `Shape::make_polygon(pts: &[f64]) -> Result<Shape>` | Closed polygon face in the XY plane. `pts` is a flat `[x0, y0, x1, y1, …]` slice; at least 3 points required. |
+| `Shape::make_profile_2d(pts: &[f64], counts: &[i32], kinds: &[i32]) -> Result<Shape>` | Closed XY profile face from a chain of segments: segment *i* owns `counts[i]` consecutive points and repeats the corner it shares with its neighbour; `kinds[i]` is 0 for a straight run or 1 for a BSpline interpolated through them (`GeomAPI_Interpolate`). Backs constraint sketches that mix `line` and `spline` segments. |
 | `Shape::make_ellipse_face(rx, ry) -> Result<Shape>` | Elliptic face in the XY plane. OCCT requires major ≥ minor; arguments are swapped automatically if needed. |
 | `Shape::make_arc(r, start_deg, end_deg) -> Result<Shape>` | Circular arc `Wire` in the XY plane, counterclockwise from `start_deg` to `end_deg`. Suitable as a sweep path. |
 | `Shape::make_spline_2d(pts: &[f64]) -> Result<Shape>` | Closed profile in the XZ plane. `pts` is a flat `[r0, z0, r1, z1, …]` slice. Interpolates a BSpline, closes with a straight edge if the endpoints differ, returns a `Face`. Designed for `.revolve()`. |
@@ -700,9 +701,14 @@ under-specified and are resolved by a propagating constraint solver; the
 resolved outline is then built into a profile Face ready for `extrude`,
 `revolve`, `pad`, or `pocket`.
 
-Line-based sketches must form one closed loop of at least three segments. A
-`circle_at` / `arc_at` / `slot_between` call instead defines the whole profile
-directly.
+Line-based sketches must form one closed loop of at least three segments — or
+two once one of them is a `spline`, since a curve can close a loop on its own.
+A `circle_at` / `arc_at` / `slot_between` call instead defines the whole
+profile directly.
+
+Corner modifiers set back along a straight run and `trim` / `extend` slide an
+endpoint along one, so both reject spline segments; corners between two
+straight segments still work in a sketch that has curves elsewhere.
 
 | Method | Description |
 |--------|-------------|
@@ -710,6 +716,7 @@ directly.
 | `point(:name, x, y)` / `construction_point(:name, x, y)` | Named point, retrievable with `ref(:name)` or `self[:name]` |
 | `line(a, b)` | Profile segment between two points. Returns `[a, b]` |
 | `construction_line(a, b)` | Reference segment that shapes nothing itself; returns `[a, b]` for use as a `trim` / `extend` target |
+| `spline(a, b, through: [...])` | Curved segment from `a` to `b` through the given interior points (sketch points or `[x, y]` pairs). Becomes a real interpolated BSpline edge, so a curved sketch is built by `make_profile_2d` rather than flattened into a polygon |
 | `midpoint([:name,] a, b)` | Point constrained to the middle of `a`–`b` |
 | `polar_point([:name,] center, radius, angle_deg)` | Point at polar coordinates around `center`, CCW from +X |
 | `rectangle(origin, w, h)` / `centered_rectangle(center, w, h)` | Four constrained corners plus their four segments; returns the corner points |

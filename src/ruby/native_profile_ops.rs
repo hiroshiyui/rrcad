@@ -44,6 +44,28 @@ pub unsafe extern "C" fn rrcad_make_polygon(
     unsafe { shape_result_to_ptr(Shape::make_polygon(slice), error_out) }
 }
 
+/// Closed XY profile from a chain of segments; see `Shape::make_profile_2d`.
+/// `counts` and `kinds` are parallel arrays of `n_segments` entries, and `pts`
+/// holds `sum(counts)` x/y pairs.
+///
+/// # Safety
+/// `pts`, `counts`, and `kinds` must point to arrays of the stated lengths.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_make_profile_2d(
+    pts: *const f64,
+    n_pts: usize,
+    counts: *const i32,
+    kinds: *const i32,
+    n_segments: usize,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let pts = unsafe { std::slice::from_raw_parts(pts, n_pts * 2) };
+    let counts = unsafe { std::slice::from_raw_parts(counts, n_segments) };
+    let kinds = unsafe { std::slice::from_raw_parts(kinds, n_segments) };
+    unsafe { shape_result_to_ptr(Shape::make_profile_2d(pts, counts, kinds), error_out) }
+}
+
 shape_ctor!(rrcad_make_ellipse_face(rx: f64, ry: f64) => Shape::make_ellipse_face);
 shape_ctor!(rrcad_make_arc(r: f64, start_deg: f64, end_deg: f64) => Shape::make_arc);
 

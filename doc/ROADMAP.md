@@ -34,7 +34,7 @@ a design is expected to produce.
 ### Track A — Sketcher depth
 
 The constraint solver and profile types exist, but the sketcher was missing the
-operations used most in practice.
+operations used most in practice. **Complete.**
 
 - [x] **Corner `fillet` / `chamfer`** inside `sketch do … end`. Shapes the 2-D
       profile itself, so a rounded outline survives every later pad, pocket, or
@@ -63,7 +63,14 @@ operations used most in practice.
       The builder methods shadow the top-level functions of the same name and
       delegate to them when passed a Shape, so both forms work in a block.
       Tests: `tests/phase11_sketch_patterns.rs` (23).
-- [ ] Spline segments in sketch profiles.
+- [x] **Spline segments in sketch profiles** — `spline a, b, through: [...]`
+      draws a curved segment through interior points that may themselves be
+      solver-driven sketch points. A new `make_profile_2d` bridge function
+      builds the outline as a chain of edges, so the curve stays an
+      interpolated BSpline instead of being flattened into a polyline. Corner
+      modifiers and `trim` / `extend` measure along straight runs, so they
+      reject spline segments and say why.
+      Tests: `tests/phase11_sketch_splines.rs` (20).
 
 ### Track B — Assembly intelligence
 

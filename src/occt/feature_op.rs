@@ -37,6 +37,11 @@ pub(crate) enum FeatureOp {
     Polygon {
         points: Vec<f64>,
     },
+    Profile2D {
+        points: Vec<f64>,
+        counts: Vec<i32>,
+        kinds: Vec<i32>,
+    },
     Ellipse {
         rx: f64,
         ry: f64,

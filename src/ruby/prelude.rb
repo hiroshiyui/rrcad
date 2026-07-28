@@ -521,6 +521,36 @@ class SketchBuilder
     [a, b]
   end
 
+  # spline(a, b, through: [...]) — a curved segment from +a+ to +b+ that also
+  # passes through every point in +through:+, which may be sketch points or
+  # plain [x, y] pairs.
+  #
+  # The curve is a real interpolated BSpline edge in the finished profile, not
+  # a polyline standing in for one, so it stays smooth through export and
+  # every later pad, pocket, or boolean.
+  def spline(a, b, through: nil)
+    unless a.is_a?(SketchPoint) && b.is_a?(SketchPoint)
+      raise TypeError, "spline endpoints must be sketch points"
+    end
+
+    interior = through.nil? ? [] : through
+    unless interior.is_a?(Array) && !interior.empty?
+      raise ArgumentError,
+            "spline needs through: with at least one interior point; a segment with none " \
+            "is a straight line"
+    end
+
+    interior.each do |point|
+      next if point.is_a?(SketchPoint)
+      unless point.is_a?(Array) && point.length == 2 && point.all? { |v| v.is_a?(Numeric) }
+        raise ArgumentError, "spline through: takes sketch points or [x, y] pairs"
+      end
+    end
+
+    @lines << [a, b, interior]
+    [a, b]
+  end
+
   # polar_point([:name,] center, radius, angle_deg) — register a construction
   # point at polar coordinates around +center+. Once +center+ resolves, the
   # new point's coordinates are computed as
@@ -853,7 +883,12 @@ class SketchBuilder
       return shape
     end
 
-    raise RuntimeError, "sketch requires at least 3 line segments" if @lines.length < 3
+    # A spline segment can close a loop with only one straight edge, so the
+    # three-segment floor applies to all-straight sketches only.
+    minimum = curved? ? 2 : 3
+    if @lines.length < minimum
+      raise RuntimeError, "sketch requires at least #{minimum} line segments"
+    end
     solve_constraints
 
     # Trim/extend results live in a side table rather than mutating the solved
@@ -882,10 +917,135 @@ class SketchBuilder
       raise RuntimeError, "sketch lines must form one closed loop"
     end
 
-    pts = apply_corner_mods(pts, corner_points)
-    shape = finish_profile(polygon(pts), coords)
+    profile = if curved?
+      # Curved sketches keep their real geometry: each segment becomes an edge
+      # of its own rather than being flattened into one polygon.
+      profile_2d_shape(build_segments(coords, corner_points))
+    else
+      polygon(apply_corner_mods(pts, corner_points))
+    end
+
+    shape = finish_profile(profile, coords)
     shape.sketch_diagnostics = diagnostics_payload if diagnostics_payload
     shape
+  end
+
+  # True once any segment was drawn with `spline`.
+  def curved?
+    @lines.any? { |entry| spline_entry?(entry) }
+  end
+
+  def spline_entry?(entry)
+    entry.length > 2 && !entry[2].nil?
+  end
+
+  # Resolve every segment to [kind, [[x, y], ...]] in loop order, applying the
+  # corner modifiers on the way.
+  def build_segments(coords, corner_points)
+    segments = @lines.map do |entry|
+      a, b, interior = entry
+      if interior.nil?
+        [:line, [point_xy(coords, a), point_xy(coords, b)]]
+      else
+        points = [point_xy(coords, a)]
+        interior.each { |through| points << spline_through_xy(coords, through) }
+        points << point_xy(coords, b)
+        [:spline, points]
+      end
+    end
+
+    apply_corner_mods_to_segments(segments, corner_points)
+  end
+
+  # A spline's interior point: a sketch point or a plain [x, y] pair.
+  def spline_through_xy(coords, through)
+    return point_xy(coords, through) if through.is_a?(SketchPoint)
+
+    [RRCADUnits.scalar(through[0]), RRCADUnits.scalar(through[1])]
+  end
+
+  # Corner modifiers on a curved sketch.  Corner i joins segment i-1 to
+  # segment i; both must be straight, since the setback is measured along a
+  # straight run.  The rounded corner is spliced in as its own segment.
+  def apply_corner_mods_to_segments(segments, corner_points)
+    return segments if @corner_mods.empty?
+
+    count = segments.length
+    mods = Array.new(count, nil)
+    setbacks = Array.new(count, 0.0)
+
+    @corner_mods.each do |point, kind, size|
+      index = corner_index(corner_points, point, kind)
+      before = (index - 1) % count
+      unless segments[before][0] == :line && segments[index][0] == :line
+        raise ArgumentError,
+              "cannot #{kind} #{point_label(point)}: it joins a spline segment, and a " \
+              "#{kind} needs a straight segment on both sides"
+      end
+
+      prev_pt = segments[before][1][0]
+      corner = segments[index][1][0]
+      next_pt = segments[index][1][-1]
+
+      setback = corner_setback(kind, size, prev_pt, corner, next_pt, point)
+      setbacks[index] = setback
+      mods[index] = [kind, RRCADUnits.scalar(size), setback, prev_pt, corner, next_pt]
+    end
+
+    validate_segment_setbacks(segments, setbacks, corner_points)
+
+    result = []
+    count.times do |i|
+      if mods[i].nil?
+        result << segments[i]
+        next
+      end
+
+      kind, size, setback, prev_pt, corner, next_pt = mods[i]
+      replacement = corner_geometry(kind, size, setback, prev_pt, corner, next_pt)
+
+      # The corner's own geometry becomes a segment between the two straight
+      # runs it shortened.
+      segments[(i - 1) % count][1][-1] = replacement.first
+      segments[i][1][0] = replacement.last
+      result << [:line, replacement]
+      result << segments[i]
+    end
+
+    result
+  end
+
+  # Same rule as the polygon path: a straight run cannot give up more length
+  # than it has to the modifiers at either end.
+  def validate_segment_setbacks(segments, setbacks, corner_points)
+    segments.each_with_index do |segment, i|
+      next unless segment[0] == :line
+
+      j = (i + 1) % segments.length
+      needed = setbacks[i] + setbacks[j]
+      length = segment_length_2d(segment[1][0], segment[1][-1])
+
+      if needed > length - 1.0e-9
+        raise ArgumentError, setback_overflow_message(corner_points, setbacks, i, j, needed, length)
+      end
+    end
+  end
+
+  # Flatten the segment list into the three arrays the native builder takes.
+  def profile_2d_shape(segments)
+    points = []
+    counts = []
+    kinds = []
+
+    segments.each do |kind, segment_points|
+      next if segment_points.length < 2
+
+      points.concat(segment_points)
+      counts << segment_points.length
+      kinds << (kind == :spline ? 1 : 0)
+    end
+
+    __rrcad_profile_2d(points, counts, kinds)
   end
 
   # Last steps of building a profile: grow or shrink it, then replicate it.
@@ -1055,8 +1215,11 @@ class SketchBuilder
       clone.named[name] = point_map.fetch(point)
     end
 
-    @lines.each do |a, b|
-      clone.lines << [point_map.fetch(a), point_map.fetch(b)]
+    @lines.each do |a, b, interior|
+      copy = interior.nil? ? nil : interior.map do |through|
+        through.is_a?(SketchPoint) ? point_map.fetch(through) : through
+      end
+      clone.lines << [point_map.fetch(a), point_map.fetch(b), copy]
     end
 
     @constraints.each do |constraint|
@@ -1338,6 +1501,12 @@ class SketchBuilder
             "#{kind}: (#{point_label(a)}, #{point_label(b)}) is not a segment of this sketch"
     end
 
+    if spline_segment?(a, b)
+      raise ArgumentError,
+            "cannot #{kind} (#{point_label(a)}, #{point_label(b)}): it is a spline segment, " \
+            "and #{kind} slides an endpoint along a straight one"
+    end
+
     if target.nil? == distance.nil?
       raise ArgumentError, "#{kind} requires exactly one of to: or by:"
     end
@@ -1368,11 +1537,19 @@ class SketchBuilder
     end
   end
 
-  # Only segments actually drawn with +line+ can be trimmed or extended;
-  # either orientation counts.
+  # Only segments actually drawn with +line+ or +spline+ can be trimmed or
+  # extended; either orientation counts.
   def registered_segment?(a, b)
     @lines.any? do |(x, y)|
       (x.equal?(a) && y.equal?(b)) || (x.equal?(b) && y.equal?(a))
+    end
+  end
+
+  def spline_segment?(a, b)
+    @lines.any? do |entry|
+      x, y = entry
+      spline_entry?(entry) &&
+        ((x.equal?(a) && y.equal?(b)) || (x.equal?(b) && y.equal?(a)))
     end
   end
 

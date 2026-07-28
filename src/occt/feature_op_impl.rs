@@ -18,6 +18,9 @@ impl FeatureOp {
             FeatureOp::Rect { w, h } => format!("rect(w={w}, h={h})"),
             FeatureOp::Circle { r } => format!("circle(r={r})"),
             FeatureOp::Polygon { points } => format!("polygon(points={})", points.len() / 2),
+            FeatureOp::Profile2D { counts, .. } => {
+                format!("profile_2d(segments={})", counts.len())
+            }
             FeatureOp::Ellipse { rx, ry } => format!("ellipse(rx={rx}, ry={ry})"),
             FeatureOp::Arc {
                 r,
@@ -168,6 +171,7 @@ impl FeatureOp {
             | FeatureOp::Rect { .. }
             | FeatureOp::Circle { .. }
             | FeatureOp::Polygon { .. }
+            | FeatureOp::Profile2D { .. }
             | FeatureOp::Ellipse { .. }
             | FeatureOp::Arc { .. }
             | FeatureOp::Spline2D { .. }

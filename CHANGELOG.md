@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Spline segments in sketch profiles** (Phase 11 Track A,
+  `src/occt/bridge.cpp`, `src/ruby/prelude.rb`): `spline a, b, through: [...]`
+  draws a curved segment of a constraint sketch through the given interior
+  points, which may be literal `[x, y]` pairs or sketch points the solver
+  places. A new `make_profile_2d` bridge function builds the outline as a
+  chain of edges — straight runs as line edges, curved ones interpolated with
+  `GeomAPI_Interpolate` — so the curve reaches the profile as a real BSpline
+  edge rather than a polyline standing in for one, and survives export and
+  later features as a curve. A sketch with a spline needs only two segments to
+  close, since a curve can close a loop on its own. Corner modifiers set back
+  along a straight run and `trim` / `extend` slide an endpoint along one, so
+  both reject spline segments by name; corners between two straight segments
+  still work in a sketch that has curves elsewhere.
+
 - **Sketch-level patterns** (Phase 11 Track A, `src/ruby/prelude.rb`):
   `linear_pattern(count:, dx:, dy:)`, `polar_pattern(count:, center:,
   angle:)`, and `grid_pattern(nx:, ny:, dx:, dy:)` inside `sketch do ... end`

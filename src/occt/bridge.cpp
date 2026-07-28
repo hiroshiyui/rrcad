@@ -975,6 +975,90 @@ std::unique_ptr<OcctShape> make_circle_face(double r) {
 // Phase 4: Sketch profiles — polygon, ellipse, arc
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Phase 11: make_profile_2d — a closed XY profile mixing straight and curved
+// segments, so a constraint sketch can carry spline edges without falling back
+// to a polyline approximation of them.
+// ---------------------------------------------------------------------------
+
+std::unique_ptr<OcctShape> make_profile_2d(rust::Slice<const double> pts,
+                                           rust::Slice<const int32_t> counts,
+                                           rust::Slice<const int32_t> kinds) {
+    try {
+        if (counts.size() != kinds.size())
+            throw std::runtime_error("make_profile_2d: counts and kinds must have equal length");
+        if (counts.size() < 2)
+            throw std::runtime_error("make_profile_2d: need at least 2 segments");
+
+        std::size_t total = 0;
+        for (std::size_t i = 0; i < counts.size(); ++i) {
+            if (counts[i] < 2)
+                throw std::runtime_error("make_profile_2d: every segment needs at least 2 points");
+            total += static_cast<std::size_t>(counts[i]);
+        }
+        if (total * 2 != pts.size())
+            throw std::runtime_error("make_profile_2d: point count does not match the segments");
+
+        BRepBuilderAPI_MakeWire wire_builder;
+        std::size_t offset = 0;
+
+        for (std::size_t seg = 0; seg < counts.size(); ++seg) {
+            int n = counts[seg];
+
+            if (kinds[seg] == 0) {
+                // Straight run: one edge per pair, skipping repeated points.
+                for (int i = 0; i + 1 < n; ++i) {
+                    gp_Pnt a(pts[(offset + i) * 2], pts[(offset + i) * 2 + 1], 0.0);
+                    gp_Pnt b(pts[(offset + i + 1) * 2], pts[(offset + i + 1) * 2 + 1], 0.0);
+                    if (a.Distance(b) <= Precision::Confusion())
+                        continue;
+                    wire_builder.Add(BRepBuilderAPI_MakeEdge(a, b).Edge());
+                }
+            } else {
+                // Curved run: interpolate a BSpline through every point.
+                Handle(TColgp_HArray1OfPnt) curve_pts = new TColgp_HArray1OfPnt(1, n);
+                for (int i = 0; i < n; ++i) {
+                    curve_pts->SetValue(
+                        i + 1, gp_Pnt(pts[(offset + i) * 2], pts[(offset + i) * 2 + 1], 0.0));
+                }
+
+                GeomAPI_Interpolate interp(curve_pts, /*isPeriodic=*/Standard_False,
+                                           /*Tolerance=*/1e-6);
+                interp.Perform();
+                if (!interp.IsDone())
+                    throw std::runtime_error(
+                        "GeomAPI_Interpolate (make_profile_2d) failed: a spline segment's points "
+                        "may be duplicated or collinear to within tolerance");
+
+                wire_builder.Add(BRepBuilderAPI_MakeEdge(interp.Curve()).Edge());
+            }
+
+            offset += static_cast<std::size_t>(n);
+        }
+
+        // Close the loop if the caller left a gap between the last and first
+        // point, mirroring what make_spline_2d does.
+        gp_Pnt first(pts[0], pts[1], 0.0);
+        gp_Pnt last(pts[(total - 1) * 2], pts[(total - 1) * 2 + 1], 0.0);
+        if (first.Distance(last) > Precision::Confusion())
+            wire_builder.Add(BRepBuilderAPI_MakeEdge(last, first).Edge());
+
+        if (!wire_builder.IsDone())
+            throw std::runtime_error("BRepBuilderAPI_MakeWire (make_profile_2d) failed: the "
+                                     "segments do not form one connected loop");
+
+        BRepBuilderAPI_MakeFace face(wire_builder.Wire());
+        if (!face.IsDone())
+            throw std::runtime_error("BRepBuilderAPI_MakeFace (make_profile_2d) failed");
+
+        return wrap(face.Face());
+    } catch (const Standard_Failure& e) {
+        throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
+    } catch (const std::exception&) {
+        throw;
+    }
+}
+
 std::unique_ptr<OcctShape> make_polygon(rust::Slice<const double> pts) {
     try {
         int n = (int)(pts.size() / 2);

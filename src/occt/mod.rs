@@ -93,6 +93,11 @@ mod ffi {
         fn make_rect(w: f64, h: f64) -> Result<UniquePtr<OcctShape>>;
         fn make_circle_face(r: f64) -> Result<UniquePtr<OcctShape>>;
         fn make_polygon(pts: &[f64]) -> Result<UniquePtr<OcctShape>>;
+        fn make_profile_2d(
+            pts: &[f64],
+            counts: &[i32],
+            kinds: &[i32],
+        ) -> Result<UniquePtr<OcctShape>>;
         fn make_ellipse_face(rx: f64, ry: f64) -> Result<UniquePtr<OcctShape>>;
         fn make_arc(r: f64, start_deg: f64, end_deg: f64) -> Result<UniquePtr<OcctShape>>;
 

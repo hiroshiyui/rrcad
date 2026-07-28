@@ -429,12 +429,14 @@ is still active.
 | `tests/phase11_sketch_corners.rs` | Phase 11 Track A: sketch corner `fillet` / `chamfer` |
 | `tests/phase11_sketch_edits.rs` | Phase 11 Track A: sketch segment `trim` / `extend` |
 | `tests/phase11_profile_offset.rs` | Phase 11 Track A: sketch `offset` and `Shape#offset_2d` |
+| `tests/phase11_sketch_patterns.rs` | Phase 11 Track A: sketch `linear_pattern`, `polar_pattern`, `grid_pattern` |
+| `tests/phase11_sketch_splines.rs` | Phase 11 Track A: `spline` segments and the `make_profile_2d` builder beneath them |
 | `tests/export_confinement.rs` | Import/export path confinement: working-directory rule, symlink escapes, missing directories |
 | `tests/project_config_integration.rs` | `rrcad.toml` discovery, parent-directory walk-up, `[params]` and `preview_port` |
 | `tests/script_output.rs` | `puts`, `print`, `p`, `pp` formatting rules and the output sink |
 
 Per-file test counts go stale quickly and are deliberately left out; run
-`cargo test` for the current totals (770 at the time of writing).
+`cargo test` for the current totals (813 at the time of writing).
 
 Output files are written to `std::env::temp_dir()` (typically `/tmp` on Linux).
 

@@ -13,6 +13,11 @@ impl FeatureNode {
             FeatureOp::Rect { w, h } => Shape::make_rect(*w, *h),
             FeatureOp::Circle { r } => Shape::make_circle_face(*r),
             FeatureOp::Polygon { points } => Shape::make_polygon(points),
+            FeatureOp::Profile2D {
+                points,
+                counts,
+                kinds,
+            } => Shape::make_profile_2d(points, counts, kinds),
             FeatureOp::Ellipse { rx, ry } => Shape::make_ellipse_face(*rx, *ry),
             FeatureOp::Arc {
                 r,

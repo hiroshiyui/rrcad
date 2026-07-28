@@ -118,6 +118,8 @@ extern void* rrcad_shape_mirror(void* ptr, const char* plane, const char** error
 extern void* rrcad_make_rect(double w, double h, const char** error_out);
 extern void* rrcad_make_circle_face(double r, const char** error_out);
 extern void* rrcad_make_polygon(const double* pts, size_t n_pts, const char** error_out);
+extern void* rrcad_make_profile_2d(const double* pts, size_t n_pts, const int* counts,
+                                   const int* kinds, size_t n_segments, const char** error_out);
 extern void* rrcad_make_ellipse_face(double rx, double ry, const char** error_out);
 extern void* rrcad_make_arc(double r, double start_deg, double end_deg, const char** error_out);
 extern void* rrcad_shape_extrude(void* ptr, double height, const char** error_out);
@@ -1623,6 +1625,49 @@ static mrb_value mrb_rrcad_polygon(mrb_state* mrb, mrb_value self) {
     return shape_from_ptr(mrb, ptr);
 }
 
+/* __rrcad_profile_2d(points, counts, kinds)
+ *
+ * Internal primitive behind sketches that mix straight and spline segments.
+ * `points` is an Array of [x, y] pairs, `counts` how many of them each segment
+ * owns, and `kinds` 0 for a straight run or 1 for an interpolated spline. The
+ * sketcher flattens its segment list into this form; scripts use `sketch`. */
+static mrb_value mrb_rrcad_profile_2d(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value pts_arr, counts_arr, kinds_arr;
+    mrb_get_args(mrb, "AAA", &pts_arr, &counts_arr, &kinds_arr);
+
+    int n_segments = (int)RARRAY_LEN(counts_arr);
+    if (n_segments != (int)RARRAY_LEN(kinds_arr))
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "profile_2d: counts and kinds must have equal length");
+    if (n_segments < 1)
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "profile_2d: need at least one segment");
+
+    int n = 0;
+    double* pts = extract_point_array(mrb, pts_arr, 2, &n);
+
+    int* counts = (int*)malloc((size_t)n_segments * sizeof(int));
+    int* kinds = (int*)malloc((size_t)n_segments * sizeof(int));
+    if (!counts || !kinds) {
+        free(pts);
+        free(counts);
+        free(kinds);
+        mrb_raise(mrb, E_RUNTIME_ERROR, "out of memory");
+    }
+
+    for (int i = 0; i < n_segments; i++) {
+        counts[i] = (int)mrb_as_int(mrb, mrb_ary_ref(mrb, counts_arr, i));
+        kinds[i] = (int)mrb_as_int(mrb, mrb_ary_ref(mrb, kinds_arr, i));
+    }
+
+    const char* err = NULL;
+    void* ptr = rrcad_make_profile_2d(pts, (size_t)n, counts, kinds, (size_t)n_segments, &err);
+    free(pts);
+    free(counts);
+    free(kinds);
+    raise_if_err(mrb, err);
+    return shape_from_ptr(mrb, ptr);
+}
+
 static mrb_value mrb_rrcad_ellipse(mrb_state* mrb, mrb_value self) {
     (void)self;
     mrb_value rx_val, ry_val;
@@ -2727,6 +2772,8 @@ void rrcad_register_shape_class(mrb_state* mrb) {
 
     /* Phase 4: Sketch profiles */
     mrb_define_method(mrb, mrb->kernel_module, "polygon", mrb_rrcad_polygon, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, mrb->kernel_module, "__rrcad_profile_2d", mrb_rrcad_profile_2d,
+                      MRB_ARGS_REQ(3));
     mrb_define_method(mrb, mrb->kernel_module, "ellipse", mrb_rrcad_ellipse, MRB_ARGS_REQ(2));
     mrb_define_method(mrb, mrb->kernel_module, "arc", mrb_rrcad_arc, MRB_ARGS_REQ(3));
 

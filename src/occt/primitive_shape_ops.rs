@@ -108,6 +108,26 @@ impl Shape {
             .map_err(|e| e.to_string())
     }
 
+    /// Closed XY profile from a chain of segments: `counts[i]` points per
+    /// segment, `kinds[i]` of 0 for a straight run and 1 for an interpolated
+    /// spline. Lets a sketch carry real curved edges instead of approximating
+    /// them with a polyline.
+    pub fn make_profile_2d(pts: &[f64], counts: &[i32], kinds: &[i32]) -> Result<Self, String> {
+        ffi::make_profile_2d(pts, counts, kinds)
+            .map(|p| {
+                Shape::fresh_with_feature(
+                    p,
+                    FeatureOp::Profile2D {
+                        points: pts.to_vec(),
+                        counts: counts.to_vec(),
+                        kinds: kinds.to_vec(),
+                    },
+                    format!("profile_2d(segments={})", counts.len()),
+                )
+            })
+            .map_err(|e| e.to_string())
+    }
+
     pub fn make_ellipse_face(rx: f64, ry: f64) -> Result<Self, String> {
         ffi::make_ellipse_face(rx, ry)
             .map(|p| {

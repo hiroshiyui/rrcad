@@ -136,6 +136,17 @@ std::unique_ptr<OcctShape> make_circle_face(double r);
 
 // --- Phase 4: sketch profiles ---
 std::unique_ptr<OcctShape> make_polygon(rust::Slice<const double> pts);
+
+// Phase 11: closed profile face in the XY plane from a chain of segments, so a
+// sketch can mix straight runs with interpolated curves in one outline.
+// `pts` is a flat [x0,y0, x1,y1, ...] array; segment i owns `counts[i]`
+// consecutive points and repeats the corner it shares with its neighbour.
+// kinds[i] == 0 draws a polyline through the segment's points, 1 interpolates
+// a BSpline through them (GeomAPI_Interpolate, as `spline_2d` does).
+// The chain must close; a gap wider than the tolerance is joined by a line.
+std::unique_ptr<OcctShape> make_profile_2d(rust::Slice<const double> pts,
+                                           rust::Slice<const int32_t> counts,
+                                           rust::Slice<const int32_t> kinds);
 std::unique_ptr<OcctShape> make_ellipse_face(double rx, double ry);
 std::unique_ptr<OcctShape> make_arc(double r, double start_deg, double end_deg);
 
