@@ -3396,6 +3396,26 @@ struct DrawingCallout {
     std::string text;
 };
 
+// One ordinate dimension: a witness line running from a feature's centre out to
+// a common baseline, labelled with that feature's distance from the view's
+// datum corner.  Ordinate dimensioning is what a plate full of holes actually
+// gets on a drawing — a chain of individual dimensions between every pair would
+// be unreadable and would accumulate tolerance.
+struct DrawingOrdinate {
+    // true: measured along the drawing's X, witness drawn below the view.
+    // false: measured along Y, witness drawn to the left.
+    bool horizontal;
+    // The feature's position on the measured axis, in drawing coordinates.
+    double at;
+    // The measured distance from the datum corner, in model units.
+    std::string label;
+};
+
+// Ordinate baselines sit outside the overall dimension lines so the two never
+// overlap, with room beyond for the rotated labels.
+static const double ORDINATE_BASELINE = 20.0;
+static const double ORDINATE_LABEL_ROOM = 12.0;
+
 // A requested section (cutting) plane for a drawing view.
 // `active` is false when the caller passed no `section:` option, in which case
 // the drawing is a plain projection and no cutting is performed at all.
@@ -3440,6 +3460,7 @@ struct DrawingViewData {
     DrawingPolylines hatch;
     std::vector<DrawingMark> marks;
     std::vector<DrawingCallout> callouts;
+    std::vector<DrawingOrdinate> ordinates;
     double geom_xmin = 0.0;
     double geom_xmax = 0.0;
     double geom_ymin = 0.0;
@@ -3579,6 +3600,37 @@ static std::vector<DrawingMark> collect_center_marks(const OcctShape& shape,
     }
 
     return marks;
+}
+
+// Turn the located feature centres into ordinate dimensions measured from the
+// view's datum corner — the lower-left of the projected geometry, which is what
+// a shop sets its zero to.
+//
+// Coordinates arrive already multiplied by the drawing `scale`, so the label is
+// divided back down: an ordinate states where the feature is on the *part*, not
+// where it landed on the page.
+//
+// Features sharing a coordinate collapse to one ordinate. A row of holes at the
+// same Y needs one Y dimension, not four stacked on top of each other.
+static std::vector<DrawingOrdinate> collect_ordinates(const std::vector<DrawingMark>& marks,
+                                                      double origin_x, double origin_y,
+                                                      double scale) {
+    std::vector<DrawingOrdinate> ordinates;
+    auto add = [&](bool horizontal, double at, double origin) {
+        for (const auto& o : ordinates)
+            if (o.horizontal == horizontal && std::abs(o.at - at) < 1e-6)
+                return;
+        // A zero-length ordinate is the datum itself and carries no information.
+        const double measured = (at - origin) / scale;
+        if (std::abs(measured) < 1e-9)
+            return;
+        ordinates.push_back({horizontal, at, format_measurement(measured)});
+    };
+    for (const auto& mark : marks) {
+        add(true, mark.x, origin_x);
+        add(false, mark.y, origin_y);
+    }
+    return ordinates;
 }
 
 static std::vector<DrawingCallout> collect_callouts(const OcctShape& shape,
@@ -3834,7 +3886,7 @@ static HlrProjection hlr_project(const OcctShape& shape, const std::string& view
 
 static DrawingViewData build_drawing_view(const OcctShape& shape, const std::string& view,
                                           double scale, bool hidden, bool center_marks,
-                                          bool dimensions, bool callouts,
+                                          bool dimensions, bool callouts, bool ordinate,
                                           const SectionSpec& section) {
     // When a section is requested, everything downstream (projection, centre
     // marks, callouts) works on the material left behind the cutting plane.
@@ -3863,7 +3915,10 @@ static DrawingViewData build_drawing_view(const OcctShape& shape, const std::str
     scale_polylines(projection.visible, scale);
     scale_polylines(projection.hidden, scale);
 
-    auto marks = center_marks ? collect_center_marks(source, view) : std::vector<DrawingMark>{};
+    // Feature centres serve two options: the crosshair marks and the ordinate
+    // dimensions, so they are located whenever either is asked for.
+    auto marks = (center_marks || ordinate) ? collect_center_marks(source, view)
+                                            : std::vector<DrawingMark>{};
     for (auto& mark : marks) {
         mark.x *= scale;
         mark.y *= scale;
@@ -3894,11 +3949,15 @@ static DrawingViewData build_drawing_view(const OcctShape& shape, const std::str
         include_bounds(projection.hidden);
     include_bounds(section_outline);
     include_bounds(hatch);
-    for (const auto& mark : marks) {
-        geom_xmin = std::min(geom_xmin, mark.x - mark.size);
-        geom_xmax = std::max(geom_xmax, mark.x + mark.size);
-        geom_ymin = std::min(geom_ymin, mark.y - mark.size);
-        geom_ymax = std::max(geom_ymax, mark.y + mark.size);
+    // Only the drawn crosshairs affect the extents; centres located purely to
+    // place ordinates lie inside the geometry anyway.
+    if (center_marks) {
+        for (const auto& mark : marks) {
+            geom_xmin = std::min(geom_xmin, mark.x - mark.size);
+            geom_xmax = std::max(geom_xmax, mark.x + mark.size);
+            geom_ymin = std::min(geom_ymin, mark.y - mark.size);
+            geom_ymax = std::max(geom_ymax, mark.y + mark.size);
+        }
     }
     for (const auto& callout : callout_list) {
         geom_xmin = std::min(geom_xmin, std::min(callout.x, callout.leader_x));
@@ -3922,6 +3981,15 @@ static DrawingViewData build_drawing_view(const OcctShape& shape, const std::str
         ymax += 7.0;
     }
 
+    // The datum corner is the lower-left of the projected geometry, so the
+    // ordinates read as distances across the part itself.
+    auto ordinate_list = ordinate ? collect_ordinates(marks, geom_xmin, geom_ymin, scale)
+                                  : std::vector<DrawingOrdinate>{};
+    if (ordinate) {
+        xmin = std::min(xmin, geom_xmin - ORDINATE_BASELINE - ORDINATE_LABEL_ROOM);
+        ymin = std::min(ymin, geom_ymin - ORDINATE_BASELINE - ORDINATE_LABEL_ROOM);
+    }
+
     DrawingViewData view_data;
     view_data.name = view;
     view_data.visible = std::move(projection.visible);
@@ -3930,6 +3998,7 @@ static DrawingViewData build_drawing_view(const OcctShape& shape, const std::str
     view_data.hatch = std::move(hatch);
     view_data.marks = std::move(marks);
     view_data.callouts = std::move(callout_list);
+    view_data.ordinates = std::move(ordinate_list);
     view_data.geom_xmin = geom_xmin;
     view_data.geom_xmax = geom_xmax;
     view_data.geom_ymin = geom_ymin;
@@ -4321,6 +4390,44 @@ static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double
         }
         f << "  </g>\n";
     }
+    // Ordinate dimensions: witness lines from each feature centre out to a
+    // baseline along the bottom and left, labelled with the distance from the
+    // datum corner.  The datum itself is drawn as a short cross at the corner.
+    if (!view.ordinates.empty()) {
+        const double x0 = view.geom_xmin + offset_x;
+        const double y0 = view.geom_ymin + offset_y;
+        const double base_y = y0 - ORDINATE_BASELINE;
+        const double base_x = x0 - ORDINATE_BASELINE;
+        f << "  <g class=\"";
+        if (sheet_mode)
+            f << "view view-" << view.name << " ";
+        f << "ordinates\" stroke=\"#0f766e\" stroke-width=\"0.2\" fill=\"none\"";
+        f << " stroke-linecap=\"round\" font-family=\"monospace\" font-size=\"2.6\">\n";
+        // Datum corner marker.
+        f << "    <line x1=\"" << (x0 - 2.0) << "\" y1=\"" << (-y0) << "\" x2=\"" << (x0 + 2.0)
+          << "\" y2=\"" << (-y0) << "\"/>\n";
+        f << "    <line x1=\"" << x0 << "\" y1=\"" << (-(y0 - 2.0)) << "\" x2=\"" << x0
+          << "\" y2=\"" << (-(y0 + 2.0)) << "\"/>\n";
+        for (const auto& ord : view.ordinates) {
+            if (ord.horizontal) {
+                const double x = ord.at + offset_x;
+                f << "    <line x1=\"" << x << "\" y1=\"" << (-y0) << "\" x2=\"" << x << "\" y2=\""
+                  << (-base_y) << "\"/>\n";
+                // Rotated so neighbouring labels cannot collide when two
+                // features sit a few millimetres apart.
+                f << "    <text x=\"" << x << "\" y=\"" << (-(base_y - 1.5))
+                  << "\" text-anchor=\"end\" fill=\"#0f766e\" transform=\"rotate(-90 " << x << " "
+                  << (-(base_y - 1.5)) << ")\">" << ord.label << "</text>\n";
+            } else {
+                const double y = ord.at + offset_y;
+                f << "    <line x1=\"" << x0 << "\" y1=\"" << (-y) << "\" x2=\"" << base_x
+                  << "\" y2=\"" << (-y) << "\"/>\n";
+                f << "    <text x=\"" << (base_x - 1.5) << "\" y=\"" << (-y)
+                  << "\" text-anchor=\"end\" fill=\"#0f766e\">" << ord.label << "</text>\n";
+            }
+        }
+        f << "  </g>\n";
+    }
     // Detail bubble: the region marker on a parent view, or the border circle
     // and caption on the magnified view itself.
     if (view.detail_marker) {
@@ -4475,6 +4582,55 @@ static void write_dxf_view(std::ofstream& f, const DrawingViewData& view, double
             f << " 21\n" << ly << "\n";
             f << " 31\n0.0\n";
             write_text(lx + 2.0, ly, callout.text);
+        }
+    }
+    // Ordinate dimensions on their own layer, mirroring the SVG group.
+    if (!view.ordinates.empty()) {
+        const double x0 = view.geom_xmin + offset_x;
+        const double y0 = view.geom_ymin + offset_y;
+        const double base_y = y0 - ORDINATE_BASELINE;
+        const double base_x = x0 - ORDINATE_BASELINE;
+        auto write_line = [&](double x1, double y1, double x2, double y2) {
+            f << "  0\nLINE\n";
+            f << "  8\nORDINATE\n";
+            f << " 10\n" << x1 << "\n";
+            f << " 20\n" << y1 << "\n";
+            f << " 30\n0.0\n";
+            f << " 11\n" << x2 << "\n";
+            f << " 21\n" << y2 << "\n";
+            f << " 31\n0.0\n";
+        };
+        // Right-aligned (group code 72 = 2), which needs the second alignment
+        // point 11/21 as well.  Alignment matters here: a rotated left-aligned
+        // label would grow back over the drawing instead of away from it, which
+        // is also why the SVG uses text-anchor="end".
+        auto write_text = [&](double x, double y, const std::string& text, double rotation) {
+            f << "  0\nTEXT\n";
+            f << "  8\nORDINATE\n";
+            f << " 10\n" << x << "\n";
+            f << " 20\n" << y << "\n";
+            f << " 30\n0.0\n";
+            f << " 40\n2.6\n";
+            f << " 50\n" << rotation << "\n";
+            f << " 72\n2\n";
+            f << " 11\n" << x << "\n";
+            f << " 21\n" << y << "\n";
+            f << " 31\n0.0\n";
+            f << "  1\n" << text << "\n";
+        };
+        // Datum corner marker.
+        write_line(x0 - 2.0, y0, x0 + 2.0, y0);
+        write_line(x0, y0 - 2.0, x0, y0 + 2.0);
+        for (const auto& ord : view.ordinates) {
+            if (ord.horizontal) {
+                const double x = ord.at + offset_x;
+                write_line(x, y0, x, base_y);
+                write_text(x, base_y - 1.5, ord.label, 90.0);
+            } else {
+                const double y = ord.at + offset_y;
+                write_line(x0, y, base_x, y);
+                write_text(base_x - 1.5, y, ord.label, 0.0);
+            }
         }
     }
     // Detail bubble on its own layer, so a shop can turn the annotation off
@@ -4891,7 +5047,7 @@ void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double s
                 double feature_control_anchor_y, double feature_control_anchor_z,
                 double tolerance_plus, double tolerance_minus, rust::Str section_plane,
                 double section_offset, bool detail_active, double detail_x, double detail_y,
-                double detail_radius, double detail_scale, rust::Str detail_label) {
+                double detail_radius, double detail_scale, rust::Str detail_label, bool ordinate) {
     try {
         const DrawingExportSetup setup = prepare_drawing_export(
             "export_svg", path, view, scale, datum, feature_control, datum_anchor_x, datum_anchor_y,
@@ -4907,11 +5063,11 @@ void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double s
 
         if (setup.sheet_mode) {
             auto top_view = build_drawing_view(shape, "top", scale, hidden, center_marks,
-                                               dimensions, callouts, setup.section);
+                                               dimensions, callouts, ordinate, setup.section);
             auto front_view = build_drawing_view(shape, "front", scale, hidden, center_marks,
-                                                 dimensions, callouts, setup.section);
+                                                 dimensions, callouts, ordinate, setup.section);
             auto side_view = build_drawing_view(shape, "side", scale, hidden, center_marks,
-                                                dimensions, callouts, setup.section);
+                                                dimensions, callouts, ordinate, setup.section);
 
             const SheetLayout layout =
                 compute_sheet_layout(top_view, front_view, side_view, sheet_gap,
@@ -4957,7 +5113,7 @@ void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double s
         }
 
         auto single_view = build_drawing_view(shape, setup.view, scale, hidden, center_marks,
-                                              dimensions, callouts, setup.section);
+                                              dimensions, callouts, ordinate, setup.section);
         // Build the close-up from the parent's projected geometry, then mark the
         // region on the parent — in that order, since marking grows its bounds.
         DrawingViewData detail_view;
@@ -5034,7 +5190,7 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
                 double feature_control_anchor_y, double feature_control_anchor_z,
                 double tolerance_plus, double tolerance_minus, rust::Str section_plane,
                 double section_offset, bool detail_active, double detail_x, double detail_y,
-                double detail_radius, double detail_scale, rust::Str detail_label) {
+                double detail_radius, double detail_scale, rust::Str detail_label, bool ordinate) {
     try {
         const DrawingExportSetup setup = prepare_drawing_export(
             "export_dxf", path, view, scale, datum, feature_control, datum_anchor_x, datum_anchor_y,
@@ -5049,11 +5205,11 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
             const double sheet_gap = 16.0;
 
             auto top_view = build_drawing_view(shape, "top", scale, hidden, center_marks,
-                                               dimensions, callouts, setup.section);
+                                               dimensions, callouts, ordinate, setup.section);
             auto front_view = build_drawing_view(shape, "front", scale, hidden, center_marks,
-                                                 dimensions, callouts, setup.section);
+                                                 dimensions, callouts, ordinate, setup.section);
             auto side_view = build_drawing_view(shape, "side", scale, hidden, center_marks,
-                                                dimensions, callouts, setup.section);
+                                                dimensions, callouts, ordinate, setup.section);
 
             const SheetLayout layout =
                 compute_sheet_layout(top_view, front_view, side_view, sheet_gap,
@@ -5095,7 +5251,7 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
         }
 
         auto single_view = build_drawing_view(shape, setup.view, scale, hidden, center_marks,
-                                              dimensions, callouts, setup.section);
+                                              dimensions, callouts, ordinate, setup.section);
         // Same order as the SVG path: magnify first, then mark the parent.
         DrawingViewData detail_view;
         DetailPlacement detail_at;

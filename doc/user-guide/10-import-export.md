@@ -149,6 +149,58 @@ misses the part reports the part's extent along that axis, a non-solid input
 is rejected (there is no material to cut), and an unknown plane name is
 caught before any geometry work.
 
+## Ordinate dimensions
+
+`dimensions: true` labels the drawing's overall width and height. That says
+nothing about *where* the holes are, which is usually the point of the drawing.
+`ordinate: true` measures every located feature from a single datum corner:
+
+```ruby
+plate = box(80, 50, 6)
+[[12, 12], [68, 12], [12, 38], [68, 38]].each do |x, y|
+  plate = plate.cut(cylinder(2.6, 12).translate(x, y, -1))
+end
+
+plate.export("plate.svg", view: :top, ordinate: true, callouts: true)
+```
+
+That emits four ordinates — `12` and `68` along the bottom, `12` and `38` up
+the left side — with `callouts: true` adding the hole diameters. Pairing the
+two gives a complete plate drawing: what size the holes are, and where.
+
+Ordinate dimensioning is the right form here because a chain of dimensions
+between neighbouring holes accumulates tolerance across the part and becomes
+unreadable past a few features. Every ordinate is measured independently from
+the same zero.
+
+**The datum is the lower-left corner of the projected geometry**, not the model
+origin — so a part modelled 500 mm from the origin still reads `12`, and the
+numbers match what a machinist measures with the part clamped against a corner
+stop. Features sharing a coordinate collapse to one ordinate: a row of four
+holes at the same Y gets one Y dimension, not four stacked on top of each
+other.
+
+The located features are **cylindrical faces whose axis points along the view
+direction** — the same set `center_marks:` and `callouts:` act on. That
+includes corner fillets, whose ordinates give the radii's centres. A hole
+drilled along Y is a feature to the `:front` view and not to `:top`, where it
+projects as a pair of straight edges.
+
+Labels are always in model units. Exporting at `scale: 2` moves the witness
+lines but does not double the numbers — an ordinate states a dimension of the
+part, not of the page.
+
+Output details:
+
+- **SVG** — an `ordinates` group holding the datum cross, the witness lines,
+  and the labels.
+- **DXF** — the same on an `ORDINATE` layer, with the labels right-aligned
+  (group code `72`) so a rotated label grows away from the drawing.
+
+`ordinate:` composes with `dimensions:`; the ordinate baselines sit outside the
+overall dimension lines. On `view: :sheet` each view is dimensioned from its
+own corner. A part with no cylindrical features simply gets no ordinates.
+
 ## Detail views
 
 Some features are too small to dimension at the drawing's scale. `detail:`

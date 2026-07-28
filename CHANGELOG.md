@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Ordinate dimensioning on 2-D drawings** (`src/occt/bridge.cpp`,
+  `src/ruby/glue.c`): `part.export("plate.svg", ordinate: true)` measures every
+  located feature from a single datum corner and labels it, so a drawing says
+  where the holes are and not just how big the part is. Ordinate form was
+  chosen over a chain of dimensions between neighbours because a chain
+  accumulates tolerance across the part and stops being readable past a few
+  features. The datum is the lower-left of the projected geometry rather than
+  the model origin, so a part modelled far from the origin still reads its own
+  dimensions, and the numbers match a part clamped against a corner stop.
+  Labels stay in model units regardless of `scale:`, and features sharing a
+  coordinate collapse to a single ordinate so a row of holes gets one dimension
+  rather than four stacked on each other. The located set is cylindrical faces
+  whose axis points along the view direction — the same features
+  `center_marks:` and `callouts:` act on, including corner fillets. SVG emits
+  an `ordinates` group; DXF an `ORDINATE` layer with right-aligned `TEXT` so a
+  rotated label grows away from the drawing instead of back over it. Composes
+  with `dimensions:` and works per view on `view: :sheet`.
+
 - **Detail views on 2-D drawings** (`src/occt/bridge.cpp`, `src/ruby/glue.c`):
   `part.export("part.svg", view: :top, detail: { at: [68, 38], radius: 8,
   scale: 4 })` clips a circular region out of the projection, magnifies it, and

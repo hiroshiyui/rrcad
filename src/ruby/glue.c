@@ -193,7 +193,7 @@ extern void rrcad_shape_export_svg(
     double feature_control_anchor_y, double feature_control_anchor_z, double tolerance_plus,
     double tolerance_minus, const char* section_plane, double section_offset, int detail_active,
     double detail_x, double detail_y, double detail_radius, double detail_scale,
-    const char* detail_label, const char** error_out);
+    const char* detail_label, int ordinate, const char** error_out);
 extern void rrcad_shape_export_dxf(
     void* ptr, const char* path, const char* view, double scale, int hidden, int center_marks,
     int dimensions, int title_block, int callouts, const char* datum, int datum_anchor_valid,
@@ -202,7 +202,7 @@ extern void rrcad_shape_export_dxf(
     double feature_control_anchor_y, double feature_control_anchor_z, double tolerance_plus,
     double tolerance_minus, const char* section_plane, double section_offset, int detail_active,
     double detail_x, double detail_y, double detail_radius, double detail_scale,
-    const char* detail_label, const char** error_out);
+    const char* detail_label, int ordinate, const char** error_out);
 extern void rrcad_shape_export_outline(void* ptr, const char* path, const char* format,
                                        double deflection, const char** error_out);
 
@@ -655,6 +655,8 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     double detail_scale = 2.0;
     const char* detail_label = "A";
     mrb_value detail_label_buf = mrb_nil_value();
+    /* Ordinate dimensions for the part's located features. */
+    int ordinate = 0;
     if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
         mrb_value vv = opt_fetch(mrb, opts, "view", mrb_nil_value());
         if (mrb_symbol_p(vv)) {
@@ -670,6 +672,7 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
         dimensions = opt_flag(mrb, opts, "dimensions");
         title_block = opt_flag(mrb, opts, "title_block");
         callouts = opt_flag(mrb, opts, "callouts");
+        ordinate = opt_flag(mrb, opts, "ordinate");
         mrb_value datum_v = opt_fetch(mrb, opts, "datum", mrb_nil_value());
         if (!mrb_nil_p(datum_v)) {
             if (mrb_hash_p(datum_v)) {
@@ -828,21 +831,21 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     } else if (dot && (strcasecmp(dot, ".obj") == 0)) {
         rrcad_shape_export_obj(ptr, path, &err);
     } else if (dot && (strcasecmp(dot, ".svg") == 0)) {
-        rrcad_shape_export_svg(ptr, path, view, scale, hidden, center_marks, dimensions,
-                               title_block, callouts, datum, datum_anchor_valid, datum_anchor[0],
-                               datum_anchor[1], datum_anchor[2], feature_control,
-                               feature_control_anchor_valid, feature_control_anchor[0],
-                               feature_control_anchor[1], feature_control_anchor[2], tolerance_plus,
-                               tolerance_minus, section_plane, section_offset, detail_active,
-                               detail_x, detail_y, detail_radius, detail_scale, detail_label, &err);
+        rrcad_shape_export_svg(
+            ptr, path, view, scale, hidden, center_marks, dimensions, title_block, callouts, datum,
+            datum_anchor_valid, datum_anchor[0], datum_anchor[1], datum_anchor[2], feature_control,
+            feature_control_anchor_valid, feature_control_anchor[0], feature_control_anchor[1],
+            feature_control_anchor[2], tolerance_plus, tolerance_minus, section_plane,
+            section_offset, detail_active, detail_x, detail_y, detail_radius, detail_scale,
+            detail_label, ordinate, &err);
     } else if (dot && (strcasecmp(dot, ".dxf") == 0)) {
-        rrcad_shape_export_dxf(ptr, path, view, scale, hidden, center_marks, dimensions,
-                               title_block, callouts, datum, datum_anchor_valid, datum_anchor[0],
-                               datum_anchor[1], datum_anchor[2], feature_control,
-                               feature_control_anchor_valid, feature_control_anchor[0],
-                               feature_control_anchor[1], feature_control_anchor[2], tolerance_plus,
-                               tolerance_minus, section_plane, section_offset, detail_active,
-                               detail_x, detail_y, detail_radius, detail_scale, detail_label, &err);
+        rrcad_shape_export_dxf(
+            ptr, path, view, scale, hidden, center_marks, dimensions, title_block, callouts, datum,
+            datum_anchor_valid, datum_anchor[0], datum_anchor[1], datum_anchor[2], feature_control,
+            feature_control_anchor_valid, feature_control_anchor[0], feature_control_anchor[1],
+            feature_control_anchor[2], tolerance_plus, tolerance_minus, section_plane,
+            section_offset, detail_active, detail_x, detail_y, detail_radius, detail_scale,
+            detail_label, ordinate, &err);
     } else {
         /* Default: STEP (.step, .stp, or unknown extension) */
         rrcad_shape_export_step(ptr, path, &err);

@@ -137,7 +137,13 @@ sheets.
       at the nearest tessellation vertex. SVG uses a `detail` group, DXF a
       `DETAIL` layer. Refused on `view: :sheet`, which has no single parent.
       Tests: 21 in `tests/detail_views.rs`.
-- [ ] Auto-dimensioning of principal features.
+- [x] **Auto-dimensioning of principal features** — `ordinate: true` measures
+      every axis-aligned cylindrical feature from a datum corner (the lower-left
+      of the projected geometry), the form a plate full of holes actually gets
+      on a drawing. Labels stay in model units regardless of the drawing scale,
+      and features sharing a coordinate collapse to one ordinate. SVG uses an
+      `ordinates` group, DXF an `ORDINATE` layer with right-aligned text.
+      Tests: 16 in `tests/auto_dimensioning.rs`.
 - [ ] BOM tables with balloon callouts on assembly sheets.
       Blocked on: `Assembly#export` accepts no options today (see
       [Project Improvements](#project-improvements)).

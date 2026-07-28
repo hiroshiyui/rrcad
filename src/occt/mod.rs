@@ -304,6 +304,7 @@ mod ffi {
             detail_radius: f64,
             detail_scale: f64,
             detail_label: &str,
+            ordinate: bool,
         ) -> Result<()>;
         fn export_dxf(
             shape: &OcctShape,
@@ -335,6 +336,7 @@ mod ffi {
             detail_radius: f64,
             detail_scale: f64,
             detail_label: &str,
+            ordinate: bool,
         ) -> Result<()>;
 
         // Flat cut-file export: the closed loops of one planar face at 1:1.

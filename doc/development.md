@@ -434,6 +434,7 @@ is still active.
 | `tests/phase11_assembly_reports.rs` | Phase 11 Track B: `Assembly#components`, `#interferences` / `#clash?`, `#bom` / `#bom_text`, `#mass_properties`, `mass:` overrides and inertia rollup |
 | `tests/multi_file_projects.rs` | `require_relative`: relative resolution, evaluate-once, cycles, error attribution, dependency reporting |
 | `tests/cut_file_export.rs` | `Shape#export_outline`: flat cut files — CIRCLE/ARC fidelity, true size, layers, errors |
+| `tests/auto_dimensioning.rs` | `ordinate:` dimensions: measured values, datum corner, scale invariance, per-view axes, DXF layer and text alignment |
 | `tests/detail_views.rs` | `detail:` on drawings: marker placement, magnification ratio, clipping on the border, captions, DXF layer, rejections |
 | `tests/export_confinement.rs` | Import/export path confinement: working-directory rule, symlink escapes, missing directories |
 | `tests/project_config_integration.rs` | `rrcad.toml` discovery, parent-directory walk-up, `[params]` and `preview_port` |

@@ -82,6 +82,7 @@ impl Shape {
             "",
             0.0,
             None,
+            false,
         )
     }
 
@@ -111,6 +112,7 @@ impl Shape {
         section_plane: &str,
         section_offset: f64,
         detail: Option<&DetailView>,
+        ordinate: bool,
     ) -> Result<(), String> {
         let (
             datum,
@@ -163,6 +165,7 @@ impl Shape {
             detail_radius,
             detail_scale,
             detail_label,
+            ordinate,
         )
         .map_err(|e| {
             self.fail_with_debug(
@@ -227,6 +230,7 @@ impl Shape {
             "",
             0.0,
             None,
+            false,
         )
     }
 
@@ -256,6 +260,7 @@ impl Shape {
         section_plane: &str,
         section_offset: f64,
         detail: Option<&DetailView>,
+        ordinate: bool,
     ) -> Result<(), String> {
         let (
             datum,
@@ -308,6 +313,7 @@ impl Shape {
             detail_radius,
             detail_scale,
             detail_label,
+            ordinate,
         )
         .map_err(|e| {
             self.fail_with_debug(
@@ -363,7 +369,7 @@ mod tests {
         let path = path.to_string_lossy().into_owned();
         shape.export_svg_with_anchor(
             &path, "top", 1.0, false, false, false, false, false, "", false, 0.0, 0.0, 0.0, "",
-            false, 0.0, 0.0, 0.0, 0.0, 0.0, plane, offset, None,
+            false, 0.0, 0.0, 0.0, 0.0, 0.0, plane, offset, None, false,
         )?;
         Ok(fs::read_to_string(&path).expect("read section SVG"))
     }

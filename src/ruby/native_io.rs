@@ -240,6 +240,8 @@ struct DrawingExportOpts {
     section_offset: f64,
     /// Requested detail view; `None` when the caller passed no `detail:`.
     detail: Option<DetailView>,
+    /// Ordinate dimensions for the located feature centres.
+    ordinate: bool,
 }
 
 impl DrawingExportOpts {
@@ -275,6 +277,7 @@ impl DrawingExportOpts {
             &self.section_plane,
             self.section_offset,
             self.detail.as_ref(),
+            self.ordinate,
         )
     }
 }
@@ -317,6 +320,7 @@ unsafe fn parse_drawing_export_opts(
     detail_radius: f64,
     detail_scale: f64,
     detail_label: *const c_char,
+    ordinate: i32,
     error_out: *mut *const c_char,
 ) -> Option<DrawingExportOpts> {
     let safe = unsafe { resolve_path(path, error_out) }?;
@@ -389,6 +393,7 @@ unsafe fn parse_drawing_export_opts(
         section_plane,
         section_offset,
         detail,
+        ordinate: ordinate != 0,
     })
 }
 
@@ -423,6 +428,7 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
     detail_radius: f64,
     detail_scale: f64,
     detail_label: *const c_char,
+    ordinate: i32,
     error_out: *mut *const c_char,
 ) {
     unsafe { *error_out = std::ptr::null() };
@@ -457,6 +463,7 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
             detail_radius,
             detail_scale,
             detail_label,
+            ordinate,
             error_out,
         )
     }) else {
@@ -498,6 +505,7 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
     detail_radius: f64,
     detail_scale: f64,
     detail_label: *const c_char,
+    ordinate: i32,
     error_out: *mut *const c_char,
 ) {
     unsafe { *error_out = std::ptr::null() };
@@ -532,6 +540,7 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
             detail_radius,
             detail_scale,
             detail_label,
+            ordinate,
             error_out,
         )
     }) else {
@@ -698,6 +707,7 @@ mod tests {
                     0.0,
                     1.0,
                     cstr("").as_ptr(),
+                    0,
                     &mut err,
                 );
             }
@@ -744,6 +754,7 @@ mod tests {
                     0.0,
                     1.0,
                     cstr("").as_ptr(),
+                    0,
                     &mut err,
                 );
             }
@@ -811,6 +822,7 @@ mod tests {
                 0.0,
                 1.0,
                 cstr("").as_ptr(),
+                0,
                 &mut svg_err,
             );
         }
@@ -849,6 +861,7 @@ mod tests {
                 0.0,
                 1.0,
                 cstr("").as_ptr(),
+                0,
                 &mut dxf_err,
             );
         }
