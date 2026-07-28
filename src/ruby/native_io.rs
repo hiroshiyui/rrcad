@@ -215,7 +215,7 @@ enum DrawingFormat {
 }
 
 /// Owned, parsed arguments shared by the SVG and DXF drawing exports.
-/// Both extern "C" entry points take the same 21 raw parameters; this struct
+/// Both extern "C" entry points take the same 23 raw parameters; this struct
 /// holds the validated Rust-side equivalents so the parsing lives in one place.
 struct DrawingExportOpts {
     path: String,
@@ -234,6 +234,10 @@ struct DrawingExportOpts {
     feature_control_anchor: [f64; 3],
     tolerance_plus: f64,
     tolerance_minus: f64,
+    /// Section plane name: empty means "no section", otherwise "xy"/"xz"/"yz".
+    section_plane: String,
+    /// Offset of the section plane along its own normal.
+    section_offset: f64,
 }
 
 impl DrawingExportOpts {
@@ -266,6 +270,8 @@ impl DrawingExportOpts {
             self.feature_control_anchor[2],
             self.tolerance_plus,
             self.tolerance_minus,
+            &self.section_plane,
+            self.section_offset,
         )
     }
 }
@@ -300,6 +306,8 @@ unsafe fn parse_drawing_export_opts(
     feature_control_anchor_z: f64,
     tolerance_plus: f64,
     tolerance_minus: f64,
+    section_plane: *const c_char,
+    section_offset: f64,
     error_out: *mut *const c_char,
 ) -> Option<DrawingExportOpts> {
     let safe = unsafe { resolve_path(path, error_out) }?;
@@ -316,6 +324,15 @@ unsafe fn parse_drawing_export_opts(
         .to_str()
         .unwrap_or("")
         .to_owned();
+    // A null or empty `section_plane` means the caller asked for no section.
+    let section_plane = if section_plane.is_null() {
+        String::new()
+    } else {
+        unsafe { std::ffi::CStr::from_ptr(section_plane) }
+            .to_str()
+            .unwrap_or("")
+            .to_owned()
+    };
     Some(DrawingExportOpts {
         path,
         view,
@@ -337,6 +354,8 @@ unsafe fn parse_drawing_export_opts(
         ],
         tolerance_plus,
         tolerance_minus,
+        section_plane,
+        section_offset,
     })
 }
 
@@ -363,6 +382,8 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
     feature_control_anchor_z: f64,
     tolerance_plus: f64,
     tolerance_minus: f64,
+    section_plane: *const c_char,
+    section_offset: f64,
     error_out: *mut *const c_char,
 ) {
     unsafe { *error_out = std::ptr::null() };
@@ -389,6 +410,8 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
             feature_control_anchor_z,
             tolerance_plus,
             tolerance_minus,
+            section_plane,
+            section_offset,
             error_out,
         )
     }) else {
@@ -422,6 +445,8 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
     feature_control_anchor_z: f64,
     tolerance_plus: f64,
     tolerance_minus: f64,
+    section_plane: *const c_char,
+    section_offset: f64,
     error_out: *mut *const c_char,
 ) {
     unsafe { *error_out = std::ptr::null() };
@@ -448,6 +473,8 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
             feature_control_anchor_z,
             tolerance_plus,
             tolerance_minus,
+            section_plane,
+            section_offset,
             error_out,
         )
     }) else {
@@ -575,6 +602,8 @@ mod tests {
                     0.0,
                     0.0,
                     0.0,
+                    cstr("").as_ptr(),
+                    0.0,
                     &mut err,
                 );
             }
@@ -612,6 +641,8 @@ mod tests {
                     0.0,
                     0.0,
                     0.0,
+                    cstr("").as_ptr(),
+                    0.0,
                     &mut err,
                 );
             }
@@ -626,6 +657,196 @@ mod tests {
             );
 
             unsafe { reclaim_shape(shape) };
+        });
+    }
+
+    /// Run the SVG and DXF exporters with a section plane, returning the raw
+    /// error string (if any) plus the file contents produced.
+    #[allow(clippy::type_complexity)] // one-off tuple, only used by the two section tests
+    fn export_section(
+        dir: &std::path::Path,
+        plane: &str,
+        offset: f64,
+    ) -> (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) {
+        let shape = Box::into_raw(Box::new(Shape::make_box(10.0, 20.0, 30.0).unwrap()))
+            as *mut std::ffi::c_void;
+
+        let mut svg_err: *const c_char = ptr::null();
+        let mut dxf_err: *const c_char = ptr::null();
+        unsafe {
+            rrcad_shape_export_svg(
+                shape,
+                cstr("section.svg").as_ptr(),
+                cstr("top").as_ptr(),
+                1.0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                cstr("").as_ptr(),
+                0,
+                0.0,
+                0.0,
+                0.0,
+                cstr("").as_ptr(),
+                0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                cstr(plane).as_ptr(),
+                offset,
+                &mut svg_err,
+            );
+        }
+        // `set_err` keeps a single thread-local buffer, so the SVG message has
+        // to be copied out before the DXF call can overwrite it.
+        let svg_message = unsafe { error_message(svg_err) };
+        unsafe {
+            rrcad_shape_export_dxf(
+                shape,
+                cstr("section.dxf").as_ptr(),
+                cstr("top").as_ptr(),
+                1.0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                cstr("").as_ptr(),
+                0,
+                0.0,
+                0.0,
+                0.0,
+                cstr("").as_ptr(),
+                0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                cstr(plane).as_ptr(),
+                offset,
+                &mut dxf_err,
+            );
+        }
+        let dxf_message = unsafe { error_message(dxf_err) };
+        unsafe { reclaim_shape(shape) };
+        (
+            svg_message,
+            dxf_message,
+            fs::read_to_string(dir.join("section.svg")).ok(),
+            fs::read_to_string(dir.join("section.dxf")).ok(),
+        )
+    }
+
+    #[test]
+    fn section_view_emits_hatched_cross_section() {
+        let dir = unique_test_dir("rrcad-native-io-section");
+        fs::create_dir_all(&dir).expect("create temp dir");
+
+        with_cwd(&dir, || {
+            // Cut the 10x20x30 box halfway up Z; the cross-section is the
+            // full 10x20 rectangle, so hatching must be produced.
+            let (svg_err, dxf_err, svg, dxf) = export_section(&dir, "xy", 15.0);
+            assert!(
+                svg_err.is_none(),
+                "unexpected SVG section error: {svg_err:?}"
+            );
+            assert!(
+                dxf_err.is_none(),
+                "unexpected DXF section error: {dxf_err:?}"
+            );
+
+            let svg = svg.expect("section SVG was not written");
+            assert!(svg.contains("hatch\""), "SVG is missing the hatch group");
+            assert!(
+                svg.contains("<line"),
+                "SVG hatch group has no line elements"
+            );
+            assert!(
+                svg.contains("section\""),
+                "SVG is missing the cut outline group"
+            );
+
+            let dxf = dxf.expect("section DXF was not written");
+            assert!(dxf.contains("HATCH"), "DXF is missing the HATCH layer");
+        });
+    }
+
+    #[test]
+    fn section_plane_that_misses_the_solid_reports_an_error() {
+        let dir = unique_test_dir("rrcad-native-io-section-miss");
+        fs::create_dir_all(&dir).expect("create temp dir");
+
+        with_cwd(&dir, || {
+            // The box spans z = 0..30, so a plane at z = 500 misses it entirely.
+            let (svg_err, dxf_err, _, _) = export_section(&dir, "xy", 500.0);
+            let svg_err = svg_err.expect("plane missing the solid should error");
+            assert!(
+                svg_err.contains("does not intersect"),
+                "expected a 'does not intersect' SVG error, got: {svg_err}"
+            );
+            let dxf_err = dxf_err.expect("plane missing the solid should error");
+            assert!(
+                dxf_err.contains("does not intersect"),
+                "expected a 'does not intersect' DXF error, got: {dxf_err}"
+            );
+        });
+    }
+
+    #[test]
+    fn section_without_an_offset_cuts_through_the_middle() {
+        let dir = unique_test_dir("rrcad-native-io-section-mid");
+        fs::create_dir_all(&dir).expect("create temp dir");
+
+        with_cwd(&dir, || {
+            // NaN is the "no offset given" sentinel.  The box spans z = 0..30,
+            // so defaulting to 0 would put the plane on its bottom face and
+            // remove the whole solid; the mid-plane at z = 15 must be used
+            // instead.  Parts that start at the origin are the common case.
+            let (svg_err, dxf_err, svg, dxf) = export_section(&dir, "xy", f64::NAN);
+            assert!(
+                svg_err.is_none(),
+                "an omitted offset should cut the mid-plane, got: {svg_err:?}"
+            );
+            assert!(
+                dxf_err.is_none(),
+                "an omitted offset should cut the mid-plane, got: {dxf_err:?}"
+            );
+
+            let svg = svg.expect("section SVG was not written");
+            assert!(
+                svg.contains("hatch\"") && svg.contains("<line"),
+                "mid-plane section SVG should be hatched"
+            );
+            let dxf = dxf.expect("section DXF was not written");
+            assert!(
+                dxf.contains("HATCH"),
+                "mid-plane section DXF should have a HATCH layer"
+            );
+        });
+    }
+
+    #[test]
+    fn unknown_section_plane_reports_an_error() {
+        let dir = unique_test_dir("rrcad-native-io-section-bad");
+        fs::create_dir_all(&dir).expect("create temp dir");
+
+        with_cwd(&dir, || {
+            let (svg_err, _, _, _) = export_section(&dir, "diagonal", 0.0);
+            let svg_err = svg_err.expect("an unknown section plane should error");
+            assert!(
+                svg_err.contains("section plane must be"),
+                "expected a plane-name error, got: {svg_err}"
+            );
         });
     }
 

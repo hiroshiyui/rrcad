@@ -3173,10 +3173,27 @@ struct DrawingCallout {
     std::string text;
 };
 
+// A requested section (cutting) plane for a drawing view.
+// `active` is false when the caller passed no `section:` option, in which case
+// the drawing is a plain projection and no cutting is performed at all.
+struct SectionSpec {
+    bool active = false;
+    std::string plane; // "xy", "xz", or "yz"
+    double offset = 0.0;
+};
+
+// Hatch line spacing, in final (scaled) drawing units.  Standard mechanical
+// drawings use an evenly-spaced 45° pattern; 2.5 mm reads well at 1:1.
+static const double SECTION_HATCH_SPACING = 2.5;
+
 struct DrawingViewData {
     std::string name;
     DrawingPolylines visible;
     DrawingPolylines hidden;
+    // Closed 2-D outlines of the cut faces (drawn at visible-edge weight).
+    DrawingPolylines section_outline;
+    // Individual 45° hatch segments clipped to the cut faces.
+    DrawingPolylines hatch;
     std::vector<DrawingMark> marks;
     std::vector<DrawingCallout> callouts;
     double geom_xmin = 0.0;
@@ -3345,23 +3362,258 @@ static std::vector<DrawingCallout> collect_callouts(const OcctShape& shape,
     return callouts;
 }
 
+// ---------------------------------------------------------------------------
+// Section views
+//
+// A section view cuts the solid with an axis-aligned plane, throws away the
+// material in front of the plane (on the +normal side), projects what is left
+// exactly like a normal view, and additionally draws the exposed cut faces with
+// their outline plus standard 45° hatching.
+// ---------------------------------------------------------------------------
+
+// Result of cutting the shape with the section plane.
+struct SectionGeometry {
+    // Material behind the cutting plane; this is what gets HLR-projected.
+    std::unique_ptr<OcctShape> retained;
+    // One entry per exposed cut face, each holding that face's boundary
+    // polylines already projected into 2-D view space (unscaled).
+    std::vector<DrawingPolylines> face_loops;
+};
+
+// Map a section plane name to its normal and the index (0=X, 1=Y, 2=Z) of the
+// coordinate the offset is measured along.  Mirrors `shape_slice`.
+static gp_Dir section_plane_normal(const std::string& plane, int& axis) {
+    if (plane == "xy") {
+        axis = 2;
+        return gp_Dir(0, 0, 1);
+    }
+    if (plane == "xz") {
+        axis = 1;
+        return gp_Dir(0, 1, 0);
+    }
+    if (plane == "yz") {
+        axis = 0;
+        return gp_Dir(1, 0, 0);
+    }
+    throw std::runtime_error("export_svg/dxf: section plane must be \"xy\", \"xz\", or \"yz\"");
+}
+
+// Clip evenly-spaced 45° hatch lines to the interior of one cut face.
+//
+// `loops` are that face's boundary polylines in final (scaled) drawing
+// coordinates — outer wire plus any inner wires.  A hatch line is the set of
+// points satisfying x - y == c; for each such line every crossing with the
+// boundary is collected, sorted along the line, and alternate spans are kept
+// (even-odd fill rule), which drops the parts that fall inside holes.
+static DrawingPolylines build_section_hatch(const DrawingPolylines& loops, double spacing) {
+    DrawingPolylines out;
+    if (loops.empty() || !(spacing > 0.0) || !std::isfinite(spacing))
+        return out;
+
+    double xmin = 1e30, xmax = -1e30, ymin = 1e30, ymax = -1e30;
+    for (const auto& loop : loops) {
+        for (const auto& [x, y] : loop) {
+            xmin = std::min(xmin, x);
+            xmax = std::max(xmax, x);
+            ymin = std::min(ymin, y);
+            ymax = std::max(ymax, y);
+        }
+    }
+    if (xmin > xmax || ymin > ymax)
+        return out;
+
+    // Perpendicular spacing `spacing` between 45° lines corresponds to a step
+    // of spacing * sqrt(2) in the c = x - y family.
+    const double step = spacing * std::sqrt(2.0);
+    const double c_lo = xmin - ymax;
+    const double c_hi = xmax - ymin;
+    // Hard cap so a huge face (or a tiny spacing) can never emit unboundedly.
+    const std::size_t max_segments = 20000;
+
+    for (double c = std::ceil(c_lo / step) * step; c <= c_hi; c += step) {
+        std::vector<double> crossings;
+        for (const auto& loop : loops) {
+            for (std::size_t i = 0; i + 1 < loop.size(); ++i) {
+                const double x1 = loop[i].first, y1 = loop[i].second;
+                const double x2 = loop[i + 1].first, y2 = loop[i + 1].second;
+                const double f1 = x1 - y1 - c;
+                const double f2 = x2 - y2 - c;
+                // Half-open crossing test: a vertex sitting exactly on the
+                // hatch line is counted by one of its two segments only.
+                const bool crosses = (f1 <= 0.0 && f2 > 0.0) || (f2 <= 0.0 && f1 > 0.0);
+                if (!crosses)
+                    continue;
+                const double s = f1 / (f1 - f2);
+                // Points on the line are (t, t - c), so its x coordinate is a
+                // valid monotonic parameter along the line.
+                crossings.push_back(x1 + s * (x2 - x1));
+            }
+        }
+        if (crossings.size() < 2)
+            continue;
+        std::sort(crossings.begin(), crossings.end());
+        for (std::size_t i = 0; i + 1 < crossings.size(); i += 2) {
+            const double a = crossings[i];
+            const double b = crossings[i + 1];
+            if (b - a < 1e-9)
+                continue;
+            out.push_back(DrawingPolyline{{a, a - c}, {b, b - c}});
+            if (out.size() >= max_segments)
+                return out;
+        }
+    }
+    return out;
+}
+
+// Cut `shape` with the requested plane and collect the exposed cut faces.
+// Throws (with a descriptive message) for every degenerate case: non-solid
+// input, a plane that misses the solid, or a zero-area cross-section.
+static SectionGeometry compute_section_geometry(const OcctShape& shape, const std::string& view,
+                                                const SectionSpec& spec) {
+    int axis = 2;
+    const gp_Dir normal = section_plane_normal(spec.plane, axis);
+    // NaN is the "no offset given" sentinel: the caller wants the shape's
+    // mid-plane, resolved below once the bounding box is known.  Infinities
+    // are still a hard error.
+    if (!std::isfinite(spec.offset) && !std::isnan(spec.offset))
+        throw std::runtime_error("export_svg/dxf: section offset must be finite");
+
+    // Sectioning only makes sense for solids — a wire, face, or shell has no
+    // material to cut away and would yield no cross-section at all.
+    if (!TopExp_Explorer(shape.get(), TopAbs_SOLID).More())
+        throw std::runtime_error("export_svg/dxf: section requires a solid shape");
+
+    Bnd_Box bbox;
+    BRepBndLib::Add(shape.get(), bbox);
+    if (bbox.IsVoid())
+        throw std::runtime_error("export_svg/dxf: section input has an empty bounding box");
+    double lo[3] = {0, 0, 0};
+    double hi[3] = {0, 0, 0};
+    bbox.Get(lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]);
+
+    const double span = std::max({hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2], 1.0});
+    const double tol = 1e-7 * span;
+
+    // Default to the shape's mid-plane along the cut axis.  Defaulting to 0
+    // instead would put the plane on (or outside) the boundary of any part
+    // that does not straddle the origin — which is the common case, since
+    // `box()` and friends start at the origin.
+    const double offset = std::isnan(spec.offset) ? 0.5 * (lo[axis] + hi[axis]) : spec.offset;
+
+    if (offset <= lo[axis] + tol || offset >= hi[axis] - tol) {
+        std::ostringstream oss;
+        oss << "export_svg/dxf: section plane \"" << spec.plane << "\" at offset " << offset
+            << " does not intersect the shape (extent along that axis is " << lo[axis] << " … "
+            << hi[axis] << ")";
+        throw std::runtime_error(oss.str());
+    }
+
+    // Cutting tool: an axis-aligned box that covers the whole half-space in
+    // front of the plane (and comfortably overshoots the shape elsewhere).
+    double box_lo[3] = {lo[0] - span, lo[1] - span, lo[2] - span};
+    double box_hi[3] = {hi[0] + span, hi[1] + span, hi[2] + span};
+    box_lo[axis] = offset;
+    BRepPrimAPI_MakeBox tool(gp_Pnt(box_lo[0], box_lo[1], box_lo[2]),
+                             gp_Pnt(box_hi[0], box_hi[1], box_hi[2]));
+    tool.Build();
+    if (!tool.IsDone())
+        throw std::runtime_error("export_svg/dxf: section could not build the cutting half-space");
+
+    BRepAlgoAPI_Cut cut(shape.get(), tool.Shape());
+    cut.Build();
+    if (!cut.IsDone())
+        throw std::runtime_error("export_svg/dxf: section boolean cut failed");
+    const TopoDS_Shape retained = cut.Shape();
+    if (retained.IsNull() || !TopExp_Explorer(retained, TopAbs_SOLID).More())
+        throw std::runtime_error("export_svg/dxf: section removed the entire shape — "
+                                 "check the plane offset");
+
+    SectionGeometry out;
+    double total_area = 0.0;
+    for (TopExp_Explorer fexp(retained, TopAbs_FACE); fexp.More(); fexp.Next()) {
+        const TopoDS_Face& face = TopoDS::Face(fexp.Current());
+        BRepAdaptor_Surface surf(face);
+        if (surf.GetType() != GeomAbs_Plane)
+            continue;
+        const gp_Pln pln = surf.Plane();
+        // Keep only the planar faces that lie exactly on the cutting plane:
+        // parallel normal, and a reference point at the requested offset.
+        if (std::abs(pln.Axis().Direction().Dot(normal)) < 0.999)
+            continue;
+        if (std::abs(pln.Location().Coord(axis + 1) - offset) > 1e-6 * span)
+            continue;
+
+        GProp_GProps props;
+        BRepGProp::SurfaceProperties(face, props);
+        total_area += props.Mass();
+
+        DrawingPolylines loops;
+        for (TopExp_Explorer eexp(face, TopAbs_EDGE); eexp.More(); eexp.Next()) {
+            BRepAdaptor_Curve curve(TopoDS::Edge(eexp.Current()));
+            const double t0 = curve.FirstParameter();
+            const double t1 = curve.LastParameter();
+            if (!(t1 > t0))
+                continue;
+            DrawingPolyline pts;
+            pts.reserve(HLR_SAMPLES_PER_EDGE + 1);
+            for (int i = 0; i <= HLR_SAMPLES_PER_EDGE; ++i) {
+                const double t = t0 + (t1 - t0) * i / HLR_SAMPLES_PER_EDGE;
+                pts.push_back(project_point(view, curve.Value(t)));
+            }
+            loops.push_back(std::move(pts));
+        }
+        if (!loops.empty())
+            out.face_loops.push_back(std::move(loops));
+    }
+
+    if (out.face_loops.empty() || total_area <= 1e-9)
+        throw std::runtime_error("export_svg/dxf: section produced a zero-area cross-section");
+
+    out.retained = wrap(retained);
+    return out;
+}
+
 static HlrProjection hlr_project(const OcctShape& shape, const std::string& view);
 
 static DrawingViewData build_drawing_view(const OcctShape& shape, const std::string& view,
                                           double scale, bool hidden, bool center_marks,
-                                          bool dimensions, bool callouts) {
-    auto projection = hlr_project(shape, view);
+                                          bool dimensions, bool callouts,
+                                          const SectionSpec& section) {
+    // When a section is requested, everything downstream (projection, centre
+    // marks, callouts) works on the material left behind the cutting plane.
+    std::unique_ptr<OcctShape> cut_shape;
+    std::vector<DrawingPolylines> section_faces;
+    if (section.active) {
+        SectionGeometry geom = compute_section_geometry(shape, view, section);
+        cut_shape = std::move(geom.retained);
+        section_faces = std::move(geom.face_loops);
+    }
+    const OcctShape& source = cut_shape ? *cut_shape : shape;
+
+    // Cut-face outlines and hatching, both in final drawing coordinates.
+    DrawingPolylines section_outline;
+    DrawingPolylines hatch;
+    for (auto& loops : section_faces) {
+        scale_polylines(loops, scale);
+        DrawingPolylines face_hatch = build_section_hatch(loops, SECTION_HATCH_SPACING);
+        hatch.insert(hatch.end(), std::make_move_iterator(face_hatch.begin()),
+                     std::make_move_iterator(face_hatch.end()));
+        section_outline.insert(section_outline.end(), std::make_move_iterator(loops.begin()),
+                               std::make_move_iterator(loops.end()));
+    }
+
+    auto projection = hlr_project(source, view);
     scale_polylines(projection.visible, scale);
     scale_polylines(projection.hidden, scale);
 
-    auto marks = center_marks ? collect_center_marks(shape, view) : std::vector<DrawingMark>{};
+    auto marks = center_marks ? collect_center_marks(source, view) : std::vector<DrawingMark>{};
     for (auto& mark : marks) {
         mark.x *= scale;
         mark.y *= scale;
         mark.size *= scale;
     }
 
-    auto callout_list = callouts ? collect_callouts(shape, view) : std::vector<DrawingCallout>{};
+    auto callout_list = callouts ? collect_callouts(source, view) : std::vector<DrawingCallout>{};
     for (auto& callout : callout_list) {
         callout.x *= scale;
         callout.y *= scale;
@@ -3383,6 +3635,8 @@ static DrawingViewData build_drawing_view(const OcctShape& shape, const std::str
     include_bounds(projection.visible);
     if (hidden)
         include_bounds(projection.hidden);
+    include_bounds(section_outline);
+    include_bounds(hatch);
     for (const auto& mark : marks) {
         geom_xmin = std::min(geom_xmin, mark.x - mark.size);
         geom_xmax = std::max(geom_xmax, mark.x + mark.size);
@@ -3415,6 +3669,8 @@ static DrawingViewData build_drawing_view(const OcctShape& shape, const std::str
     view_data.name = view;
     view_data.visible = std::move(projection.visible);
     view_data.hidden = std::move(projection.hidden);
+    view_data.section_outline = std::move(section_outline);
+    view_data.hatch = std::move(hatch);
     view_data.marks = std::move(marks);
     view_data.callouts = std::move(callout_list);
     view_data.geom_xmin = geom_xmin;
@@ -3513,6 +3769,38 @@ static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double
         f << "\"/>\n";
     }
     f << "  </g>\n";
+    // Section hatching first, so the cut outline is drawn on top of it.
+    if (!view.hatch.empty()) {
+        f << "  <g class=\"";
+        if (sheet_mode)
+            f << "view view-" << view.name << " ";
+        f << "hatch\" stroke=\"#111827\" stroke-width=\"0.15\" fill=\"none\"";
+        f << " stroke-linecap=\"round\">\n";
+        for (auto& pts : view.hatch) {
+            if (pts.size() < 2)
+                continue;
+            f << "    <line x1=\"" << (pts.front().first + offset_x) << "\" y1=\""
+              << (-(pts.front().second + offset_y)) << "\" x2=\"" << (pts.back().first + offset_x)
+              << "\" y2=\"" << (-(pts.back().second + offset_y)) << "\"/>\n";
+        }
+        f << "  </g>\n";
+    }
+    // Cut boundary: same weight as the visible outline.
+    if (!view.section_outline.empty()) {
+        f << "  <g class=\"";
+        if (sheet_mode)
+            f << "view view-" << view.name << " ";
+        f << "section\" stroke=\"black\" stroke-width=\"0.3\" fill=\"none\"";
+        f << " stroke-linecap=\"round\" stroke-linejoin=\"round\">\n";
+        for (auto& pts : view.section_outline) {
+            if (pts.size() < 2)
+                continue;
+            f << "    <polyline points=\"";
+            write_polyline_points(pts);
+            f << "\"/>\n";
+        }
+        f << "  </g>\n";
+    }
     if (hidden) {
         if (sheet_mode) {
             f << "  <g class=\"view view-" << view.name
@@ -3643,6 +3931,10 @@ static void write_dxf_view(std::ofstream& f, const DrawingViewData& view, double
     };
 
     write_lines(view.visible, "0");
+    // Section hatching gets its own layer, mirroring how HIDDEN is handled;
+    // the cut boundary shares layer 0 so it keeps the visible-edge weight.
+    write_lines(view.hatch, "HATCH");
+    write_lines(view.section_outline, "0");
     if (hidden)
         write_lines(view.hidden, "HIDDEN");
     if (center_marks && !view.marks.empty()) {
@@ -3985,6 +4277,8 @@ struct DrawingExportSetup {
     std::string datum;
     std::string feature_control;
     bool sheet_mode = false;
+    // Requested section plane; inactive when the caller passed no section.
+    SectionSpec section;
     // Datum anchor projected into 2-D view space (unscaled).
     std::pair<double, double> anchor_2d{0.0, 0.0};
     // Feature-control anchor already scaled into canvas coordinates.
@@ -3995,13 +4289,11 @@ struct DrawingExportSetup {
 // Common front matter for export_svg / export_dxf: copy the rust::Str inputs
 // into owned strings, validate the scale, and project both GD&T anchors into
 // the drawing plane of the requested view.
-static DrawingExportSetup prepare_drawing_export(const char* fn_name, rust::Str path,
-                                                 rust::Str view, double scale, rust::Str datum,
-                                                 rust::Str feature_control, double datum_anchor_x,
-                                                 double datum_anchor_y, double datum_anchor_z,
-                                                 double feature_control_anchor_x,
-                                                 double feature_control_anchor_y,
-                                                 double feature_control_anchor_z) {
+static DrawingExportSetup prepare_drawing_export(
+    const char* fn_name, rust::Str path, rust::Str view, double scale, rust::Str datum,
+    rust::Str feature_control, double datum_anchor_x, double datum_anchor_y, double datum_anchor_z,
+    double feature_control_anchor_x, double feature_control_anchor_y,
+    double feature_control_anchor_z, rust::Str section_plane, double section_offset) {
     DrawingExportSetup s;
     s.path = std::string(path.data(), path.size());
     s.view = std::string(view.data(), view.size());
@@ -4017,6 +4309,21 @@ static DrawingExportSetup prepare_drawing_export(const char* fn_name, rust::Str 
         anchor_view, feature_control_anchor_x, feature_control_anchor_y, feature_control_anchor_z);
     s.feature_anchor_canvas_x = feature_anchor_2d.first * scale;
     s.feature_anchor_canvas_y = feature_anchor_2d.second * scale;
+    // An empty section plane name means "no section": draw a plain projection.
+    const std::string section_plane_name(section_plane.data(), section_plane.size());
+    if (!section_plane_name.empty()) {
+        int axis = 0;
+        // Validate the plane name up front so a typo fails before any geometry
+        // work; the returned normal is recomputed where it is actually used.
+        (void)section_plane_normal(section_plane_name, axis);
+        // NaN means "no offset given" — the cut defaults to the shape's
+        // mid-plane, resolved in compute_section_geometry.
+        if (!std::isfinite(section_offset) && !std::isnan(section_offset))
+            throw std::runtime_error(std::string(fn_name) + ": section offset must be finite");
+        s.section.active = true;
+        s.section.plane = section_plane_name;
+        s.section.offset = section_offset;
+    }
     return s;
 }
 
@@ -4063,12 +4370,13 @@ void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double s
                 double datum_anchor_y, double datum_anchor_z, rust::Str feature_control,
                 bool feature_control_anchor_valid, double feature_control_anchor_x,
                 double feature_control_anchor_y, double feature_control_anchor_z,
-                double tolerance_plus, double tolerance_minus) {
+                double tolerance_plus, double tolerance_minus, rust::Str section_plane,
+                double section_offset) {
     try {
         const DrawingExportSetup setup = prepare_drawing_export(
             "export_svg", path, view, scale, datum, feature_control, datum_anchor_x, datum_anchor_y,
             datum_anchor_z, feature_control_anchor_x, feature_control_anchor_y,
-            feature_control_anchor_z);
+            feature_control_anchor_z, section_plane, section_offset);
         bool has_anchor = datum_anchor_valid;
         double anchor_canvas_x = 0.0;
         double anchor_canvas_y = 0.0;
@@ -4077,12 +4385,12 @@ void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double s
         const double sheet_gap = 16.0;
 
         if (setup.sheet_mode) {
-            auto top_view =
-                build_drawing_view(shape, "top", scale, hidden, center_marks, dimensions, callouts);
+            auto top_view = build_drawing_view(shape, "top", scale, hidden, center_marks,
+                                               dimensions, callouts, setup.section);
             auto front_view = build_drawing_view(shape, "front", scale, hidden, center_marks,
-                                                 dimensions, callouts);
+                                                 dimensions, callouts, setup.section);
             auto side_view = build_drawing_view(shape, "side", scale, hidden, center_marks,
-                                                dimensions, callouts);
+                                                dimensions, callouts, setup.section);
 
             const SheetLayout layout =
                 compute_sheet_layout(top_view, front_view, side_view, sheet_gap,
@@ -4128,7 +4436,7 @@ void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double s
         }
 
         auto single_view = build_drawing_view(shape, setup.view, scale, hidden, center_marks,
-                                              dimensions, callouts);
+                                              dimensions, callouts, setup.section);
         const double w = (single_view.xmax - single_view.xmin) + 2.0 * margin;
         const double h = (single_view.ymax - single_view.ymin) + 2.0 * margin;
         const double vb_x = single_view.xmin - margin;
@@ -4182,12 +4490,13 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
                 double datum_anchor_y, double datum_anchor_z, rust::Str feature_control,
                 bool feature_control_anchor_valid, double feature_control_anchor_x,
                 double feature_control_anchor_y, double feature_control_anchor_z,
-                double tolerance_plus, double tolerance_minus) {
+                double tolerance_plus, double tolerance_minus, rust::Str section_plane,
+                double section_offset) {
     try {
         const DrawingExportSetup setup = prepare_drawing_export(
             "export_dxf", path, view, scale, datum, feature_control, datum_anchor_x, datum_anchor_y,
             datum_anchor_z, feature_control_anchor_x, feature_control_anchor_y,
-            feature_control_anchor_z);
+            feature_control_anchor_z, section_plane, section_offset);
         bool has_anchor = datum_anchor_valid;
         double anchor_canvas_x = 0.0;
         double anchor_canvas_y = 0.0;
@@ -4195,12 +4504,12 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
         if (setup.sheet_mode) {
             const double sheet_gap = 16.0;
 
-            auto top_view =
-                build_drawing_view(shape, "top", scale, hidden, center_marks, dimensions, callouts);
+            auto top_view = build_drawing_view(shape, "top", scale, hidden, center_marks,
+                                               dimensions, callouts, setup.section);
             auto front_view = build_drawing_view(shape, "front", scale, hidden, center_marks,
-                                                 dimensions, callouts);
+                                                 dimensions, callouts, setup.section);
             auto side_view = build_drawing_view(shape, "side", scale, hidden, center_marks,
-                                                dimensions, callouts);
+                                                dimensions, callouts, setup.section);
 
             const SheetLayout layout =
                 compute_sheet_layout(top_view, front_view, side_view, sheet_gap,
@@ -4242,7 +4551,7 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
         }
 
         auto single_view = build_drawing_view(shape, setup.view, scale, hidden, center_marks,
-                                              dimensions, callouts);
+                                              dimensions, callouts, setup.section);
         const DrawingCanvasBounds canvas{single_view.geom_xmin, single_view.geom_xmax,
                                          single_view.geom_ymin, single_view.geom_ymax};
 

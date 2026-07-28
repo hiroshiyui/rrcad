@@ -291,6 +291,8 @@ mod ffi {
             feature_control_anchor_z: f64,
             tolerance_plus: f64,
             tolerance_minus: f64,
+            section_plane: &str,
+            section_offset: f64,
         ) -> Result<()>;
         fn export_dxf(
             shape: &OcctShape,
@@ -314,6 +316,8 @@ mod ffi {
             feature_control_anchor_z: f64,
             tolerance_plus: f64,
             tolerance_minus: f64,
+            section_plane: &str,
+            section_offset: f64,
         ) -> Result<()>;
 
         // Phase 8 Tier 5: Advanced composition.

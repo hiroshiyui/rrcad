@@ -447,20 +447,32 @@ void export_obj(const OcctShape& shape, rust::Str path, double linear_deflection
 // DXF uses Y-up coordinates (standard CAD convention). `scale`, `hidden`,
 // `center_marks`, and `callouts` have the same meaning as SVG scale / hidden /
 // centre marks / callouts. `dimensions` adds overall width/height labels.
+//
+// Section views: when `section_plane` is non-empty ("xy", "xz", or "yz") the
+// solid is first cut with that axis-aligned plane at `section_offset` along the
+// plane's normal. Material in front of the plane (on the +normal side) is
+// removed, whatever remains behind it is projected as usual, and the exposed
+// cut faces are drawn with their outline at visible-edge weight plus standard
+// 45-degree hatching (SVG: a `hatch` group; DXF: LINE entities on a `HATCH`
+// layer). An empty `section_plane` disables sectioning entirely.
+// Throws if the shape is not a solid, if the plane misses it, or if the
+// resulting cross-section has zero area.
 void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double scale, bool hidden,
                 bool center_marks, bool dimensions, bool title_block, bool callouts,
                 rust::Str datum, bool datum_anchor_valid, double datum_anchor_x,
                 double datum_anchor_y, double datum_anchor_z, rust::Str feature_control,
                 bool feature_control_anchor_valid, double feature_control_anchor_x,
                 double feature_control_anchor_y, double feature_control_anchor_z,
-                double tolerance_plus, double tolerance_minus);
+                double tolerance_plus, double tolerance_minus, rust::Str section_plane,
+                double section_offset);
 void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double scale, bool hidden,
                 bool center_marks, bool dimensions, bool title_block, bool callouts,
                 rust::Str datum, bool datum_anchor_valid, double datum_anchor_x,
                 double datum_anchor_y, double datum_anchor_z, rust::Str feature_control,
                 bool feature_control_anchor_valid, double feature_control_anchor_x,
                 double feature_control_anchor_y, double feature_control_anchor_z,
-                double tolerance_plus, double tolerance_minus);
+                double tolerance_plus, double tolerance_minus, rust::Str section_plane,
+                double section_offset);
 
 // --- Phase 8 Tier 5: Advanced composition ---
 

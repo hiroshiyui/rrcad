@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Drawing section views** (Phase 11 Track C, `src/occt/bridge.cpp`,
+  `src/ruby/native_io.rs`, `src/ruby/glue.c`): `shape.export("part.svg",
+  section: :xz)` cuts the solid with an axis-aligned plane and draws the
+  exposed cut face with standard 45° hatching — SVG gets `hatch` and
+  `section` groups, DXF gets a dedicated `HATCH` layer. Interior holes stay
+  unhatched. Omitting `offset:` cuts through the middle of the part rather
+  than at the origin, so the shorthand works on parts that start at the
+  origin. Non-solids, planes that miss the shape, and unknown plane names are
+  each rejected with a specific message.
+
 - **Sketch corner fillets and chamfers** (Phase 11 Track A,
   `src/ruby/prelude.rb`): `fillet(point, radius)` and
   `chamfer(point, distance)` inside `sketch do ... end` round or bevel an

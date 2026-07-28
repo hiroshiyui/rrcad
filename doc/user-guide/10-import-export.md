@@ -113,6 +113,42 @@ See [chapter 6](06-topology-and-selectors.md#structured-gdt) for the
 `gdt do |g| … end` form that attaches GD&T frames to the model itself,
 so you don't have to repeat the export options.
 
+## Section views
+
+`section:` turns a drawing into a section view: the solid is cut with a
+plane, the material in front of the plane is removed, and the exposed cut
+face is drawn with standard 45° hatching.
+
+```ruby
+part.export("part.svg", view: :front, section: :xz)
+part.export("part.svg", view: :front, section: { plane: :xz, offset: 15.mm })
+```
+
+The plane is `:xy`, `:xz`, or `:yz`. **Without an explicit `offset:` the cut
+goes through the middle of the part** (the centre of its bounding box along
+that axis), which is what a section view usually wants. Give `offset:` to cut
+somewhere else — it is a coordinate on the cut axis, not a distance from the
+centre.
+
+Output details:
+
+- **SVG** — a `hatch` group of thin lines, then a `section` group holding the
+  cut outline at normal visible-edge weight.
+- **DXF** — hatch lines on a dedicated `HATCH` layer; the cut outline on
+  layer `0`, so it keeps the visible-edge weight.
+
+Interior holes stay unhatched, so a sectioned part with a bore reads
+correctly. Geometry behind the cutting plane is still projected normally.
+
+Only `.svg` and `.dxf` use `section:`; other formats ignore it. In `:sheet`
+mode the same plane applies to all three views, so a plane parallel to a
+view's projection direction shows that view's cut face edge-on.
+
+Errors are reported rather than producing an empty drawing: a plane that
+misses the part reports the part's extent along that axis, a non-solid input
+is rejected (there is no material to cut), and an unknown plane name is
+caught before any geometry work.
+
 ## GLB / glTF / OBJ tessellation quality
 
 Mesh formats require a tessellation step. The `linear_deflection` option

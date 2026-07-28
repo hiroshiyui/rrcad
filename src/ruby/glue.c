@@ -6,6 +6,7 @@
  * need for Rust to know anything about mRuby's value representation.
  */
 
+#include <math.h>
 #include <mruby.h>
 #include <mruby/array.h>
 #include <mruby/class.h>
@@ -185,7 +186,8 @@ extern void rrcad_shape_export_svg(void* ptr, const char* path, const char* view
                                    int feature_control_anchor_valid,
                                    double feature_control_anchor_x, double feature_control_anchor_y,
                                    double feature_control_anchor_z, double tolerance_plus,
-                                   double tolerance_minus, const char** error_out);
+                                   double tolerance_minus, const char* section_plane,
+                                   double section_offset, const char** error_out);
 extern void rrcad_shape_export_dxf(void* ptr, const char* path, const char* view, double scale,
                                    int hidden, int center_marks, int dimensions, int title_block,
                                    int callouts, const char* datum, int datum_anchor_valid,
@@ -194,7 +196,8 @@ extern void rrcad_shape_export_dxf(void* ptr, const char* path, const char* view
                                    int feature_control_anchor_valid,
                                    double feature_control_anchor_x, double feature_control_anchor_y,
                                    double feature_control_anchor_z, double tolerance_plus,
-                                   double tolerance_minus, const char** error_out);
+                                   double tolerance_minus, const char* section_plane,
+                                   double section_offset, const char** error_out);
 
 /* Phase 7 — Bézier patch and sewing */
 extern void* rrcad_make_bezier_patch(const double* pts, size_t n_pts, const char** error_out);
@@ -597,7 +600,13 @@ static mrb_value mrb_rrcad_shape_inspect(mrb_state* mrb, mrb_value self) {
  * The optional `view:` keyword (Symbol) is used only by SVG and DXF:
  *   :top   (default) — looking down −Z axis
  *   :front           — looking along −Y axis
- *   :side            — looking along +X axis */
+ *   :side            — looking along +X axis
+ *
+ * The optional `section:` keyword (SVG / DXF only) turns the drawing into a
+ * section view.  Accepts a plane name (:xy, :xz, :yz) or a Hash
+ * { plane: :xz, offset: 5.0 }; the offset (default 0.0) is measured along the
+ * plane's normal.  Material in front of the plane is removed and the exposed
+ * cut faces are drawn with 45° hatching. */
 static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     const char* path;
     mrb_value opts = mrb_nil_value();
@@ -607,6 +616,7 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
 
     /* Extract optional view: keyword (default "top") and drawing scale. */
     const char* view = "top";
+    mrb_value view_buf = mrb_nil_value();
     double scale = 1.0;
     int hidden = 0;
     int center_marks = 0;
@@ -623,10 +633,21 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     double feature_control_anchor[3] = {0.0, 0.0, 0.0};
     double tolerance_plus = 0.0;
     double tolerance_minus = 0.0;
+    /* Section view: an empty plane name means "no section" (plain projection). */
+    const char* section_plane = "";
+    mrb_value section_plane_buf = mrb_nil_value();
+    /* NAN = "cut through the middle" (the exporter resolves it against the
+     * shape's bounding box); an explicit offset: overrides it. */
+    double section_offset = (double)NAN;
     if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
         mrb_value vv = opt_fetch(mrb, opts, "view", mrb_nil_value());
-        if (mrb_symbol_p(vv))
-            view = mrb_sym_name(mrb, mrb_symbol(vv));
+        if (mrb_symbol_p(vv)) {
+            /* mruby packs short symbols into a single shared scratch buffer, so
+             * mrb_sym_name's result must be copied before any later symbol is
+             * decoded (e.g. the section plane below) overwrites it. */
+            view_buf = mrb_str_new_cstr(mrb, mrb_sym_name(mrb, mrb_symbol(vv)));
+            view = mrb_string_value_cstr(mrb, &view_buf);
+        }
         scale = opt_double(mrb, opts, "scale", 1.0);
         hidden = opt_flag(mrb, opts, "hidden");
         center_marks = opt_flag(mrb, opts, "center_marks");
@@ -707,7 +728,9 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
                     feature_control_anchor_valid = 1;
                 }
             } else if (mrb_symbol_p(fc_v)) {
-                feature_control = mrb_sym_name(mrb, mrb_symbol(fc_v));
+                /* Copied for the same reason as `view` above. */
+                feature_control_buf = mrb_str_new_cstr(mrb, mrb_sym_name(mrb, mrb_symbol(fc_v)));
+                feature_control = mrb_string_value_cstr(mrb, &feature_control_buf);
             } else {
                 feature_control = mrb_string_value_cstr(mrb, &fc_v);
             }
@@ -720,6 +743,26 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
             double tol = value_to_double(mrb, tv2);
             tolerance_plus = tol;
             tolerance_minus = tol;
+        }
+        /* section: :xz                        — cut on the XZ plane at y = 0
+         * section: { plane: :xz, offset: 5 }  — cut on the XZ plane at y = 5
+         * Only .svg and .dxf use this; other formats ignore it. */
+        mrb_value section_v = opt_fetch(mrb, opts, "section", mrb_nil_value());
+        if (!mrb_nil_p(section_v)) {
+            mrb_value plane_v = section_v;
+            if (mrb_hash_p(section_v)) {
+                plane_v = opt_fetch(mrb, section_v, "plane", mrb_nil_value());
+                /* No explicit offset: NAN asks the exporter for the shape's
+                 * mid-plane rather than the origin (see bridge.cpp). */
+                section_offset = opt_double(mrb, section_v, "offset", (double)NAN);
+            }
+            const char* plane = shape_name_from_value(mrb, plane_v);
+            if (!plane)
+                mrb_raise(mrb, E_TYPE_ERROR,
+                          "section expects :xy/:xz/:yz as a Symbol or String, or a Hash with "
+                          "plane:/offset:");
+            section_plane_buf = mrb_str_new_cstr(mrb, plane);
+            section_plane = mrb_string_value_cstr(mrb, &section_plane_buf);
         }
     }
 
@@ -736,17 +779,19 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     } else if (dot && (strcasecmp(dot, ".obj") == 0)) {
         rrcad_shape_export_obj(ptr, path, &err);
     } else if (dot && (strcasecmp(dot, ".svg") == 0)) {
-        rrcad_shape_export_svg(
-            ptr, path, view, scale, hidden, center_marks, dimensions, title_block, callouts, datum,
-            datum_anchor_valid, datum_anchor[0], datum_anchor[1], datum_anchor[2], feature_control,
-            feature_control_anchor_valid, feature_control_anchor[0], feature_control_anchor[1],
-            feature_control_anchor[2], tolerance_plus, tolerance_minus, &err);
+        rrcad_shape_export_svg(ptr, path, view, scale, hidden, center_marks, dimensions,
+                               title_block, callouts, datum, datum_anchor_valid, datum_anchor[0],
+                               datum_anchor[1], datum_anchor[2], feature_control,
+                               feature_control_anchor_valid, feature_control_anchor[0],
+                               feature_control_anchor[1], feature_control_anchor[2], tolerance_plus,
+                               tolerance_minus, section_plane, section_offset, &err);
     } else if (dot && (strcasecmp(dot, ".dxf") == 0)) {
-        rrcad_shape_export_dxf(
-            ptr, path, view, scale, hidden, center_marks, dimensions, title_block, callouts, datum,
-            datum_anchor_valid, datum_anchor[0], datum_anchor[1], datum_anchor[2], feature_control,
-            feature_control_anchor_valid, feature_control_anchor[0], feature_control_anchor[1],
-            feature_control_anchor[2], tolerance_plus, tolerance_minus, &err);
+        rrcad_shape_export_dxf(ptr, path, view, scale, hidden, center_marks, dimensions,
+                               title_block, callouts, datum, datum_anchor_valid, datum_anchor[0],
+                               datum_anchor[1], datum_anchor[2], feature_control,
+                               feature_control_anchor_valid, feature_control_anchor[0],
+                               feature_control_anchor[1], feature_control_anchor[2], tolerance_plus,
+                               tolerance_minus, section_plane, section_offset, &err);
     } else {
         /* Default: STEP (.step, .stp, or unknown extension) */
         rrcad_shape_export_step(ptr, path, &err);
