@@ -423,7 +423,7 @@ class SketchPoint
 end
 
 class SketchBuilder
-  attr_accessor :points, :lines, :constraints, :named, :profile, :corner_mods
+  attr_accessor :points, :lines, :constraints, :named, :profile, :corner_mods, :edits
 
   def initialize
     @points = []
@@ -433,6 +433,9 @@ class SketchBuilder
     @profile = nil
     # [point, :fillet|:chamfer, size] entries applied when the profile is built.
     @corner_mods = []
+    # [:trim|:extend, a, b, moved, target, distance] segment edits, applied in
+    # declaration order after the constraint solver runs.
+    @edits = []
   end
 
   def point(x_or_name = nil, y = nil, maybe_y = nil)
@@ -611,6 +614,32 @@ class SketchBuilder
     add_corner_mod(point, :chamfer, distance)
   end
 
+  # trim(a, b, to: other) / trim(a, b, by: distance)
+  #
+  # Shorten the segment a→b. With +to:+ the moved endpoint lands where the
+  # segment's infinite line crosses the reference segment's infinite line;
+  # with +by:+ it slides back along the segment's own direction.
+  #
+  # +at:+ selects the endpoint that moves — `:end` (the default, i.e. +b+),
+  # `:start`, or either endpoint passed directly. The other endpoint anchors
+  # the segment. Because adjacent segments share their corner point, moving an
+  # endpoint moves the corner, keeping the loop closed.
+  #
+  # The segment may be given as two points or as the array `line` returns, so
+  # `trim side, to: base` reads naturally.
+  def trim(a, b = nil, to: nil, by: nil, at: :end)
+    add_segment_edit(:trim, a, b, to, by, at)
+  end
+
+  # extend(a, b, to: other) / extend(a, b, by: distance)
+  #
+  # Lengthen the segment a→b; the mirror image of +trim+, with the same
+  # arguments. Note this shadows `Object#extend` inside a sketch block, which
+  # is intentional: sketches never mix in modules.
+  def extend(a, b = nil, to: nil, by: nil, at: :end)
+    add_segment_edit(:extend, a, b, to, by, at)
+  end
+
   def fixed(point, x = point.x, y = point.y)
     require_point!(point, "fixed")
     @constraints << [:fixed, point, x, y]
@@ -731,6 +760,11 @@ class SketchBuilder
     raise RuntimeError, "sketch requires at least 3 line segments" if @lines.length < 3
     solve_constraints
 
+    # Trim/extend results live in a side table rather than mutating the solved
+    # points, so the constraint solution stays intact and `to_profile` can be
+    # called more than once.
+    coords = segment_edit_coords
+
     pts = []
     corner_points = []
     @lines.each_with_index do |(a, b), i|
@@ -739,15 +773,16 @@ class SketchBuilder
         raise RuntimeError, "sketch is under-constrained: #{point_label(point)} missing #{missing_coords(point)}"
       end
 
-      if i > 0 && !same_point?(@lines[i - 1][1], a)
+      xy = point_xy(coords, a)
+      if i > 0 && !same_xy?(point_xy(coords, @lines[i - 1][1]), xy)
         raise RuntimeError, "sketch lines must form one closed loop"
       end
 
-      pts << a.to_a
+      pts << xy
       corner_points << a
     end
 
-    unless same_point?(@lines[-1][1], @lines[0][0])
+    unless same_xy?(point_xy(coords, @lines[-1][1]), point_xy(coords, @lines[0][0]))
       raise RuntimeError, "sketch lines must form one closed loop"
     end
 
@@ -847,6 +882,18 @@ class SketchBuilder
 
     @corner_mods.each do |point, kind, size|
       clone.corner_mods << [point_map.fetch(point), kind, size]
+    end
+
+    @edits.each do |kind, a, b, moved, target, distance|
+      mapped_target = target.nil? ? nil : [point_map.fetch(target[0]), point_map.fetch(target[1])]
+      clone.edits << [
+        kind,
+        point_map.fetch(a),
+        point_map.fetch(b),
+        point_map.fetch(moved),
+        mapped_target,
+        distance,
+      ]
     end
 
     clone.profile = remap_profile(@profile, point_map) if @profile
@@ -1087,6 +1134,169 @@ class SketchBuilder
 
     @corner_mods << [point, kind, size]
     point
+  end
+
+  # Queue a trim/extend edit after validating everything that can be checked
+  # before the solver runs.
+  def add_segment_edit(kind, a, b, target, distance, at)
+    a, b = segment_pair(a, b, kind, "segment")
+    require_points!(a, b, kind.to_s)
+
+    unless registered_segment?(a, b)
+      raise ArgumentError,
+            "#{kind}: (#{point_label(a)}, #{point_label(b)}) is not a segment of this sketch"
+    end
+
+    if target.nil? == distance.nil?
+      raise ArgumentError, "#{kind} requires exactly one of to: or by:"
+    end
+
+    if target
+      target = segment_pair(target, nil, kind, "to:")
+      require_points!(target[0], target[1], "#{kind} to:")
+    else
+      require_positive_number!(distance, "#{kind} by:")
+    end
+
+    moved = edit_endpoint(kind, a, b, at)
+    @edits << [kind, a, b, moved, target, distance]
+    [a, b]
+  end
+
+  # Accept a segment as either two points or the two-element array that
+  # +line+ / +construction_line+ returns.
+  def segment_pair(a, b, kind, role)
+    return [a, b] unless b.nil?
+
+    if a.is_a?(Array) && a.length == 2
+      [a[0], a[1]]
+    elsif a.is_a?(SketchPoint)
+      raise ArgumentError, "#{kind} #{role} needs two points (or the array `line` returns)"
+    else
+      raise TypeError, "#{kind} #{role} expects sketch points"
+    end
+  end
+
+  # Only segments actually drawn with +line+ can be trimmed or extended;
+  # either orientation counts.
+  def registered_segment?(a, b)
+    @lines.any? do |(x, y)|
+      (x.equal?(a) && y.equal?(b)) || (x.equal?(b) && y.equal?(a))
+    end
+  end
+
+  # Resolve +at:+ to the endpoint that moves.
+  def edit_endpoint(kind, a, b, at)
+    return b if at == :end
+    return a if at == :start
+    if at.is_a?(SketchPoint)
+      return a if at.equal?(a)
+      return b if at.equal?(b)
+    end
+
+    raise ArgumentError,
+          "#{kind} at: must be :start, :end, or an endpoint of the segment"
+  end
+
+  # Apply queued trim/extend edits to the solved coordinates, in declaration
+  # order so a later edit sees the result of an earlier one.  Returns a
+  # SketchPoint => [x, y] table holding only the points that moved.
+  def segment_edit_coords
+    coords = {}
+
+    @edits.each do |kind, a, b, moved, target, distance|
+      anchor = moved.equal?(b) ? a : b
+      origin = point_xy(coords, anchor)
+      current = point_xy(coords, moved)
+      length = segment_length_2d(origin, current)
+      if length < 1.0e-12
+        raise ArgumentError,
+              "cannot #{kind} (#{point_label(anchor)}, #{point_label(moved)}): " \
+              "the segment has zero length"
+      end
+      dir = unit_vector_2d(origin, current)
+
+      new_length = if target
+        intersection_distance(kind, origin, dir, coords, target, moved)
+      elsif kind == :trim
+        length - RRCADUnits.scalar(distance)
+      else
+        length + RRCADUnits.scalar(distance)
+      end
+
+      validate_edit_length!(kind, moved, length, new_length, target)
+      coords[moved] = [origin[0] + dir[0] * new_length, origin[1] + dir[1] * new_length]
+    end
+
+    coords
+  end
+
+  # Signed distance from +origin+ along +dir+ to where the edited segment's
+  # infinite line crosses the reference segment's infinite line.  Solving
+  # origin + t·dir == c + s·r for t gives t = ((c − origin) × r) / (dir × r),
+  # where u × v is the 2-D cross product u.x·v.y − u.y·v.x.
+  def intersection_distance(kind, origin, dir, coords, target, moved)
+    c = point_xy(coords, target[0])
+    e = point_xy(coords, target[1])
+    rx = e[0] - c[0]
+    ry = e[1] - c[1]
+
+    if Math.sqrt((rx * rx) + (ry * ry)) < 1.0e-12
+      raise ArgumentError, "#{kind} to: reference segment has zero length"
+    end
+
+    denom = (dir[0] * ry) - (dir[1] * rx)
+    if denom.abs < 1.0e-12
+      raise ArgumentError,
+            "cannot #{kind} to #{point_label(moved)}: the segment and the to: " \
+            "reference are parallel, so they never meet"
+    end
+
+    (((c[0] - origin[0]) * ry) - ((c[1] - origin[1]) * rx)) / denom
+  end
+
+  # Reject edits that collapse a segment or move the wrong way.  A `by:` edit
+  # can only fail the first way, since the distance is positive by definition.
+  def validate_edit_length!(kind, moved, length, new_length, target)
+    if new_length <= 1.0e-9
+      raise ArgumentError,
+            "#{kind} at #{point_label(moved)} leaves no segment: it would take " \
+            "#{RRCADUnits.format_num(length)} down to " \
+            "#{RRCADUnits.format_num(new_length)}"
+    end
+
+    return if target.nil?
+
+    if kind == :trim && new_length > length - 1.0e-9
+      raise ArgumentError,
+            "trim at #{point_label(moved)} would lengthen the segment from " \
+            "#{RRCADUnits.format_num(length)} to " \
+            "#{RRCADUnits.format_num(new_length)}; use extend instead"
+    end
+
+    if kind == :extend && new_length < length + 1.0e-9
+      raise ArgumentError,
+            "extend at #{point_label(moved)} would shorten the segment from " \
+            "#{RRCADUnits.format_num(length)} to " \
+            "#{RRCADUnits.format_num(new_length)}; use trim instead"
+    end
+  end
+
+  # A point's position as a scalar [x, y] pair, honouring any earlier edit.
+  def point_xy(coords, point)
+    existing = coords[point]
+    return existing if existing
+
+    unless point.resolved?
+      raise RuntimeError,
+            "sketch is under-constrained: #{point_label(point)} missing #{missing_coords(point)}"
+    end
+
+    [RRCADUnits.scalar(point.x), RRCADUnits.scalar(point.y)]
+  end
+
+  def same_xy?(a, b)
+    (a[0] - b[0]).abs < 1.0e-9 && (a[1] - b[1]).abs < 1.0e-9
   end
 
   # Replace every modified corner in +pts+ with its rounded or bevelled

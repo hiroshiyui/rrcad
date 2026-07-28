@@ -40,7 +40,13 @@ operations used most in practice.
       profile itself, so a rounded outline survives every later pad, pocket, or
       boolean — unlike `Shape#fillet`, which rounds an existing solid.
       Tests: `tests/phase11_sketch_corners.rs` (11).
-- [ ] `trim` / `extend` on sketch segments.
+- [x] **`trim` / `extend`** on sketch segments. One endpoint slides along the
+      segment while the other anchors it, either `by:` a distance or `to:` the
+      intersection with another segment's infinite line. Edits apply in
+      declaration order after the solver runs, in a side table rather than by
+      mutating solved points, so corner modifiers see the moved corner and
+      `to_profile` stays idempotent.
+      Tests: `tests/phase11_sketch_edits.rs` (21).
 - [ ] Profile `offset`.
 - [ ] Sketch-level linear and polar patterns.
 - [ ] Spline segments in sketch profiles.

@@ -172,6 +172,71 @@ Errors are reported before any geometry is built:
 - More than one modifier on the same corner.
 - A modifier on a point that is not a corner of the closed loop.
 
+### Trimming and extending segments
+
+`trim` and `extend` shorten or lengthen an individual segment of a line-based
+sketch. One endpoint slides along the segment's own direction while the other
+anchors it; because adjacent segments share their corner point, the corner
+moves with it and the loop stays closed.
+
+Give the distance with `by:`, or an intersection with `to:`:
+
+```ruby
+plate = sketch do
+  a = point(:a, 0, 0)
+  b = point(:b, 40.mm, 0)
+  c = point(:c, 40.mm, 20.mm)
+  d = point(:d, 0, 20.mm)
+  bottom = line a, b
+  line b, c
+  line c, d
+  line d, a
+
+  trim c, d, by: 10.mm     # pull :d in to x = 10, making a trapezoid
+  extend bottom, by: 5.mm  # push :b out to x = 45
+end.extrude(6.mm)
+```
+
+With `to:`, the moved endpoint lands where the segment's *infinite* line
+crosses the reference segment's infinite line — so the reference need not
+physically reach the segment, which is what makes `extend` useful:
+
+```ruby
+sketch do
+  # …
+  rail_a = construction_point(:rail_a, 60.mm, 0)
+  rail_b = construction_point(:rail_b, 40.mm, 20.mm)
+  extend a, b, to: construction_line(rail_a, rail_b)
+end
+```
+
+Details:
+
+- The segment can be given as two points (`trim c, d`) or as the array `line`
+  and `construction_line` return (`trim top`), and either argument order
+  identifies it.
+- The argument order chooses the direction: the second point is the one that
+  moves. `at: :start` moves the first point instead, and `at:` also accepts
+  either endpoint directly.
+- `to:` takes a reference segment in the same two forms. It may be a drawn
+  `line` or a `construction_line` that exists only to aim at.
+- Edits apply in declaration order after the constraint solver runs, so a
+  later edit sees the result of an earlier one, and corner `fillet` /
+  `chamfer` modifiers act on the moved corner's final position.
+- Distances accept unit values (`10.mm`) and must be positive; use `extend`
+  rather than a negative `trim`.
+
+Errors are reported before any geometry is built:
+
+- An edit that would collapse the segment (`trim at :b leaves no segment: it
+  would take 40.0 down to -10.0`).
+- A `to:` reference parallel to the segment, which never meets it.
+- A `to:` intersection on the wrong side, which names the operation you
+  wanted (`trim at :b would lengthen the segment from 40.0 to 50.0; use
+  extend instead`).
+- A point pair that no `line` connects.
+- Passing both `to:` and `by:`, or neither.
+
 ### Diagnostics
 
 When a sketch fails to solve, the error names the constraint type, the
