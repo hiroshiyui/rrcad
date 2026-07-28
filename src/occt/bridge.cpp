@@ -3123,10 +3123,17 @@ double shape_distance_to(const OcctShape& a, const OcctShape& b) {
     }
 }
 
-// shape_inertia — inertia tensor about the centre of mass.
+// shape_inertia — inertia tensor about the shape's own centre of mass.
 // Fills out[] with [Ixx, Iyy, Izz, Ixy, Ixz, Iyz].
-// The MatrixOfInertia diagonal is [Ixx, Iyy, Izz]; off-diagonal entries
-// are the products of inertia (Ixy = MatrixOfInertia(1,2), etc.).
+//
+// The MatrixOfInertia diagonal is [Ixx, Iyy, Izz]. The off-diagonal entries
+// are true inertia-tensor entries (-∫xy dV), NOT products of inertia
+// (+∫xy dV) — verified against two unit-density cubes on a diagonal, which
+// report Ixy = -50000 where ∫xy dV = +50000. Any axis transfer built on this
+// must subtract the m·dx·dy term to match.
+//
+// VolumeProperties integrates with density 1, so the result is in volume
+// units (mm^5), not mass units; callers scale by mass / volume.
 void shape_inertia(const OcctShape& shape, rust::Slice<double> out) {
     try {
         if (out.size() < 6)

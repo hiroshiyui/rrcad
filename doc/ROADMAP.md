@@ -93,7 +93,20 @@ parts uniformly, which is what the three reports are built on.
       alone yields believable masses.
 - [x] **Assembly-level mass, volume, and centre-of-mass rollup** —
       `Assembly#mass_properties`, mass-weighted, with a per-part breakdown.
-      Tests: 36 in `tests/phase11_assembly_reports.rs`.
+
+Follow-ons, driven by working through a quadcopter as a test case:
+
+- [x] **`mass:` override** for parts you buy rather than model. Deriving mass
+      from `volume × density` is wrong for a bought part whose geometry is
+      only an envelope — and on a real vehicle those parts dominate the total.
+      The envelope stays, so it keeps clash-checking; only the mass comes from
+      the datasheet. A stated mass on a zero-volume shape acts as a point
+      mass, which covers wiring and adhesive without a separate concept.
+- [x] **Inertia rollup** — `mass_properties` returns the tensor about the
+      centre of mass (or any `about:` point) by parallel-axis transfer.
+      Validated against the tensor OCCT computes for the equivalent fused
+      solid, which agrees to machine precision on all six components.
+      Tests: 59 in `tests/phase11_assembly_reports.rs`.
 
 ### Track C — Drawing completeness
 

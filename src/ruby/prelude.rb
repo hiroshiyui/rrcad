@@ -2606,7 +2606,18 @@ class Shape
   end
 
   # Return the inertia tensor about the centre of mass as a Hash:
-  #   {ixx:, iyy:, izz:, ixy:, ixz:, iyz:}  (world frame, units = mass × length²).
+  #   {ixx:, iyy:, izz:, ixy:, ixz:, iyz:}
+  #
+  # Axes are world-aligned but the tensor is taken about the shape's own
+  # centre of mass, so translating the shape does not change it.
+  #
+  # OCCT integrates with density 1, so these are *volume* moments in mm⁵, not
+  # mass moments. Multiply by mass / volume to get g·mm² — scaling by density
+  # alone is only equivalent when the mass came from that same density.
+  # Assembly#mass_properties does this conversion and sums the result.
+  #
+  # Off-diagonal entries are true inertia-tensor entries (−∫xy dV), not
+  # products of inertia (+∫xy dV); the sign matters when transferring axes.
   # Uses BRepGProp::VolumeProperties → GProp_GProps::MatrixOfInertia.
   def inertia
     raise NotImplementedError, "Shape#inertia is not yet implemented (Phase 8 Tier 3)"
@@ -2901,14 +2912,15 @@ class Assembly
   # place(shape, name:, material:, density:, component:) — add a shape to the
   # assembly verbatim. All keywords are optional and feed the reporting
   # methods (#bom, #mass_properties, #interferences); geometry ignores them.
-  def place(shape, name: nil, material: nil, density: nil, component: nil)
-    record_shape(shape, name, material, density, component)
+  def place(shape, name: nil, material: nil, density: nil, component: nil, mass: nil)
+    record_shape(shape, name, material, density, component, mass)
   end
 
   # Declare a named rigid part to be solved lazily from constraints.
   # The first declared part is fixed by default unless fixed: false is given.
   # material:/density:/component: are reporting metadata — see #place.
-  def part(name, shape, fixed: nil, material: nil, density: nil, component: nil, &block)
+  def part(name, shape, fixed: nil, material: nil, density: nil, component: nil, mass: nil,
+           &block)
     unless shape.is_a?(Shape)
       raise ArgumentError, "part shape must be a Shape"
     end
@@ -2918,7 +2930,7 @@ class Assembly
     end
     fixed = @solver_parts.empty? if fixed.nil?
     part = { name: name, shape: shape, fixed: fixed, constraints: [],
-             meta: build_meta(name, material, density, component) }
+             meta: build_meta(name, material, density, component, mass) }
     @solver_parts << part
     @solver_parts_by_name[name] = part
     mark_solver_dirty!
@@ -2934,9 +2946,9 @@ class Assembly
     shape
   end
 
-  def ground(name, shape, material: nil, density: nil, component: nil, &block)
+  def ground(name, shape, material: nil, density: nil, component: nil, mass: nil, &block)
     part(name, shape, fixed: true, material: material, density: density,
-                      component: component, &block)
+                      component: component, mass: mass, &block)
   end
 
   def face(part_name, selector)
@@ -2954,21 +2966,21 @@ class Assembly
   #                   to:   base.faces(:top).first, offset: 5.0
   #   end
   def mate(shape, from:, to:, offset: 0.0, name: nil, material: nil, density: nil,
-           component: nil)
+           component: nil, mass: nil)
     positioned = shape.mate(from, to, offset)
-    record_shape(positioned, name, material, density, component)
+    record_shape(positioned, name, material, density, component, mass)
   end
 
   # distance_mate(shape, from:, to:, distance:) — same as mate, but expresses
   # the gap explicitly. `distance:` must be positive (a gap, not contact);
   # use the plain `mate(... offset: 0)` for flush contact.
   def distance_mate(shape, from:, to:, distance:, name: nil, material: nil, density: nil,
-                    component: nil)
+                    component: nil, mass: nil)
     unless distance.is_a?(Numeric) && distance > 0
       raise ArgumentError, "distance_mate distance must be > 0 (use mate for flush contact)"
     end
     positioned = shape.mate(from, to, distance)
-    record_shape(positioned, name, material, density, component)
+    record_shape(positioned, name, material, density, component, mass)
   end
 
   # axis_align(shape, from: [p1, p2], to: [q1, q2]) — rotate and translate
@@ -2977,7 +2989,8 @@ class Assembly
   # coincident with q1, and direction (p2−p1) is rotated to (q2−q1). Useful
   # for concentric / coaxial alignment of cylindrical features when you can
   # name two points on each axis.
-  def axis_align(shape, from:, to:, name: nil, material: nil, density: nil, component: nil)
+  def axis_align(shape, from:, to:, name: nil, material: nil, density: nil, component: nil,
+                 mass: nil)
     p1, p2 = validate_axis_pair!(from, "axis_align from:")
     q1, q2 = validate_axis_pair!(to, "axis_align to:")
 
@@ -2989,7 +3002,7 @@ class Assembly
     intermediate = shape.translate(-p1[0], -p1[1], -p1[2])
     intermediate = apply_axis_rotation(intermediate, u, v)
     positioned = intermediate.translate(q1[0], q1[1], q1[2])
-    record_shape(positioned, name, material, density, component)
+    record_shape(positioned, name, material, density, component, mass)
   end
 
   # angle_mate(shape, from:, to:, angle:, pivot:, axis_dir:, offset: 0)
@@ -2999,13 +3012,13 @@ class Assembly
   # Useful for locking the rotational degree of freedom left over after a
   # planar mate.
   def angle_mate(shape, from:, to:, angle:, pivot:, axis_dir:, offset: 0.0, name: nil,
-                 material: nil, density: nil, component: nil)
+                 material: nil, density: nil, component: nil, mass: nil)
     unless angle.is_a?(Numeric)
       raise ArgumentError, "angle_mate angle must be a number"
     end
     mated = shape.mate(from, to, offset)
     positioned = mated.rotate_about(pivot, axis_dir, angle)
-    record_shape(positioned, name, material, density, component)
+    record_shape(positioned, name, material, density, component, mass)
   end
 
   # Solve the declarative assembly graph and return a Hash of part name →
@@ -3062,7 +3075,7 @@ class Assembly
   def components
     list = []
     @shapes.each_with_index do |shape, index|
-      meta = @shape_meta[index] || build_meta(nil, nil, nil, nil)
+      meta = @shape_meta[index] || build_meta(nil, nil, nil, nil, nil)
       name = meta[:name] || :"part_#{index + 1}"
       list << meta.merge(name: name,
                          component: meta[:component] || name,
@@ -3165,17 +3178,25 @@ class Assembly
       key = part[:component]
       volume = part[:shape].volume
       row = rows[key]
+      mass, rho, source = resolve_mass(part, volume, density)
       if row.nil?
-        rho = resolve_density(part, density)
         rows[key] = { component: key, quantity: 1, material: part[:material],
-                      density: rho, unit_volume: volume, volume: volume,
-                      unit_mass: volume * rho / 1000.0,
-                      mass: volume * rho / 1000.0, parts: [part[:name]] }
+                      density: rho, mass_source: source, unit_volume: volume,
+                      volume: volume, unit_mass: mass, mass: mass,
+                      parts: [part[:name]] }
       else
         unless (row[:unit_volume] - volume).abs <= 1.0e-6 * [row[:unit_volume].abs, 1.0].max
           raise RuntimeError,
                 "assembly '#{@name}' component #{key.inspect} groups parts of different volume " \
                 "(#{format_num(row[:unit_volume])} vs #{format_num(volume)} mm³); " \
+                "give the differing part its own component:"
+        end
+        # Same class of error as differing volume: one BOM line cannot stand
+        # for two parts that weigh different amounts.
+        unless (row[:unit_mass] - mass).abs <= 1.0e-6 * [row[:unit_mass].abs, 1.0].max
+          raise RuntimeError,
+                "assembly '#{@name}' component #{key.inspect} groups parts of different mass " \
+                "(#{format_num(row[:unit_mass])} vs #{format_num(mass)} g); " \
                 "give the differing part its own component:"
         end
         row[:quantity] += 1
@@ -3236,7 +3257,7 @@ class Assembly
   # volume is counted twice, so run #interferences first if you are unsure;
   # this method deliberately does not fuse the assembly, both because fusing
   # is expensive and because it would hide the per-part breakdown.
-  def mass_properties(density: DEFAULT_DENSITY)
+  def mass_properties(density: DEFAULT_DENSITY, about: nil)
     validate_positive_numeric!(density, "mass_properties density") unless density.nil?
     parts = components
     if parts.empty?
@@ -3244,11 +3265,11 @@ class Assembly
     end
 
     rows = parts.map do |part|
-      rho = resolve_density(part, density)
       volume = part[:shape].volume
+      mass, rho, source = resolve_mass(part, volume, density)
       { name: part[:name], component: part[:component], material: part[:material],
-        density: rho, volume: volume, mass: volume * rho / 1000.0,
-        centroid: part[:shape].centroid }
+        density: rho, mass_source: source, volume: volume, mass: mass,
+        centroid: part[:shape].centroid, shape: part[:shape] }
     end
 
     total_volume = rows.inject(0.0) { |acc, row| acc + row[:volume] }
@@ -3261,7 +3282,15 @@ class Assembly
       rows.inject(0.0) { |acc, row| acc + row[:centroid][axis] * row[:mass] } / total_mass
     end
 
-    { volume: total_volume, mass: total_mass, center_of_mass: com, parts: rows }
+    reference = resolve_inertia_reference(about, com)
+    inertia = inertia_rollup(rows, reference)
+
+    # The Shape handle was only needed for the inertia pass; drop it so the
+    # report stays plain data.
+    rows.each { |row| row.delete(:shape) }
+
+    { volume: total_volume, mass: total_mass, center_of_mass: com,
+      inertia: inertia, inertia_about: reference, parts: rows }
   end
 
   def validate_axis_pair!(pair, label)
@@ -3336,29 +3365,39 @@ class Assembly
 
   # Append a shape to the ad-hoc placement list along with its reporting
   # metadata, and return the shape so placement helpers stay chainable.
-  def record_shape(shape, name, material, density, component)
+  def record_shape(shape, name, material, density, component, mass)
     unless shape.is_a?(Shape)
       raise ArgumentError, "assembly can only hold a Shape"
     end
     @shapes << shape
-    @shape_meta << build_meta(name, material, density, component)
+    @shape_meta << build_meta(name, material, density, component, mass)
     shape
   end
 
   # Normalize the reporting keywords shared by #place, #part, and the
   # placement helpers. A nil name is filled in later by #components, which is
   # the only place that knows the placement index.
-  def build_meta(name, material, density, component)
+  def build_meta(name, material, density, component, mass)
     unless material.nil? || material.is_a?(String) || material.is_a?(Symbol)
       raise ArgumentError, "material must be a String or Symbol"
     end
     unless density.nil?
       validate_positive_numeric!(density, "density")
     end
+    unless mass.nil?
+      validate_positive_numeric!(mass, "mass")
+    end
+    # mass: and density: are two answers to the same question. Preferring one
+    # silently would hide the contradiction, so say so instead.
+    if !mass.nil? && !density.nil?
+      raise ArgumentError,
+            "give either mass: or density:, not both — mass: already fixes the part's weight"
+    end
     { name: name.nil? ? nil : normalize_part_name(name),
       component: component.nil? ? nil : normalize_part_name(component),
       material: material.nil? ? nil : material.to_s,
-      density: density.nil? ? nil : RRCADUnits.scalar(density) }
+      density: density.nil? ? nil : RRCADUnits.scalar(density),
+      mass: mass.nil? ? nil : RRCADUnits.scalar(mass) }
   end
 
   # Density for one component, in g/cm³: an explicit density: wins, then the
@@ -3370,6 +3409,88 @@ class Assembly
       return known unless known.nil?
     end
     fallback.nil? ? DEFAULT_DENSITY : RRCADUnits.scalar(fallback)
+  end
+
+  # Mass for one component, in grams, as [mass, effective_density, source].
+  #
+  # A stated mass: wins outright — that is the point of the override, and it
+  # is how a bought part (battery, motor, flight controller) gets its real
+  # weight when its geometry is only a stand-in envelope. The density is then
+  # back-computed from the envelope so reports stay coherent and an envelope
+  # that is wildly the wrong size shows up as an implausible density. A shape
+  # with no volume has no meaningful density, so that comes back nil.
+  def resolve_mass(part, volume, fallback_density)
+    unless part[:mass].nil?
+      effective = volume.abs <= 1.0e-12 ? nil : part[:mass] * 1000.0 / volume
+      return [part[:mass], effective, :stated]
+    end
+    rho = resolve_density(part, fallback_density)
+    [volume * rho / 1000.0, rho, :density]
+  end
+
+  # Reference point for the inertia tensor: the assembly's own centre of mass
+  # by default, :origin, or any explicit 3-element point.
+  def resolve_inertia_reference(about, com)
+    return com if about.nil?
+    return [0.0, 0.0, 0.0] if about == :origin
+    validate_point!(about, "mass_properties about:")
+    about.map { |v| RRCADUnits.scalar(v) }
+  end
+
+  # Sum the per-part inertia tensors about +reference+, in g·mm².
+  #
+  # Each part contributes two terms. The first is its own tensor, which
+  # Shape#inertia reports about that part's own centre of mass and in volume
+  # units (OCCT integrates with density 1), so it is scaled by mass / volume
+  # to become mass units. Scaling this way — rather than by density — is what
+  # makes a stated mass: propagate correctly: it keeps the envelope's inertia
+  # *distribution* while matching the declared weight. That does assume the
+  # part's density is uniform across its envelope, which is close enough for a
+  # battery and rougher for a motor; modelling the internals is the only way
+  # past it.
+  #
+  # The second term moves that tensor from the part's centre of mass to the
+  # common reference — the parallel-axis theorem. Off-diagonal entries are
+  # subtracted because OCCT returns true inertia-tensor entries (−∫xy dV)
+  # rather than products of inertia (+∫xy dV).
+  def inertia_rollup(rows, reference)
+    ixx = 0.0
+    iyy = 0.0
+    izz = 0.0
+    ixy = 0.0
+    ixz = 0.0
+    iyz = 0.0
+
+    rows.each do |row|
+      mass = row[:mass]
+      volume = row[:volume]
+
+      # A zero-volume component (a placed Face or datum plane) has no
+      # distributed inertia of its own, and asking OCCT for a volume tensor
+      # would be meaningless — it contributes only the point term below.
+      if volume.abs > 1.0e-12
+        own = row[:shape].inertia
+        scale = mass / volume
+        ixx += own[:ixx] * scale
+        iyy += own[:iyy] * scale
+        izz += own[:izz] * scale
+        ixy += own[:ixy] * scale
+        ixz += own[:ixz] * scale
+        iyz += own[:iyz] * scale
+      end
+
+      dx = row[:centroid][0] - reference[0]
+      dy = row[:centroid][1] - reference[1]
+      dz = row[:centroid][2] - reference[2]
+      ixx += mass * (dy * dy + dz * dz)
+      iyy += mass * (dx * dx + dz * dz)
+      izz += mass * (dx * dx + dy * dy)
+      ixy -= mass * dx * dy
+      ixz -= mass * dx * dz
+      iyz -= mass * dy * dz
+    end
+
+    { ixx: ixx, iyy: iyy, izz: izz, ixy: ixy, ixz: ixz, iyz: iyz }
   end
 
   # Fold a free-text material name to a MATERIAL_DENSITIES key: lower-case,
@@ -3551,7 +3672,8 @@ class Assembly
   end
 
   private :validate_axis_pair!, :vec_sub, :vec_normalize, :vec_dot, :vec_scale, :vec_length,
-          :apply_axis_rotation, :record_shape, :build_meta, :resolve_density,
+          :apply_axis_rotation, :record_shape, :build_meta, :resolve_density, :resolve_mass,
+          :resolve_inertia_reference, :inertia_rollup,
           :normalize_material, :fixed_decimals, :normalize_part_name, :normalize_face_ref!,
           :normalize_local_selector!, :validate_numeric!, :validate_positive_numeric!,
           :validate_point!, :mark_solver_dirty!, :resolve_face_ref,

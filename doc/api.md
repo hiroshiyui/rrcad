@@ -354,7 +354,7 @@ let thread  = profile.sweep(&path)?;
 | Method | Description |
 |--------|-------------|
 | `.distance_to(other: &Shape) -> Result<f64>` | Minimum distance between two shapes via `BRepExtrema_DistShapeShape`. Returns `0.0` for overlapping or touching shapes. |
-| `.inertia() -> Result<[f64; 6]>` | Mass moments of inertia `[Ixx, Iyy, Izz, Ixy, Ixz, Iyz]` computed by `BRepGProp::VolumeProperties` → `GProp_GProps::MatrixOfInertia`. |
+| `.inertia() -> Result<[f64; 6]>` | Inertia tensor `[Ixx, Iyy, Izz, Ixy, Ixz, Iyz]` about the shape's own centre of mass, via `BRepGProp::VolumeProperties` → `GProp_GProps::MatrixOfInertia`. OCCT integrates at density 1, so these are *volume* moments (mm⁵); scale by mass / volume for g·mm². Off-diagonals are true tensor entries (−∫xy dV), not products of inertia. |
 | `.min_thickness() -> Result<f64>` | Minimum wall thickness of a solid or shell via ray-casting (`IntCurvesFace_ShapeIntersector`): for each face, shoots a ray inward from the UV-centre, returns the shortest non-trivial intersection distance across all faces. Raises an error for non-solid/non-shell shapes. |
 | `.face_normal() -> Result<[f64; 3]>` | Outward unit normal of a face shape, sampled at the face's parameter-space midpoint via `BRepLProp_SLProps` and flipped when `TopAbs_REVERSED` so it points out of the parent solid. Errors if the shape is not a face or the normal is undefined. |
 | `.cylinder_axis() -> Result<[f64; 7]>` | For a cylindrical face, returns `[ox, oy, oz, ax, ay, az, radius]` — the axis origin, unit direction, and radius via `BRepAdaptor_Surface::Cylinder()`. Errors if the surface is not `GeomAbs_Cylinder`. |
@@ -801,7 +801,7 @@ constraints are present.
 | `.fillet_wire(r)` | Round all corners of a 2D Wire or Face by radius `r`. Returns a Face. Raises an error if `self` is a Solid or Shell. |
 | `.extrude(h, draft: a)` | Extrude with draft angle `a` degrees. Positive → narrower at top (standard mould taper). Uses `BRepOffsetAPI_DraftAngle` on the straight prism's lateral faces. |
 | `.distance_to(other)` | Minimum clearance distance to `other` shape (Float). Returns `0.0` when shapes overlap or touch. Uses `BRepExtrema_DistShapeShape`. |
-| `.inertia` | Mass moments of inertia as a Hash `{ixx:, iyy:, izz:, ixy:, ixz:, iyz:}`. Computed by `BRepGProp::VolumeProperties` + `MatrixOfInertia`. |
+| `.inertia` | Inertia tensor as a Hash `{ixx:, iyy:, izz:, ixy:, ixz:, iyz:}`, about the shape's own centre of mass (translating the shape does not change it). Volume moments in mm⁵ — OCCT integrates at density 1 — so scale by mass / volume for g·mm². Off-diagonals are true tensor entries (−∫xy dV), not products of inertia. `Assembly#mass_properties` does this conversion and sums across parts. |
 | `.min_thickness` | Minimum wall thickness of a Solid or Shell (Float). Uses `IntCurvesFace_ShapeIntersector` ray-casting: shoots a ray inward from each face centroid along the face normal; returns the shortest non-trivial hit distance. Raises `ArgumentError` for non-solid/non-shell shapes. |
 | `.normal` (on a Face) | Outward unit normal as `[nx, ny, nz]`. Sampled at the face's parameter-space midpoint via `BRepLProp_SLProps` and flipped when the face orientation is `TopAbs_REVERSED` so the vector points out of the parent solid. Raises if the shape is not a face or the normal is undefined at the sample point. |
 | `.cylinder_axis` (on a Face) | For a cylindrical face, returns `{origin: [ox,oy,oz], axis: [ax,ay,az], radius: r}` via `BRepAdaptor_Surface::Cylinder()`. Raises if the shape is not a face or the underlying surface is not a cylinder. |
@@ -844,7 +844,7 @@ rig.to_shape
 | Method | Description |
 |--------|-------------|
 | `a.place(shape)` | Add `shape` at its current position. Returns `shape`. |
-| `a.place(shape, name:, component:, material:, density:)` | Same, with reporting metadata. All four keywords are optional and are also accepted by `part`, `ground`, `mate`, `distance_mate`, `axis_align`, and `angle_mate`. Geometry ignores them. |
+| `a.place(shape, name:, component:, material:, density:, mass:)` | Same, with reporting metadata. All five keywords are optional and are also accepted by `part`, `ground`, `mate`, `distance_mate`, `axis_align`, and `angle_mate`. Geometry ignores them. `mass:` (grams) states a datasheet weight for a bought part, overriding `volume × density`; passing it together with `density:` raises. |
 | `a.ground(name, shape) { ... }` | Register a fixed part in the declarative solver. The first `part` is fixed by default; use `ground` for clarity on the root body. |
 | `a.part(name, shape, fixed: nil) { ... }` | Register a named rigid part for lazy solving. The yielded builder supports `mate`, `distance_mate`, and `angle_mate` constraints; the first part defaults to fixed when `fixed:` is omitted. |
 | `a.face(part_name, selector)` | Build a face reference for the declarative solver. Use with `a.part(...){ mate from: :bottom, to: face(:base, :top) }`. |
@@ -867,7 +867,16 @@ world positions. None of them mutate the assembly.
 | `asm.clash?` | `true` when any two components overlap in solid volume. |
 | `asm.bom(density: 1.24)` | Bill of materials rolled up by `component:`. Rows are `{component:, quantity:, material:, density:, unit_volume:, volume:, unit_mass:, mass:, parts:}`, sorted by descending quantity. Raises if one component key groups parts of different volume. |
 | `asm.bom_text(density: 1.24)` | `bom` rendered as an aligned text table with a TOTAL row. |
-| `asm.mass_properties(density: 1.24)` | `{volume:, mass:, center_of_mass:, parts: [...]}`. Mass-weighted centre of mass; volumes in mm³, masses in grams. Overlapping parts double-count their shared volume — run `interferences` first. |
+| `asm.mass_properties(density: 1.24, about: nil)` | `{volume:, mass:, center_of_mass:, inertia:, inertia_about:, parts: [...]}`. Mass-weighted centre of mass; volumes in mm³, masses in grams, inertia in g·mm² (×1e−9 for kg·m²). `about:` takes `:origin` or a 3-element point; it defaults to the centre of mass. Overlapping parts double-count their shared volume — run `interferences` first. |
+
+Each part row in `bom` and `mass_properties` carries `mass_source:`
+(`:stated` or `:density`) so an overridden mass is never mistaken for a
+computed one. A stated mass on a zero-volume shape (a `datum_plane`) acts as a
+point mass at that location.
+
+Inertia is summed by parallel-axis transfer from each part's own tensor.
+A stated `mass:` rescales that part's inertia distribution to match the
+declared weight, which assumes uniform density across its envelope.
 
 Density for each component resolves in order: explicit `density:`, then the
 built-in material table (steel 7.85, aluminium 2.70, brass 8.50, PLA 1.24,

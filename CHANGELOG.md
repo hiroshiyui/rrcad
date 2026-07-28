@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Stated part mass and assembly inertia** (Phase 11 Track B follow-on,
+  `src/ruby/prelude.rb`): `mass_properties` derived mass from `volume ×
+  density`, which is right for parts you model and wrong for parts you buy —
+  and on a real assembly the bought parts dominate. Placement methods now take
+  `mass:` (grams), a datasheet weight that overrides the computed one while
+  leaving the envelope geometry in place, so the part keeps taking part in
+  clash and clearance checks. Passing `mass:` and `density:` together raises,
+  and every row reports `mass_source: :stated` or `:density`. A stated mass on
+  a zero-volume shape behaves as a point mass, covering wiring and adhesive
+  without a separate concept. `mass_properties` also returns the inertia
+  tensor in g·mm², summed by parallel-axis transfer about the centre of mass
+  or any `about:` point — validated against the tensor OCCT computes for the
+  equivalent fused solid, which agrees to machine precision on all six
+  components.
+
 - **Assembly reports** (Phase 11 Track B, `src/ruby/prelude.rb`): an assembly
   that solves cleanly can still be wrong, and until now it produced none of
   the deliverables an assembly exists for. Three reports close that gap.
@@ -122,6 +137,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of duplicated boilerplate were removed.
 
 ### Fixed
+
+- **Corrected the documented meaning of `Shape#inertia`** (`src/occt/bridge.cpp`,
+  `src/ruby/prelude.rb`, `doc/api.md`): the tensor's off-diagonal entries were
+  documented as products of inertia (+∫xy dV) when OCCT in fact returns true
+  inertia-tensor entries (−∫xy dV), and the values were described as mass
+  moments when they are volume moments in mm⁵ (OCCT integrates at density 1).
+  Either misreading silently corrupts an axis transfer or a unit conversion,
+  which is exactly what the new assembly inertia rollup depends on. No
+  behaviour change — the values were always these; only the description was
+  wrong.
 
 - **`Shape#offset_2d` returns a usable profile** (`src/occt/bridge.cpp`):
   `BRepOffsetAPI_MakeOffset` returns bare wires, so a Face went in and a Wire

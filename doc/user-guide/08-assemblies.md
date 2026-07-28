@@ -149,6 +149,35 @@ come out right without you stating one. An explicit `density:` (g/cm³) always
 wins, and an unknown material falls back to the default rather than failing —
 every row reports the density it used.
 
+## Parts you buy rather than model
+
+Density only helps for parts you actually draw. A motor, a battery, or a
+flight controller has a mass on its datasheet and a shape you are modelling
+only as an envelope — computing `volume × density` for those gives a number
+with no relation to reality.
+
+State the mass instead:
+
+```ruby
+a.place battery_envelope, name: :battery, mass: 182      # grams
+a.place motor_step, name: :motor_fl, component: :motor_2207, mass: 32.5
+```
+
+The envelope is still real geometry, so it keeps taking part in clash and
+clearance checks — that is exactly why you keep it. Only the mass comes from
+elsewhere. `mass:` and `density:` together raises, since they are two answers
+to the same question, and every row reports `mass_source: :stated` or
+`:density` so an overridden figure is never mistaken for a computed one.
+
+A stated mass on a shape with no volume — a `datum_plane`, say — behaves as a
+point mass at that location, which is a convenient way to account for wiring,
+tape, or glue:
+
+```ruby
+a.place datum_plane(origin: [0, 0, 12], normal: [0, 0, 1], x_dir: [1, 0, 0]),
+        name: :wiring, mass: 15
+```
+
 ## Mass rollup
 
 ```ruby
@@ -156,12 +185,88 @@ mp = asm.mass_properties
 mp[:volume]          # => 18000.0        mm³
 mp[:mass]            # => 58.9           grams
 mp[:center_of_mass]  # => [20.0, 20.0, 8.998]
-mp[:parts]           # per-part volume, mass, density, centroid
+mp[:parts]           # per-part volume, mass, density, centroid, mass_source
 ```
 
 The centre of mass is weighted by mass, not volume, so a steel post on an
 aluminium base pulls it upward correctly. Parts that interpenetrate count
 their shared volume twice — check `interferences` first if you are unsure.
+
+## Inertia
+
+`mass_properties` also returns the inertia tensor, in g·mm², taken about the
+assembly's centre of mass:
+
+```ruby
+mp[:inertia]        # => {ixx:, iyy:, izz:, ixy:, ixz:, iyz:}
+mp[:inertia_about]  # => the reference point used
+
+asm.mass_properties(about: :origin)[:inertia]
+asm.mass_properties(about: [0, 0, 50])[:inertia]
+```
+
+Each part contributes its own tensor plus a parallel-axis transfer to the
+common reference. Multiply by 1e−9 for kg·m², which is what most simulators
+expect.
+
+The off-diagonal terms are worth reading: they measure how much rotation
+about one axis couples into another. On a symmetric design they should
+vanish, so a non-zero one usually means something is off-centre.
+
+Two limits to keep in mind. A stated `mass:` rescales the envelope's inertia
+distribution to match the declared weight, which assumes the part's density is
+uniform across that envelope — fair for a battery, rougher for a motor with a
+heavy stator and a hollow bell. And as with the mass rollup, overlapping parts
+count their shared volume twice.
+
+## Worked example: a quadcopter airframe
+
+Symmetric arms, four bought motors, and a battery — the two heaviest items
+carrying stated masses rather than computed ones:
+
+```ruby
+arm   = box(60, 8, 4).translate(20, -4, -2)
+plate = box(60, 60, 2).translate(-30, -30, -1)
+motor = cylinder(14, 25)
+batt  = box(105, 35, 26).translate(-52.5, -17.5, -30)
+
+asm = assembly("quad") do |a|
+  a.place plate, name: :plate, material: "carbon", density: 1.55
+  4.times do |i|
+    ang = 45 + i * 90
+    rad = ang * Math::PI / 180
+    a.place arm.rotate(0, 0, 1, ang), name: :"arm_#{i}",
+            component: :arm, material: "carbon", density: 1.55
+    a.place motor.translate(56 * Math.cos(rad), 56 * Math.sin(rad), 2),
+            name: :"motor_#{i}", component: :motor_2207, mass: 32.5
+  end
+  a.place batt, name: :battery, mass: 182.0
+end
+```
+
+```
+Item  Component   Qty  Material  Volume (mm3)  Mass (g)
+----  ----------  ---  --------  ------------  --------
+1     arm           4  carbon        7680.000    11.904
+2     motor_2207    4  -            61575.216   130.000
+3     battery       1  -            95550.000   182.000
+4     plate         1  carbon        7200.000    11.160
+----  ----------  ---  --------  ------------  --------
+      TOTAL        10              172005.216   335.064
+
+AUW            = 335.06 g
+centre of mass = [0.0, 0.0, -3.61]
+inertia about the CoM, g*mm^2:
+  ixx 341445.7   iyy 490079.0   izz 646302.4
+  ixy 0.0   ixz 0.0   iyz 0.0
+```
+
+The centre of mass sits dead-centre in x and y and 3.6 mm *below* the plate,
+pulled down by the battery slung underneath. All three coupling terms are
+exactly zero, as they should be for a symmetric airframe. `ixx` is lower than
+`iyy` because the battery is long in x and narrow in y, so the airframe rolls
+more readily than it pitches — the kind of asymmetry that is invisible in the
+model and obvious in the numbers.
 
 Every report calls `solve` first, so the figures describe the assembly in its
 final positions; none of them consume or modify it.

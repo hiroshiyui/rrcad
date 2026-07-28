@@ -601,3 +601,375 @@ fn an_under_constrained_assembly_still_reports_its_solver_error() {
         "expected the solver error to surface through #bom, got: {err}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// mass: override — datasheet weight for parts you buy rather than model
+// ---------------------------------------------------------------------------
+
+#[test]
+fn stated_mass_overrides_volume_times_density() {
+    // A 10 mm cube of "aluminium" would compute 2.7 g; the datasheet says 182.
+    let mass = eval_num(
+        "asm = assembly(\"x\") do |a|
+           a.place box(10, 10, 10), name: :battery, mass: 182.0
+         end
+         asm.mass_properties[:mass]",
+    );
+    assert!(
+        (mass - 182.0).abs() < 1e-9,
+        "expected the stated 182 g, got {mass}"
+    );
+}
+
+#[test]
+fn mass_source_distinguishes_stated_from_computed() {
+    let out = eval_str(
+        "asm = assembly(\"x\") do |a|
+           a.place box(10, 10, 10), name: :modelled, material: \"aluminium\"
+           a.place box(10, 10, 10).translate(50, 0, 0), name: :bought, mass: 182.0
+         end
+         asm.mass_properties[:parts].map { |p| p[:mass_source] }.inspect",
+    );
+    assert_eq!(
+        out, "[:density, :stated]",
+        "expected each row to say where its mass came from: {out}"
+    );
+}
+
+#[test]
+fn stated_mass_back_computes_an_effective_density() {
+    // 182 g in a 1 cm³ envelope is 182 g/cm³ — implausible, and that is the
+    // point: the number surfaces an envelope that is the wrong size.
+    let density = eval_num(
+        "asm = assembly(\"x\") do |a|
+           a.place box(10, 10, 10), name: :battery, mass: 182.0
+         end
+         asm.mass_properties[:parts][0][:density]",
+    );
+    assert!(
+        (density - 182.0).abs() < 1e-9,
+        "expected an effective density of 182 g/cm³, got {density}"
+    );
+}
+
+#[test]
+fn stated_mass_shifts_the_centre_of_mass() {
+    // Two identical cubes, 1 g and 99 g: the CoM must sit at 104, not 55.
+    let x = eval_num(
+        "asm = assembly(\"x\") do |a|
+           a.place box(10, 10, 10), name: :light, mass: 1.0
+           a.place box(10, 10, 10).translate(100, 0, 0), name: :heavy, mass: 99.0
+         end
+         asm.mass_properties[:center_of_mass][0]",
+    );
+    assert!(
+        (x - 104.0).abs() < 1e-9,
+        "expected a mass-weighted 104.0, got {x}"
+    );
+}
+
+#[test]
+fn mass_and_density_together_are_rejected() {
+    // Two answers to the same question; preferring one silently would hide it.
+    let err = eval_err("assembly(\"x\") { |a| a.place box(1, 1, 1), mass: 5.0, density: 2.0 }");
+    assert!(
+        err.contains("either mass: or density:"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn mass_rejects_a_non_positive_value() {
+    let err = eval_err("assembly(\"x\") { |a| a.place box(1, 1, 1), mass: 0 }");
+    assert!(err.contains("must be > 0"), "unexpected error: {err}");
+}
+
+#[test]
+fn bom_rolls_up_stated_masses() {
+    // Four motors at 32.5 g each.
+    let mass = eval_num(
+        "motor = cylinder(14, 12)
+         asm = assembly(\"quad\") do |a|
+           4.times do |i|
+             a.place motor.translate(i * 60, 0, 0), name: :\"motor_#{i}\",
+                     component: :motor_2207, mass: 32.5
+           end
+         end
+         asm.bom.first[:mass]",
+    );
+    assert!(
+        (mass - 130.0).abs() < 1e-9,
+        "expected 4 × 32.5 = 130 g, got {mass}"
+    );
+}
+
+#[test]
+fn bom_rejects_grouping_parts_of_different_stated_mass() {
+    let err = eval_err(
+        "asm = assembly(\"x\") do |a|
+           a.place box(10, 10, 10), component: :cell, mass: 40.0
+           a.place box(10, 10, 10).translate(20, 0, 0), component: :cell, mass: 55.0
+         end
+         asm.bom",
+    );
+    assert!(
+        err.contains("different mass") && err.contains("cell"),
+        "unexpected error: {err}"
+    );
+}
+
+#[test]
+fn an_overridden_part_still_takes_part_in_clash_checks() {
+    // The envelope is real geometry — that is why we keep it.
+    let out = eval_str(
+        "asm = assembly(\"x\") do |a|
+           a.place box(10, 10, 10), name: :frame
+           a.place box(10, 10, 10).translate(5, 0, 0), name: :battery, mass: 182.0
+         end
+         asm.interferences.map { |r| [r[:a], r[:b], r[:volume]] }.inspect",
+    );
+    assert_eq!(
+        out, "[[:frame, :battery, 500.0]]",
+        "expected the overridden part to still clash-check: {out}"
+    );
+}
+
+#[test]
+fn a_zero_volume_shape_with_a_stated_mass_acts_as_a_point_mass() {
+    // Falls out of the design rather than being special-cased: a datum plane
+    // has no volume, so it contributes only its stated mass at its position.
+    // 1 g body at z=5 plus 3 g at z=50 ⇒ CoM z = 38.75.
+    let z = eval_num(
+        "plane = datum_plane(origin: [0, 0, 50], normal: [0, 0, 1], x_dir: [1, 0, 0])
+         asm = assembly(\"pm\") do |a|
+           a.place box(10, 10, 10), name: :body, density: 1.0
+           a.place plane, name: :wiring, mass: 3.0
+         end
+         asm.mass_properties[:center_of_mass][2]",
+    );
+    assert!(
+        (z - 38.75).abs() < 1e-9,
+        "expected a point mass to pull the CoM to 38.75, got {z}"
+    );
+    // A shape with no volume has no meaningful density.
+    let out = eval_str(
+        "plane = datum_plane(origin: [0, 0, 50], normal: [0, 0, 1], x_dir: [1, 0, 0])
+         asm = assembly(\"pm\") do |a|
+           a.place box(10, 10, 10), name: :body, density: 1.0
+           a.place plane, name: :wiring, mass: 3.0
+         end
+         asm.mass_properties[:parts][1][:density].inspect",
+    );
+    assert_eq!(
+        out, "nil",
+        "expected nil density for a zero-volume part: {out}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Inertia rollup
+// ---------------------------------------------------------------------------
+
+/// Three disjoint boxes of one material — the fused-solid oracle fixture.
+const TRIPLE: &str = r#"
+    a = box(10, 10, 10)
+    b = box(10, 10, 10).translate(10, 10, 0)
+    c = box(20, 5, 5).translate(0, 0, 30)
+    asm = assembly("t") do |x|
+      x.place a, name: :a, material: "aluminium"
+      x.place b, name: :b, material: "aluminium"
+      x.place c, name: :c, material: "aluminium"
+    end
+    fused = a.fuse(b).fuse(c)
+"#;
+
+#[test]
+fn inertia_rollup_matches_the_fused_solid() {
+    // The load-bearing test. For uniform density the rollup must equal the
+    // tensor OCCT computes for one fused solid — the same quantity by a
+    // completely different route, so agreement is real evidence rather than
+    // self-consistency. Checks all six components, signs included.
+    let out = eval_str(&format!(
+        "{TRIPLE}
+         mp = asm.mass_properties
+         scale = 2.70 / 1000.0
+         oracle = fused.inertia
+         [:ixx, :iyy, :izz, :ixy, :ixz, :iyz].map {{ |k|
+           want = oracle[k] * scale
+           got = mp[:inertia][k]
+           rel = (got - want).abs / [want.abs, 1.0].max
+           rel < 1.0e-9
+         }}.inspect"
+    ));
+    assert_eq!(
+        out, "[true, true, true, true, true, true]",
+        "rollup disagreed with the fused solid: {out}"
+    );
+}
+
+#[test]
+fn rollup_centre_of_mass_matches_the_fused_solid() {
+    let out = eval_str(&format!(
+        "{TRIPLE}
+         rollup = asm.mass_properties[:center_of_mass]
+         solid = fused.centroid
+         [0, 1, 2].map {{ |i| (rollup[i] - solid[i]).abs < 1.0e-9 }}.inspect"
+    ));
+    assert_eq!(
+        out, "[true, true, true]",
+        "CoM disagreed with the fused solid: {out}"
+    );
+}
+
+#[test]
+fn inertia_about_the_centre_of_mass_matches_the_analytic_box() {
+    // Solid box about its own centre: Ixx = m(b² + c²)/12.
+    let ixx = eval_num(
+        "asm = assembly(\"b\") { |x| x.place box(10, 10, 10), name: :b, density: 1.0 }
+         asm.mass_properties[:inertia][:ixx]",
+    );
+    assert!(
+        (ixx - 1.0 * 200.0 / 12.0).abs() < 1e-9,
+        "expected m(b²+c²)/12 = 16.667, got {ixx}"
+    );
+}
+
+#[test]
+fn inertia_about_the_origin_matches_the_analytic_corner_box() {
+    // Same box referenced to a corner: Ixx = m(b² + c²)/3 — four times the
+    // centre value, which is what the parallel-axis term must supply.
+    let ixx = eval_num(
+        "asm = assembly(\"b\") { |x| x.place box(10, 10, 10), name: :b, density: 1.0 }
+         asm.mass_properties(about: :origin)[:inertia][:ixx]",
+    );
+    assert!(
+        (ixx - 1.0 * 200.0 / 3.0).abs() < 1e-9,
+        "expected m(b²+c²)/3 = 66.667, got {ixx}"
+    );
+}
+
+#[test]
+fn inertia_accepts_an_explicit_reference_point() {
+    // About (0,0,100): the transfer term dominates — m(dy² + dz²) with the
+    // box centre at (5,5,5) ⇒ 1 × (25 + 9025) = 9050, plus 16.667 own.
+    let ixx = eval_num(
+        "asm = assembly(\"b\") { |x| x.place box(10, 10, 10), name: :b, density: 1.0 }
+         asm.mass_properties(about: [0, 0, 100])[:inertia][:ixx]",
+    );
+    assert!(
+        (ixx - (9050.0 + 200.0 / 12.0)).abs() < 1e-6,
+        "expected 9066.667, got {ixx}"
+    );
+}
+
+#[test]
+fn inertia_about_is_reported_back() {
+    let out = eval_str(
+        "asm = assembly(\"b\") { |x| x.place box(10, 10, 10), name: :b, density: 1.0 }
+         asm.mass_properties(about: :origin)[:inertia_about].inspect",
+    );
+    assert_eq!(
+        out, "[0.0, 0.0, 0.0]",
+        "expected the reference echoed: {out}"
+    );
+}
+
+#[test]
+fn cylinder_inertia_about_its_axis_matches_the_analytic_value() {
+    // Solid cylinder: Izz = m·r²/2.
+    let out = eval_str(
+        "asm = assembly(\"c\") { |x| x.place cylinder(5, 20), name: :c, density: 1.0 }
+         mp = asm.mass_properties
+         ((mp[:inertia][:izz] - mp[:mass] * 25.0 / 2.0).abs < 1.0e-9).inspect",
+    );
+    assert_eq!(out, "true", "cylinder Izz disagreed with m·r²/2");
+}
+
+#[test]
+fn inertia_about_the_centre_of_mass_is_translation_invariant() {
+    // Moving the whole assembly must not change its tensor about its own CoM.
+    let out = eval_str(
+        "def rig(dx)
+           assembly(\"r\") do |x|
+             x.place box(10, 10, 10).translate(dx, 0, 0), name: :a, density: 1.0
+             x.place box(4, 4, 4).translate(dx + 30, 0, 0), name: :b, density: 1.0
+           end
+         end
+         near = rig(0).mass_properties[:inertia]
+         far = rig(500).mass_properties[:inertia]
+         [:ixx, :iyy, :izz].map { |k| (near[k] - far[k]).abs < 1.0e-6 }.inspect",
+    );
+    assert_eq!(
+        out, "[true, true, true]",
+        "tensor moved with the assembly: {out}"
+    );
+}
+
+#[test]
+fn off_diagonal_entries_are_tensor_entries_not_products_of_inertia() {
+    // Two unit-density 10-cubes on a diagonal about their shared CoM:
+    // ∫xy dV = +50000, so a true tensor entry (−∫xy dV) must be −50.0 g·mm²
+    // at density 1. The sign is the whole point — getting it backwards would
+    // silently mirror the coupling terms.
+    let ixy = eval_num(
+        "asm = assembly(\"d\") do |x|
+           x.place box(10, 10, 10), name: :a, density: 1.0
+           x.place box(10, 10, 10).translate(10, 10, 0), name: :b, density: 1.0
+         end
+         asm.mass_properties[:inertia][:ixy]",
+    );
+    assert!(
+        (ixy - (-50.0)).abs() < 1e-9,
+        "expected ixy = -50.0 (tensor convention), got {ixy}"
+    );
+}
+
+#[test]
+fn inertia_scales_with_a_stated_mass() {
+    // A stated mass keeps the envelope's inertia distribution and rescales it:
+    // 182 g in a 10-cube ⇒ Ixx = 182 × 200/12.
+    let ixx = eval_num(
+        "asm = assembly(\"x\") { |a| a.place box(10, 10, 10), name: :bat, mass: 182.0 }
+         asm.mass_properties[:inertia][:ixx]",
+    );
+    assert!(
+        (ixx - 182.0 * 200.0 / 12.0).abs() < 1e-6,
+        "expected 3033.333, got {ixx}"
+    );
+}
+
+#[test]
+fn a_symmetric_assembly_has_no_off_diagonal_coupling() {
+    // Four arms in a cross, as on a quad: the products must vanish.
+    let out = eval_str(
+        "arm = box(40, 6, 3).translate(10, -3, 0)
+         asm = assembly(\"quad\") do |a|
+           4.times { |i| a.place arm.rotate(0, 0, 1, i * 90), name: :\"arm_#{i}\", density: 1.0 }
+         end
+         i = asm.mass_properties[:inertia]
+         [:ixy, :ixz, :iyz].map { |k| i[k].abs < 1.0e-6 }.inspect",
+    );
+    assert_eq!(
+        out, "[true, true, true]",
+        "a symmetric cross should have no coupling terms: {out}"
+    );
+}
+
+#[test]
+fn mass_properties_does_not_leak_the_shape_handle() {
+    // The rollup needs each Shape internally; the report must stay plain data.
+    let out = eval_str(&format!(
+        "{STACK}\nasm.mass_properties[:parts][0].key?(:shape).inspect"
+    ));
+    assert_eq!(out, "false", "expected no :shape key in the report: {out}");
+}
+
+#[test]
+fn mass_properties_rejects_a_malformed_about_point() {
+    let err =
+        eval_err("assembly(\"x\") { |a| a.place box(1, 1, 1) }.mass_properties(about: [0, 0])");
+    assert!(
+        err.contains("about:") && err.contains("3-element"),
+        "unexpected error: {err}"
+    );
+}
