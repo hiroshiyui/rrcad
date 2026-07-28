@@ -3,364 +3,425 @@
 A Ruby DSL-driven 3D CAD language. Rust as the glue layer, mRuby as the
 scripting engine, OCCT as the geometry kernel.
 
----
+Current work is at the top; the completed history follows.
 
-## ✓ Phase 0 — OCCT Minimal Rust Bindings
+## Status at a glance
 
-`cxx` bridge to OCCT 7.9. Primitives (`box`, `cylinder`, `sphere`), boolean
-ops (`fuse`, `cut`, `common`), fillets, chamfers, transforms, and STEP/STL/glTF
-export. See `src/occt/`.
-
----
-
-## ✓ Phase 1 — mRuby Embedded in Rust
-
-mRuby 3.4.0 vendored; C glue shim (`glue.c`) hides `mrb_value` from Rust.
-`MrubyVm` RAII wrapper. Native `Shape` class backed by `Box<occt::Shape>` raw
-pointer in mRuby `RData void*`. DSL prelude auto-loaded via `include_str!`.
-REPL with readline and history. See `tests/e2e_dsl.rs`.
-
----
-
-## ✓ Phase 2 — DSL Enrichment
-
-Transforms: `.translate`, `.rotate`, `.scale`, `.mirror`. Modifiers: `.fillet`,
-`.chamfer`. Sketch ops: `.extrude`, `.revolve`. 2D faces: `rect`, `circle`.
-`solid do…end` block. `Assembly` with `place`. REPL tab-completion and `help`.
-See `tests/phase2_dsl.rs`.
+| Phase | Focus | Status |
+|-------|-------|--------|
+| [0](#phase-0--occt-minimal-rust-bindings) | OCCT bindings via `cxx` | ✓ Complete |
+| [1](#phase-1--mruby-embedded-in-rust) | mRuby embedded, native `Shape` | ✓ Complete |
+| [2](#phase-2--dsl-enrichment) | Transforms, modifiers, sketch ops | ✓ Complete |
+| [3](#phase-3--splines-sweep-live-preview) | Splines, sweep, live preview | ✓ Complete |
+| [4](#phase-4--occt-coverage-openscad--cadquery-parity) | OpenSCAD / CadQuery parity | ✓ Complete |
+| [5](#phase-5--parametric-design--assembly) | Parameters, design tables, mating | ✓ Complete |
+| [6](#phase-6--variable-section-sweep--teapot-rebuild) | Variable-section sweep, Bézier patches | ✓ Complete |
+| [7](#phase-7--wider-occt-coverage) | Introspection, surface modelling | ✓ Complete |
+| [8](#phase-8--part-design-manufacturing--composition) | Part Design, manufacturing, 2-D drawings | ✓ Complete |
+| [9](#phase-9--model-context-protocol-mcp-server) | MCP server for AI agents | ✓ Complete |
+| [10](#phase-10--usability-and-robust-parametric-cad) | Sketch constraints, feature tree, GD&T | ✓ Complete |
+| [11](#phase-11--professional-cad-depth-current) | Professional CAD depth | ◐ In progress |
 
 ---
 
-## ✓ Phase 3 — Splines, Sweep, Live Preview
+## Phase 11 — Professional CAD Depth (current)
 
-Spline profiles (`spline_2d`, `spline_3d`) and pipe sweep (`.sweep`) via
-`GeomAPI_Interpolate` + `BRepOffsetAPI_MakePipe`. Sub-shape selectors:
-`.faces`, `.edges`. Live preview: `rrcad --preview <script.rb>` — `axum` HTTP
-server + Three.js viewer + WebSocket live reload via `notify`. `preview(shape)`
-is a no-op outside preview mode. See `tests/teapot_dsl.rs`, `tests/phase3_selectors.rs`.
+Phases 0–10 brought rrcad to parity with scripted CAD tools. Phase 11 targets
+the gap between "scripted geometry engine" and "tool a mechanical engineer
+would choose": the operations people reach for constantly, and the deliverables
+a design is expected to produce.
 
----
+### Track A — Sketcher depth
 
-## ✓ Phase 4 — OCCT Coverage (OpenSCAD / CadQuery parity)
+The constraint solver and profile types exist, but the sketcher was missing the
+operations used most in practice.
 
-Additional primitives: `cone`, `torus`, `wedge`. 2D profiles: `polygon`,
-`ellipse`, `arc`. 3-D ops: `loft`, `.shell`, `.offset`, `.extrude(twist/scale)`.
-Non-uniform scale (`.scale(sx,sy,sz)`). Selective fillet/chamfer by edge
-selector. Patterns: `linear_pattern`, `polar_pattern`. Vertex selector.
-Direction-based face selector (`">Z"` / `"<X"` etc.). OBJ export. STEP/STL
-import. Query: `.bounding_box`, `.volume`, `.surface_area`. OCCT API hardening:
-builder-style booleans with fuzzy tolerance, parallel tessellation, GLB TRS
-transform format, `BRepCheck_Analyzer` validity guard before export.
-See `tests/phase4_3d_ops.rs`, `tests/occt_layer.rs`.
+- [x] **Corner `fillet` / `chamfer`** inside `sketch do … end`. Shapes the 2-D
+      profile itself, so a rounded outline survives every later pad, pocket, or
+      boolean — unlike `Shape#fillet`, which rounds an existing solid.
+      Tests: `tests/phase11_sketch_corners.rs` (11).
+- [ ] `trim` / `extend` on sketch segments.
+- [ ] Profile `offset`.
+- [ ] Sketch-level linear and polar patterns.
+- [ ] Spline segments in sketch profiles.
 
----
+### Track B — Assembly intelligence
 
-## ✓ Phase 5 — Parametric Design & Assembly
+The assembly layer has a real constraint solver but produces none of the
+deliverables an assembly exists for. All three build on primitives that already
+exist (`common`, `distance_to`, `mass_estimate`).
 
-`param :name, default:, range:` DSL declaration with `--param key=value` CLI
-override. Design table batch export via `--design-table table.csv`. Per-shape
-sRGB color (`.color(r,g,b)`) written into GLB/glTF/OBJ via `XCAFDoc_ColorTool`.
-Assembly mating (`Shape#mate`, `Assembly#mate`) using OCCT planar face geometry:
-normal alignment + centroid translation, with optional gap/interference offset.
-Spline tangent constraints (`tangents:` keyword on `spline_2d`/`spline_3d`).
-Feature removal (`.simplify(min_feature_size)`) via `BRepAlgoAPI_Defeaturing`.
-See `tests/phase5_params.rs`, `tests/e2e_dsl.rs`.
+- [ ] Interference / clash detection between parts, with clearance reporting.
+- [ ] Bill-of-materials generation with quantity rollup.
+- [ ] Assembly-level mass, volume, and centre-of-mass rollup.
 
----
+### Track C — Drawing completeness
 
-## ✓ Phase 6 — Variable-Section Sweep &amp; Teapot Rebuild
+SVG/DXF output already has hidden lines, GD&T frames, title blocks, and 3-view
+sheets.
 
-`sweep_sections(path, [profile, ...])` DSL function backed by
-`BRepOffsetAPI_MakePipeShell`.  Each origin-centred profile is automatically
-translated to the corresponding spine point (evenly-distributed along the
-spline parameter) and swept with `WithCorrection=true` so cross-sections stay
-perpendicular to the spine tangent.  Falls back to `BRepOffsetAPI_ThruSections`
-when `MakeSolid()` fails on highly-curved spines (e.g., the teapot handle
-C-arc).  See `tests/teapot_dsl.rs` (`sweep_sections_*` tests).
+- [x] **Section views** with standard 45° hatching, built on `BRepAlgoAPI_Cut`
+      against a half-space (the same axis-aligned planes `Shape#slice`
+      supports). Even-odd hatch clipping leaves interior holes unhatched. An
+      omitted `offset:` cuts the part's mid-plane. SVG emits `hatch` and
+      `section` groups; DXF uses a dedicated `HATCH` layer.
+      Tests: 7 co-located in `src/occt/drawing_ops.rs` and `src/ruby/native_io.rs`.
+- [ ] Detail views (scaled close-ups of a region).
+- [ ] Auto-dimensioning of principal features.
+- [ ] BOM tables with balloon callouts on assembly sheets.
+      Blocked on: `Assembly#export` accepts no options today (see
+      [Project Improvements](#project-improvements)).
 
-`bezier_patch([pt0..pt15])` — builds a single bicubic Bézier face from
-16 control points (4×4 row-major grid) using `Geom_BezierSurface` +
-`BRepBuilderAPI_MakeFace`.  `sew([faces], tolerance:)` — assembles multiple
-Bézier faces into a closed shell/solid via `BRepBuilderAPI_Sewing` +
-`BRepBuilderAPI_MakeSolid`.  Primary use case: Utah Teapot from Newell patches.
+### Track D — Sheet metal
 
----
+A new modelling domain, largely independent of the other tracks.
 
-## ✓ Utah Teapot Sample
+- [ ] Base flanges; edge flanges with bend radius and angle.
+- [ ] Bend relief and K-factor bend allowance.
+- [ ] Unfolded flat-pattern generation, exportable to DXF for laser cutting.
 
-`samples/07_teapot.rb` — rebuilt from the original Newell Bézier patch data
-(sourced from https://users.cs.utah.edu/~dejohnso/models/teapot.html, ×3.0 scale).
-All 28 bicubic Bézier patches from the Newell / Blinn dataset.  Coordinate
-transform Y-up → Z-up: `pt(x,y_s,z_s)` → rrcad `[x, z_s, y_s]`.  Patches
-sewn with `BRepBuilderAPI_Sewing` (tolerance 1e-3) into a continuous surface;
-`scale(3.0)` → rim at Z≈6.75, lid knob at Z=9.0.  Open at the base (no bottom
-disc — consistent with the original Newell definition).
-Validated by `tests/teapot_sample.rs` (9 tests including `bezier_patch` and
-`sew` unit tests).
+### Opportunistic additions
 
----
+Folded in where they fit rather than scheduled:
 
-## ✓ Phase 7 — Improve OCCT Coverage & Compatibility
-
-Asymmetric chamfer (`.chamfer(d1, d2)`), 2-D profile offset (`.offset_2d`), grid
-pattern (`grid_pattern`), and multi-shape `fuse_all`/`cut_all`.  Shape introspection:
-`.shape_type`, `.closed?`, `.manifold?`, `.centroid`, `.validate`
-(`BRepCheck_Analyzer`).  Surface modeling: `ruled_surface` (`BRepFill::Shell`),
-`fill_surface` (`BRepFill_Filling`), `.slice` by axis-aligned plane
-(`BRepAlgoAPI_Section`).  IGES import/export was deprioritised (STEP covers the same
-workflows); SVG/DXF 2-D drawing landed in Phase 8 Tier 4 instead.
-See `tests/phase7_tier1.rs` (12), `tests/phase7_tier2.rs` (12), `tests/phase7_tier3.rs` (10).
-
----
-
-## ✓ Phase 8 — Part Design, Manufacturing & Advanced Composition
-
-**Part Design (Tier 1):** `.pad(face, height:) { sketch }` and `.pocket(face, depth:) { sketch }`
-via face-local `gp_Ax3` transform + `BRepPrimAPI_MakePrism` + fuse/cut.  `.fillet_wire(r)`
-rounds 2-D sketch corners before extrude (`BRepFilletAPI_MakeFillet2d`).  `datum_plane`
-constructs reusable reference planes from origin/normal/x-dir.
-See `tests/phase8_tier1.rs` (11 tests).
-
-**Manufacturing (Tier 2):** Draft-angle extrude (`BRepOffsetAPI_DraftAngle`);
-`helix(radius:, pitch:, height:)` Wire path (BSpline at 16 samples/turn); `thread` and
-`cbore`/`csink` as pure Ruby DSL macros built on helix + sweep + cut.
-See `tests/phase8_tier2.rs` (13 tests).
-
-**Inspection (Tier 3):** `.distance_to` (`BRepExtrema_DistShapeShape`), `.inertia` tensor
-(`BRepGProp::VolumeProperties` → `MatrixOfInertia`), `.min_thickness` via inward
-ray-casting (`IntCurvesFace_ShapeIntersector`).
-See `tests/phase8_tier3.rs` (10 tests).
-
-**2-D drawing (Tier 4):** `.export("part.svg")` / `.export("part.dxf")` via
-`HLRBRep_PolyAlgo` hidden-line removal.  Three view directions: `:top` (default),
-`:front`, `:side`.  SVG outputs `<polyline>` with Y-down coordinates; DXF outputs
-`LINE` entities (R12 ASCII, Y-up).
-See `tests/phase8_tier4.rs` (11 tests).
-
-**Advanced composition (Tier 5):** `fragment([a,b,c])` via `BRepAlgoAPI_BuilderAlgo`;
-`.convex_hull` via incremental 3-D QuickHull + sewing; `path_pattern(shape, path, n)`
-via `GCPnts_UniformAbscissa` arc-length sampling; guided `.sweep(path, guide: wire)`
-via `BRepOffsetAPI_MakePipeShell::SetMode`.
-See `tests/phase8_tier5.rs` (11 tests).
-
----
-
-## ✓ Phase 9 — Model Context Protocol (MCP) Server
-
-**Implemented in** `src/mcp/mod.rs` for the public wiring, with focused helpers under `src/mcp/`. Start with `cargo run -- --mcp`.
-
-Tools: `cad_eval` (shape properties JSON), `cad_export` (file to `/tmp/rrcad_mcp/`),
-`cad_preview` (Three.js live URL), `cad_validate` (BRepCheck result).
-Resources: `rrcad://api` (`doc/api.md`) and `rrcad://examples` (`samples/*.rb`).
-
-Security: 8 mitigations — restricted mRuby gembox (`mcp_safe.gembox`), runtime prelude
-strips `system`/`exec`/`fork`/etc., 30 s `tokio::time::timeout`, 2 GB `setrlimit`,
-export paths confined to `/tmp/rrcad_mcp/`, fresh VM per call, 64 KB input cap,
-`MRUBY_EVAL_LOCK` mutex serialises all mRuby/OCCT work across the tokio thread pool
-(prevents SIGSEGV from concurrent VMs when a timed-out call lingers on a pool thread).
-TOCTOU port race in `cad_preview` eliminated by keeping the `tokio::net::TcpListener`
-alive and passing it directly to `serve_with_listener()`.
-Test coverage: 10 unit tests in `src/mcp/mod.rs`, 13 integration tests in
-`tests/mcp_tools.rs`, 10 stress/concurrency tests in `tests/mcp_stress.rs`.
-
----
-
-## ✓ Phase 10 — Usability and Robust Parametric CAD
-
-These are forward-looking CAD enhancements intended to move `rrcad` from a
-powerful scripted geometry engine toward a more complete, inspectable CAD
-workflow.
-
-**Constraint-based sketching ✓ MVP COMPLETE:** `sketch do ... end` builds
-closed polygon profiles from points and lines, with constraint propagation
-for `fixed`, `horizontal`, `vertical`, `coincident`, `dimension`,
-`equal_length`, `parallel`, `perpendicular`, `symmetric`, `mirror_x`,
-`mirror_y`, and `tangent` (line-to-circle, with `side:` keyword for
-axis-aligned lines and verification mode for fully-resolved geometry).
-Construction geometry: named construction points via `point(:name, x, y)`,
-`construction_point(:name, x, y)`, `ref(:name)`, and `self[:name]`;
-`midpoint` construction points; non-profile `construction_line(a, b)`
-references; and `polar_point([:name,] center, radius, angle_deg)` for bolt
-circles and other polar layouts. The MVP works with `.extrude`, `.pad`, and
-`.pocket`, and supports exact circle profiles via `circle_at(center,
-radius)`, translated arc wires via `arc_at(center, radius, start_deg,
-end_deg)`, constrained `rectangle(origin, width, height)` /
-`centered_rectangle(center, width, height)` helpers, and axis-aligned
-`slot_between(a, b, radius)` profiles. Solver diagnostics name the
-involved points and report actual vs expected values for conflicting
-constraints, the "did not converge" failure lists every unresolved point
-with its missing coordinates, and `sketch(diagnostics: true)` attaches a
-structured redundancy report to solved profile shapes while `strict: true`
-raises when redundant constraints are present.
-
-**Feature history / parametric model tree ✓ COMPLETE:**
-Shapes now carry a readable modeling history chain, accessible from Ruby as
-`shape.history`, and a regeneratable feature graph with stable node IDs and
-dependency edges, accessible as `shape.feature_graph`. `shape.rebuild` replays
-the stored feature tree from the recorded parents. Editor support for browsing
-and editing the tree remains a future UI task.
-
-**Named faces, edges, and datums ✓ COMPLETE:** Persistent names now work for
-face selectors, edge selectors, and datum reference shapes. Scripts can target
-`name_face(:mounting_face, :top)`, `name_edge(:boss_edges, :vertical)`, and
-`datum(:fixture_plane, datum_plane(...))`, then resolve them later with
-`faces(:mounting_face)`, `edges(:boss_edges)`, or `ref(:fixture_plane)` instead
-of relying only on broad selectors such as `:top`, `:vertical`, or `">Z"`.
-
-**Better diagnostics ✓ COMPLETE (initial scope):** Errors from boolean
-operations (`fuse`/`cut`/`common`), fillets and chamfers (including
-selector variants and variable-radius/asymmetric forms), import/export
-(`import_step`/`import_stl`, all seven export formats),
-`extrude`/`extrude_ex`/`extrude_draft`/`revolve`,
-`shell`/`offset`/`offset_2d`/`simplify`,
-`sweep`/`sweep_guide`/`sweep_sections`, `loft`, and Part Design
-operations (`pad`, `pocket`) carry call-site context — the operation
-name, its numeric parameters and selector, the operand shape kind via
-`summarize`, and any file path/view name. The most common failures
-(`fillet`/`chamfer` radius too large, `extrude` on a solid, `shell`
-thickness too thick, `pad`/`pocket` planar-face requirement,
-`sweep`/`sweep_guide` profile-and-path types, `import_step`/`import_stl`
-missing/unreadable files) also carry an actionable one-line hint
-prefixed with `hint:`. Sample message:
-`fillet(r=10) on solid failed: ...\n  hint: radius likely exceeds the
-smallest adjacent face/edge; try a smaller value or use fillet_sel with
-an edge selector`. When `RRCAD_DEBUG_EXPORTS=1`, the same failure paths
-also emit STEP debug artifacts into `RRCAD_DEBUG_EXPORTS_DIR` or the
-system temp directory so the failing geometry can be inspected directly.
-
-**Assembly constraints beyond `mate` ✓ COMPLETE:** The assembly layer now has
-a declarative rigid-body solver alongside the existing eager helpers. Use
-`assembly("rig") do |a| ... end` with `a.ground :base, base` and
-`a.part :post, post do |p| mate from: :bottom, to: face(:base, :top) end`
-to resolve chained parts lazily when `to_shape` / `export` runs. The solver
-detects under-constrained parts and conflicting mate chains, while the older
-`place`, `mate`, `distance_mate`, `axis_align`, and `angle_mate` helpers
-remain available as compatibility transforms. `Shape#rotate_about(point,
-axis_dir, angle_deg)` remains the primitive used by `angle_mate`.
-
-**Units system ✓ COMPLETE:** Initial `Numeric` helpers are implemented in the
-Ruby prelude: `1.6.mm`, `2.inch`, `1.cm`, `0.5.m`, `15.deg`, and
-`Math::PI.rad`.
-
-**Tolerance and manufacturing profiles ✓ COMPLETE (initial scope):**
-Hole tools: `clearance_hole`, `tap_drill`, `heat_set_insert`,
-`socket_head_cbore`, `flat_head_csink`. Bearing bores: `bearing_bore` for
-`:b608`/`:b623`/`:b624`/`:b625`/`:b626`/`:b688`/`:b695`/`:b6000`/`:b6001`
-with `:press`/`:slip` fit. Shaft fits: `shaft(diameter, length:, fit:)`
-with `:nominal`/`:press`/`:slip`/`:running`. Standard fasteners:
-`screw(size, length:, style:)` in `:socket`/`:button`/`:flat` styles. All
-size-keyed helpers accept both metric (`:m2`–`:m5`, ISO 4762 / 7380 /
-10642) and imperial UNC/UNF (`:"4-40"`, `:"6-32"`, `:"8-32"`, `:"10-32"`,
-`:"10-24"`, `:"1/4-20"`, `:"5/16-18"`, `:"3/8-16"`, ASME B18 / ANSI B18.3)
-fastener names.
-
-**Preview inspection UX ✓ COMPLETE:** The browser preview now writes and serves
-a `metadata.json` sidecar for each `preview(shape)` update and shows a compact
-model properties panel with shape type, validation status, bounding-box size,
-volume, and surface area. The viewer menu also has section plane controls
-for X/Y/Z clipping with an offset slider, plus a measurement mode that picks
-two model points and reports their 3-D distance. Hovering the model now
-shows face/edge IDs, clicks print the best matching selector into the panel,
-an explode toggle separates top-level parts, and failed preview updates surface
-their error message in the inspector.
-
-**2-D drawing improvements ✓ COMPLETE:** SVG and DXF output now accept explicit
-`scale:` selection for projected drawing geometry. Both support
-`center_marks: true` cylinder centres; SVG now also supports `hidden: true`
-dashed hidden-line output and `dimensions: true` width/height labels, while DXF
-writes hidden edges on a `HIDDEN` layer and also supports `dimensions: true`.
-SVG and DXF also now have `view: :sheet` for a 3-view sheet layout and
-`title_block: true` metadata blocks, with axis-aware sheet dimensions.
-`tolerance:` now supports both symmetric `±` and asymmetric `+.../-...`
-annotations on dimensions, standards-style `callouts: true` diameter labels
-are now available, and simple framed `datum:` / `feature_control:` annotations
-now render in SVG and DXF. Datum labels can be attached to actual faces, and
-feature-control frames accept datum lists for richer geometric tolerancing.
-The structured `Shape#gdt(standard:)` builder now stores a canonical spec on
-the shape itself, with ASME/ISO ordering handled at export time and the
-compatibility keyword form still accepted for older scripts.
-
-**CAM / 3-D printing checks ✓ COMPLETE:** Additive helpers now include
-`mass_estimate(part, density:)` for rough mass from `part.volume × density /
-1000` (PLA default 1.24 g/cm³), `print_volume_check(part, x:, y:, z:)` for
-rectangular bed fit checks, `overhang_faces(part, max_angle_deg:)` for
-downward-facing overhangs on +Z-up parts, `draft_faces(part, axis:,
-min_draft_deg:)` for mould draft along an arbitrary pull axis, and
-`hole_axes(part, orientation:, tolerance_deg:)` for cylindrical face
-enumeration. The underlying `Shape#normal` and `Shape#cylinder_axis`
-inspection primitives remain available, and `unsupported_islands(part, ...)`
-now scans slices layer-by-layer to report disconnected footprints that do not
-overlap the previous layer.
-
----
-
-## Phase 11 — Professional CAD Depth
-
-Phases 0–10 brought `rrcad` to parity with scripted CAD tools. Phase 11
-targets the gap between "scripted geometry engine" and "tool a mechanical
-engineer would choose": the operations people reach for constantly in a
-professional workflow, and the deliverables a design is expected to produce.
-
-**Track A — Sketcher depth.** The constraint solver and profile types exist,
-but the sketcher cannot do the three things used most in practice. Adds
-per-corner `fillet` and `chamfer` inside `sketch do ... end` (today a rounded
-corner must become a 3-D fillet afterwards, which is often not what the part
-means), `trim` / `extend` on sketch segments, profile `offset`, sketch-level
-linear/polar patterns, and spline segments in sketch profiles.
-
-**Track B — Assembly intelligence.** The assembly layer has a real constraint
-solver but produces none of the deliverables an assembly exists for. Adds
-interference / clash detection between parts (pairwise `common` volume, with
-clearance reporting via `distance_to`), bill-of-materials generation with
-quantity rollup, and assembly-level mass, volume, and centre-of-mass rollup
-built on the existing `mass_estimate`.
-
-**Track C — Drawing completeness.** SVG/DXF output already has hidden lines,
-GD&T frames, title blocks, and 3-view sheets. Adds section views with
-standard 45° hatching (built on `Shape#slice` / `BRepAlgoAPI_Section`), detail
-views (scaled close-ups of a region), auto-dimensioning of principal
-features, and BOM tables with balloon callouts on assembly sheets.
-
-**Track D — Sheet metal.** A new modelling domain, largely independent of the
-other tracks: base flanges, edge flanges with bend radius and angle, bend
-relief, K-factor bend allowance, and unfolded flat-pattern generation
-exportable to DXF for laser cutting.
-
-**Opportunistic additions** folded in where they fit: 3MF export (carries
-units, colour, and multi-body properly, unlike STL), pattern-along-path,
-and `thicken` / `knit` surfacing operations.
+- [ ] 3MF export — carries units, colour, and multi-body properly, unlike STL.
+- [ ] `pattern_along_path`.
+- [ ] `thicken` / `knit` surfacing operations.
 
 ---
 
 ## Project Improvements
 
-- [x] Add CI coverage for MCP security invariants, including `create_mcp_vm()` and the file/process constant removal checks.
-- [x] Keep the Claude skill definitions in `.claude/skills` and maintain the repo-local `.codex/skills` mirror if Codex-callable copies are needed again.
-- [x] Make CSV design-table parsing fail fast on row width mismatches instead of silently truncating with `zip()`.
-- [x] Add explicit tests and documentation for the intentionally strict export-path confinement behavior (`tests/export_confinement.rs`, `doc/user-guide/10-import-export.md`).
-- [x] Consider consolidating repetitive Ruby-to-native FFI wrapper patterns into shared helpers or generated bindings (macro layer in `src/ruby/native.rs`, static helpers in `src/ruby/glue.c`).
-- [x] Make the preview port configurable or auto-select a free port to reduce local port conflicts.
-- [x] Add support for project-local `rrcad.toml` files with `preview_port` and default `[params]`, discovered from the script directory or current working directory.
-- [x] Add a short maintainer note for the OCCT bridge and mRuby lifetime invariants so future low-level edits stay consistent.
+Cross-cutting work that does not belong to a phase.
 
-## Future Works
+### Open
 
-Open items deferred from completed or partially-complete tracks above.
-These are not blocking and can be picked up when the use cases become
-important.
+- [ ] `Assembly#export(path)` takes no options, so `view:`, `section:`, and
+      every other drawing option is silently dropped for assemblies. Blocks
+      BOM-on-sheet work in Track C.
+- [ ] Feature-tree browsing and editing in the browser preview. The data model
+      (`shape.feature_graph`, `shape.rebuild`) landed in Phase 10; only the UI
+      is missing.
+
+### Done
+
+- [x] `puts` / `print` / `p` / `pp` in scripts, built on a native output
+      primitive rather than reintroducing the IO gems. Removed in MCP mode,
+      where stdout carries the JSON-RPC responses.
+- [x] CSV design-table parsing fails fast on row-width mismatches instead of
+      silently truncating with `zip()`.
+- [x] Explicit tests and documentation for the strict export-path confinement
+      (`tests/export_confinement.rs`, `doc/user-guide/10-import-export.md`).
+- [x] Consolidated the repetitive Ruby-to-native FFI wrappers into a macro
+      layer (`src/ruby/native.rs`) and static helpers (`src/ruby/glue.c`).
+- [x] Project-local `rrcad.toml` with `preview_port` and default `[params]`,
+      discovered from the script directory or CWD.
+- [x] Preview auto-selects a free port to avoid local conflicts.
+- [x] CI coverage for MCP security invariants, including `create_mcp_vm()` and
+      the file/process constant removal checks.
+- [x] Maintainer note on the OCCT bridge and mRuby lifetime invariants.
+- [x] Claude skill definitions in `.claude/skills`, with the repo-local
+      `.codex/skills` mirror kept in sync when Codex-callable copies are needed.
 
 ---
 
-## Architecture Notes
+## Completed phases
+
+### Phase 0 — OCCT Minimal Rust Bindings
+
+`cxx` bridge to OCCT 7.9: primitives (`box`, `cylinder`, `sphere`), booleans
+(`fuse`, `cut`, `common`), fillets, chamfers, transforms, and STEP/STL/glTF
+export. See `src/occt/`.
+
+### Phase 1 — mRuby Embedded in Rust
+
+mRuby 3.4.0 vendored, with a C glue shim (`glue.c`) hiding `mrb_value` from
+Rust and an `MrubyVm` RAII wrapper. Native `Shape` class backed by a
+`Box<occt::Shape>` raw pointer in mRuby's `RData void*`. DSL prelude
+auto-loaded via `include_str!`. REPL with readline and history.
+Tests: `tests/e2e_dsl.rs`.
+
+### Phase 2 — DSL Enrichment
+
+- Transforms: `.translate`, `.rotate`, `.scale`, `.mirror`.
+- Modifiers: `.fillet`, `.chamfer`. Sketch ops: `.extrude`, `.revolve`.
+- 2-D faces: `rect`, `circle`. `solid do … end` block.
+- `Assembly` with `place`; REPL tab-completion and `help`.
+
+Tests: `tests/phase2_dsl.rs`.
+
+### Phase 3 — Splines, Sweep, Live Preview
+
+Spline profiles (`spline_2d`, `spline_3d`) and pipe sweep (`.sweep`) via
+`GeomAPI_Interpolate` + `BRepOffsetAPI_MakePipe`. Sub-shape selectors `.faces`
+and `.edges`.
+
+Live preview through `rrcad --preview <script.rb>`: `axum` HTTP server, Three.js
+viewer, and WebSocket live reload driven by `notify`. `preview(shape)` is a
+no-op outside preview mode.
+
+Tests: `tests/teapot_dsl.rs`, `tests/phase3_selectors.rs`.
+
+### Phase 4 — OCCT Coverage (OpenSCAD / CadQuery parity)
+
+- Primitives: `cone`, `torus`, `wedge`. 2-D profiles: `polygon`, `ellipse`, `arc`.
+- 3-D ops: `loft`, `.shell`, `.offset`, `.extrude(twist/scale)`, non-uniform
+  `.scale(sx, sy, sz)`.
+- Selective fillet/chamfer by edge selector; vertex selector; direction-based
+  face selectors (`">Z"`, `"<X"`, …).
+- Patterns: `linear_pattern`, `polar_pattern`. OBJ export; STEP/STL import.
+- Queries: `.bounding_box`, `.volume`, `.surface_area`.
+- OCCT hardening: builder-style booleans with fuzzy tolerance, parallel
+  tessellation, GLB TRS transform format, and a `BRepCheck_Analyzer` validity
+  guard before export.
+
+Tests: `tests/phase4_3d_ops.rs`, `tests/occt_layer.rs`.
+
+### Phase 5 — Parametric Design & Assembly
+
+- `param :name, default:, range:` with `--param key=value` CLI override.
+- Design-table batch export via `--design-table table.csv`.
+- Per-shape sRGB colour (`.color(r, g, b)`) written into GLB/glTF/OBJ through
+  `XCAFDoc_ColorTool`.
+- Assembly mating (`Shape#mate`, `Assembly#mate`) from OCCT planar-face
+  geometry: normal alignment plus centroid translation, with an optional
+  gap/interference offset.
+- Spline tangent constraints (`tangents:` on `spline_2d` / `spline_3d`).
+- Feature removal via `.simplify(min_feature_size)` (`BRepAlgoAPI_Defeaturing`).
+
+Tests: `tests/phase5_params.rs`, `tests/e2e_dsl.rs`.
+
+### Phase 6 — Variable-Section Sweep & Teapot Rebuild
+
+`sweep_sections(path, [profile, …])` backed by `BRepOffsetAPI_MakePipeShell`.
+Each origin-centred profile is translated to its spine point (evenly distributed
+along the spline parameter) and swept with `WithCorrection=true`, keeping
+cross-sections perpendicular to the spine tangent. Falls back to
+`BRepOffsetAPI_ThruSections` when `MakeSolid()` fails on highly curved spines,
+such as the teapot handle's C-arc.
+
+`bezier_patch([pt0..pt15])` builds a bicubic Bézier face from a 4×4 row-major
+control grid (`Geom_BezierSurface` + `BRepBuilderAPI_MakeFace`).
+`sew([faces], tolerance:)` assembles faces into a closed shell or solid
+(`BRepBuilderAPI_Sewing` + `BRepBuilderAPI_MakeSolid`).
+
+Tests: `tests/teapot_dsl.rs` (`sweep_sections_*`).
+
+#### Utah Teapot sample
+
+`samples/07_teapot.rb`, rebuilt from the original Newell Bézier data
+([source](https://users.cs.utah.edu/~dejohnso/models/teapot.html), ×3.0 scale).
+All 28 bicubic patches from the Newell / Blinn dataset, with a Y-up → Z-up
+transform (`pt(x, y_s, z_s)` → `[x, z_s, y_s]`). Patches are sewn at tolerance
+1e-3 into a continuous surface; at `scale(3.0)` the rim sits at Z≈6.75 and the
+lid knob at Z=9.0. Open at the base, consistent with the original definition.
+
+Tests: `tests/teapot_sample.rs` (9, including `bezier_patch` and `sew` units).
+
+### Phase 7 — Wider OCCT Coverage
+
+- Asymmetric chamfer (`.chamfer(d1, d2)`), 2-D profile offset (`.offset_2d`),
+  `grid_pattern`, and multi-shape `fuse_all` / `cut_all`.
+- Introspection: `.shape_type`, `.closed?`, `.manifold?`, `.centroid`,
+  `.validate` (`BRepCheck_Analyzer`).
+- Surface modelling: `ruled_surface` (`BRepFill::Shell`), `fill_surface`
+  (`BRepFill_Filling`), `.slice` by axis-aligned plane (`BRepAlgoAPI_Section`).
+
+IGES import/export was deprioritised — STEP covers the same workflows. SVG/DXF
+2-D drawing landed in Phase 8 Tier 4 instead.
+
+Tests: `tests/phase7_tier1.rs` (12), `tests/phase7_tier2.rs` (12),
+`tests/phase7_tier3.rs` (10).
+
+### Phase 8 — Part Design, Manufacturing & Composition
+
+**Tier 1 — Part Design.** `.pad(face, height:) { sketch }` and
+`.pocket(face, depth:) { sketch }` via a face-local `gp_Ax3` transform plus
+`BRepPrimAPI_MakePrism` and fuse/cut. `.fillet_wire(r)` rounds 2-D sketch
+corners before extrude (`BRepFilletAPI_MakeFillet2d`). `datum_plane` builds
+reusable reference planes from origin/normal/x-dir.
+Tests: `tests/phase8_tier1.rs` (11).
+
+**Tier 2 — Manufacturing.** Draft-angle extrude (`BRepOffsetAPI_DraftAngle`);
+`helix(radius:, pitch:, height:)` wire paths (BSpline at 16 samples/turn);
+`thread`, `cbore`, and `csink` as Ruby DSL macros over helix + sweep + cut.
+Tests: `tests/phase8_tier2.rs` (13).
+
+**Tier 3 — Inspection.** `.distance_to` (`BRepExtrema_DistShapeShape`),
+`.inertia` tensor (`BRepGProp::VolumeProperties` → `MatrixOfInertia`), and
+`.min_thickness` via inward ray-casting (`IntCurvesFace_ShapeIntersector`).
+Tests: `tests/phase8_tier3.rs` (10).
+
+**Tier 4 — 2-D drawing.** `.export("part.svg")` / `.export("part.dxf")` through
+`HLRBRep_PolyAlgo` hidden-line removal, in `:top` (default), `:front`, and
+`:side` views. SVG emits `<polyline>` with Y-down coordinates; DXF emits `LINE`
+entities (R12 ASCII, Y-up).
+Tests: `tests/phase8_tier4.rs` (11).
+
+**Tier 5 — Advanced composition.** `fragment([a, b, c])`
+(`BRepAlgoAPI_BuilderAlgo`); `.convex_hull` via incremental 3-D QuickHull plus
+sewing; `path_pattern(shape, path, n)` using `GCPnts_UniformAbscissa`
+arc-length sampling; guided `.sweep(path, guide: wire)` via
+`BRepOffsetAPI_MakePipeShell::SetMode`.
+Tests: `tests/phase8_tier5.rs` (11).
+
+### Phase 9 — Model Context Protocol (MCP) Server
+
+Public wiring in `src/mcp/mod.rs`, implementation split across helpers under
+`src/mcp/`. Start with `cargo run -- --mcp`.
+
+- **Tools:** `cad_eval` (shape properties JSON), `cad_export` (file into
+  `/tmp/rrcad_mcp/`), `cad_preview` (Three.js live URL), `cad_validate`
+  (`BRepCheck` result).
+- **Resources:** `rrcad://api` (`doc/api.md`) and `rrcad://examples`
+  (`samples/*.rb`).
+
+**Security** — layered mitigations, in rough order of importance:
+
+1. Restricted mRuby gembox (`mcp_safe.gembox`) — no IO, socket, dir, eval, or
+   metaprogramming gems are linked, so the dangerous methods mostly do not
+   exist. This, not the runtime prelude, is the real sandbox.
+2. Runtime prelude strips `system`, `exec`, `fork`, the printing methods, and
+   friends as defence in depth.
+3. One-shot worker child process per tool call, killed by the parent when its
+   `tokio::time::timeout` fires at 30 s; 2 GB `setrlimit(RLIMIT_AS)`.
+4. Export paths confined to `/tmp/rrcad_mcp/` (mode 0700) by `safe_path()`.
+5. Fresh VM per call; 64 KB input cap; null-byte filtering.
+6. `MRUBY_EVAL_LOCK` serialises mRuby/OCCT work for in-process tests — mRuby is
+   not thread-safe and concurrent VMs SIGSEGV.
+
+The `cad_preview` TOCTOU port race was eliminated by keeping the bound
+`tokio::net::TcpListener` alive and handing it straight to
+`serve_with_listener()`.
+
+Tests: unit tests in `src/mcp/`, `tests/mcp_tools.rs` (13),
+`tests/mcp_stress.rs` (10 stress/concurrency).
+
+### Phase 10 — Usability and Robust Parametric CAD
+
+Moved rrcad from a powerful scripted geometry engine toward a complete,
+inspectable CAD workflow.
+
+**Constraint-based sketching** (MVP). `sketch do … end` builds closed polygon
+profiles from points and lines, with constraint propagation for `fixed`,
+`horizontal`, `vertical`, `coincident`, `dimension`, `equal_length`,
+`parallel`, `perpendicular`, `symmetric`, `mirror_x`, `mirror_y`, and `tangent`
+(line-to-circle, with a `side:` keyword for axis-aligned lines).
+
+- Construction geometry: named points via `point(:name, x, y)`,
+  `construction_point`, `ref(:name)`, `self[:name]`; `midpoint` points;
+  non-profile `construction_line(a, b)`; and `polar_point` for bolt circles.
+- Exact profiles: `circle_at`, `arc_at`, `rectangle`, `centered_rectangle`,
+  and axis-aligned `slot_between`. Works with `.extrude`, `.pad`, `.pocket`.
+- Diagnostics name the involved points and report actual vs expected values;
+  non-convergence lists every unresolved point and its missing coordinates.
+  `sketch(diagnostics: true)` attaches a redundancy report; `strict: true`
+  raises when redundant constraints are present.
+
+**Feature history / parametric model tree.** Shapes carry a readable modelling
+history (`shape.history`) and a regeneratable feature graph with stable node IDs
+and dependency edges (`shape.feature_graph`). `shape.rebuild` replays the tree
+from the recorded parents. The browsing/editing UI remains open — see
+[Project Improvements](#project-improvements).
+
+**Named faces, edges, and datums.** `name_face(:mounting_face, :top)`,
+`name_edge(:boss_edges, :vertical)`, and `datum(:fixture_plane, datum_plane(…))`
+can be resolved later with `faces(:mounting_face)`, `edges(:boss_edges)`, or
+`ref(:fixture_plane)`, instead of relying only on broad selectors.
+
+**Better diagnostics.** Errors carry call-site context — the operation name, its
+numeric parameters and selector, the operand shape kind via `summarize`, and any
+file path or view name. Covered operations: booleans (`fuse`/`cut`/`common`),
+fillets and chamfers (including selector, variable-radius, and asymmetric
+forms), `import_step`/`import_stl` and all seven export formats,
+`extrude`/`extrude_ex`/`extrude_draft`/`revolve`,
+`shell`/`offset`/`offset_2d`/`simplify`,
+`sweep`/`sweep_guide`/`sweep_sections`, `loft`, and Part Design `pad`/`pocket`.
+The most common failures also carry a `hint:` line, for example:
+
+```
+fillet(r=10) on solid failed: …
+  hint: radius likely exceeds the smallest adjacent face/edge; try a smaller
+  value or use fillet_sel with an edge selector
+```
+
+With `RRCAD_DEBUG_EXPORTS=1`, those failure paths also write STEP debug
+artifacts into `RRCAD_DEBUG_EXPORTS_DIR` (or the system temp directory) so the
+failing geometry can be inspected directly.
+
+**Assembly constraints beyond `mate`.** A declarative rigid-body solver sits
+alongside the eager helpers: `assembly("rig") do |a| … end` with
+`a.ground :base, base` and `a.part :post, post do |p| mate from: :bottom,
+to: face(:base, :top) end` resolves chained parts lazily at `to_shape` /
+`export` time, detecting under-constrained parts and conflicting mate chains.
+The older `place`, `mate`, `distance_mate`, `axis_align`, and `angle_mate`
+helpers remain as compatibility transforms over `Shape#rotate_about`.
+
+**Units.** `Numeric` helpers in the Ruby prelude: `1.6.mm`, `2.inch`, `1.cm`,
+`0.5.m`, `15.deg`, `Math::PI.rad`.
+
+**Tolerance and manufacturing profiles.**
+
+- Hole tools: `clearance_hole`, `tap_drill`, `heat_set_insert`,
+  `socket_head_cbore`, `flat_head_csink`.
+- Bearing bores: `bearing_bore` for `:b608`, `:b623`, `:b624`, `:b625`,
+  `:b626`, `:b688`, `:b695`, `:b6000`, `:b6001`, with `:press` / `:slip` fit.
+- Shaft fits: `shaft(diameter, length:, fit:)` with `:nominal`, `:press`,
+  `:slip`, `:running`.
+- Fasteners: `screw(size, length:, style:)` in `:socket`, `:button`, `:flat`.
+- Size-keyed helpers accept both metric (`:m2`–`:m5`; ISO 4762 / 7380 / 10642)
+  and imperial UNC/UNF names: `:"4-40"`, `:"6-32"`, `:"8-32"`, `:"10-32"`,
+  `:"10-24"`, `:"1/4-20"`, `:"5/16-18"`, `:"3/8-16"` (ASME B18 / ANSI B18.3).
+
+**Preview inspection UX.** The viewer serves a `metadata.json` sidecar per
+`preview(shape)` update and shows a properties panel (shape type, validity,
+bounding box, volume, surface area). The menu adds X/Y/Z section clipping with
+an offset slider and a measurement mode reporting 3-D distance between two
+picked points. Hovering shows face/edge IDs, clicking prints the best matching
+selector, an explode toggle separates top-level parts, and failed updates
+surface their error in the inspector.
+
+**2-D drawing improvements.** Explicit `scale:`; `center_marks:` cylinder
+centres; `hidden:` dashed hidden lines (SVG) and a `HIDDEN` layer (DXF);
+`dimensions:` labels; `view: :sheet` 3-view layouts with `title_block:`
+metadata and axis-aware sheet sizing; `tolerance:` in both symmetric `±` and
+asymmetric `+…/-…` forms; `callouts:` diameter labels; and framed `datum:` /
+`feature_control:` annotations attachable to real faces, with datum lists for
+richer geometric tolerancing. `Shape#gdt(standard:)` stores a canonical spec on
+the shape, with ASME/ISO ordering resolved at export time.
+
+**CAM / 3-D printing checks.** `mass_estimate(part, density:)` (PLA default
+1.24 g/cm³), `print_volume_check(part, x:, y:, z:)`,
+`overhang_faces(part, max_angle_deg:)`, `draft_faces(part, axis:,
+min_draft_deg:)`, and `hole_axes(part, orientation:, tolerance_deg:)`, over the
+`Shape#normal` and `Shape#cylinder_axis` primitives.
+`unsupported_islands(part, …)` scans slices layer-by-layer for disconnected
+footprints that do not overlap the previous layer.
+
+---
+
+## Deferred and not planned
+
+- **IGES import/export** — deprioritised in Phase 7; STEP covers the same
+  workflows.
+- **Native egui/wgpu viewer** — not planned. The browser preview is the
+  long-term approach.
+- **Section arrows, "A-A" labels, half/offset/revolved sections** — annotation
+  and advanced section types beyond the Track C geometry work.
+- **Pretty-printing** — `pp` is an alias of `p`; there is no pretty-printer.
+
+---
+
+## Architecture notes
 
 See `CLAUDE.md` and `doc/development.md` for the full architecture and
 development guide.
 
-- **Memory:** each `Shape` is a `Box<occt::Shape>` raw pointer in mRuby
+- **Memory:** each `Shape` is a `Box<occt::Shape>` raw pointer stored in mRuby's
   `RData void*`; the `dfree` GC callback drops it. No SlotMap, no reference
   counting.
-- **Preview:** OCCT tessellation → GLB → `axum` HTTP → Three.js browser viewer
-  → WebSocket live reload. Web-based preview is the long-term approach; a
-  native egui/wgpu viewer is not planned.
-
----
+- **Preview:** OCCT tessellation → GLB → `axum` HTTP → Three.js viewer →
+  WebSocket live reload.
+- **Threading:** mRuby is not thread-safe. `RUST_TEST_THREADS=1` in
+  `.cargo/config.toml` keeps tests single-threaded; live `MrubyVm` values must
+  never cross threads.
