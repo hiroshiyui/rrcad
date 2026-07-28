@@ -2,6 +2,7 @@ use super::{FeatureOp, Shape, ffi};
 use crate::occt::shape_core::summarize;
 
 impl Shape {
+    /// Fold-left boolean union of two or more shapes into one solid.
     pub fn fuse_all(shapes: &[&Shape]) -> Result<Shape, String> {
         if shapes.len() < 2 {
             return Err("fuse_all: requires at least 2 shapes".to_string());
@@ -20,6 +21,7 @@ impl Shape {
         Ok(acc)
     }
 
+    /// Subtract every tool shape from `self` in sequence (fold-left cut).
     pub fn cut_all(&self, tools: &[&Shape]) -> Result<Shape, String> {
         if tools.is_empty() {
             return Err("cut_all: requires at least 1 tool".to_string());
@@ -31,6 +33,8 @@ impl Shape {
         Ok(acc)
     }
 
+    /// Split the shapes at all mutual intersections and return a Compound of
+    /// the non-overlapping pieces.
     pub fn fragment_all(shapes: &[&Shape]) -> Result<Shape, String> {
         if shapes.is_empty() {
             return Err("fragment: requires at least 1 shape".to_string());
@@ -58,6 +62,7 @@ impl Shape {
             .map_err(|e| e.to_string())
     }
 
+    /// 3-D convex hull of the shape's tessellated mesh vertices.
     pub fn convex_hull(&self) -> Result<Shape, String> {
         ffi::shape_convex_hull(&self.inner)
             .map(|p| {

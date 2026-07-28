@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use serde_json::{Map, Value, json};
 
+use super::security::MCP_EXPORT_FORMATS;
+
 /// Full DSL API reference (doc/api.md), embedded at compile time.
 pub(crate) fn api_doc() -> &'static str {
     include_str!("../../doc/api.md")
@@ -39,7 +41,8 @@ pub(crate) fn code_format_schema() -> Arc<Map<String, Value>> {
                 "format": {
                     "type": "string",
                     "description": "Export file format.",
-                    "enum": ["step", "stl", "glb", "gltf", "obj"]
+                    // Derived from the single allowlist shared with validate_format().
+                    "enum": MCP_EXPORT_FORMATS
                 }
             },
             "required": ["code", "format"]

@@ -36,6 +36,9 @@ impl Shape {
         Ok(())
     }
 
+    // Allowed: Shape wraps OCCT handles that are not Send/Sync by design; the
+    // crate never shares Shapes across threads, so Arc is used only for cheap
+    // clones within one thread.
     #[allow(clippy::arc_with_non_send_sync)]
     pub fn datum(&self, name: &str, shape: &Shape) -> Result<(), String> {
         self.set_named_ref(name, NamedRef::Datum(Arc::new(shape.clone())));
@@ -61,10 +64,5 @@ impl Shape {
 
     pub(crate) fn gdt_apply(&self, spec: GdtRenderSpec) {
         self.set_gdt_render(Some(spec));
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn clear_gdt(&self) {
-        self.set_gdt_render(None);
     }
 }

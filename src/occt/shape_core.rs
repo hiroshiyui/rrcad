@@ -40,26 +40,6 @@ impl Shape {
         }
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn fresh_with_history(
-        inner: UniquePtr<ffi::OcctShape>,
-        entry: impl Into<String>,
-    ) -> Self {
-        let shape = Self::fresh(inner);
-        let entry = entry.into();
-        shape.history.borrow_mut().push(entry.clone());
-        let feature = FeatureNode::new(
-            FeatureOp::Opaque {
-                label: entry.clone(),
-            },
-            Vec::new(),
-            entry,
-        );
-        let mut shape = shape;
-        shape.feature = feature;
-        shape
-    }
-
     pub(crate) fn with_inner(&self, inner: UniquePtr<ffi::OcctShape>) -> Self {
         Self {
             inner,

@@ -6,22 +6,22 @@ license = "GPL-3.0-or-later"
 
 [dependencies]
 cxx = "1.0"
-rustyline = "14"
+rustyline = "18"
 
 # Phase 3: live preview
-axum = { version = "0.7", features = ["ws"] }
+axum = { version = "0.8", features = ["ws"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "fs", "time", "io-std", "io-util", "process"] }
 tokio-util = "0.7"
-notify = "6"
+notify = "8"
 open = "5"
 
 # Phase 9: MCP server
-rmcp = { version = "0.1", features = ["server"] }
+rmcp = { version = "2.2", features = ["server"] }
 uuid = { version = "1", features = ["v4"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 libc = "0.2"
-toml = "0.8"
+toml = "1"
 
 [build-dependencies]
 cc = "1"

@@ -1,3 +1,5 @@
+// NOTE: the module-level safety contract in `native.rs` applies to every `extern "C"` function in this file.
+
 use std::ffi::{c_char, c_void};
 
 use super::native_helpers::{
@@ -257,6 +259,138 @@ pub unsafe extern "C" fn rrcad_shape_gdt_apply(
     });
 }
 
+/// Which 2D drawing format a `DrawingExportOpts` should be rendered to.
+enum DrawingFormat {
+    Svg,
+    Dxf,
+}
+
+/// Owned, parsed arguments shared by the SVG and DXF drawing exports.
+/// Both extern "C" entry points take the same 21 raw parameters; this struct
+/// holds the validated Rust-side equivalents so the parsing lives in one place.
+struct DrawingExportOpts {
+    path: String,
+    view: String,
+    scale: f64,
+    hidden: bool,
+    center_marks: bool,
+    dimensions: bool,
+    title_block: bool,
+    callouts: bool,
+    datum: String,
+    datum_anchor_valid: bool,
+    datum_anchor: [f64; 3],
+    feature_control: String,
+    feature_control_anchor_valid: bool,
+    feature_control_anchor: [f64; 3],
+    tolerance_plus: f64,
+    tolerance_minus: f64,
+}
+
+impl DrawingExportOpts {
+    /// Forward the parsed options to the matching `Shape` export method.
+    fn export(&self, shape: &Shape, format: DrawingFormat) -> Result<(), String> {
+        // Both methods share the exact same parameter list; only the target differs.
+        let f = match format {
+            DrawingFormat::Svg => Shape::export_svg_with_anchor,
+            DrawingFormat::Dxf => Shape::export_dxf_with_anchor,
+        };
+        f(
+            shape,
+            &self.path,
+            &self.view,
+            self.scale,
+            self.hidden,
+            self.center_marks,
+            self.dimensions,
+            self.title_block,
+            self.callouts,
+            &self.datum,
+            self.datum_anchor_valid,
+            self.datum_anchor[0],
+            self.datum_anchor[1],
+            self.datum_anchor[2],
+            &self.feature_control,
+            self.feature_control_anchor_valid,
+            self.feature_control_anchor[0],
+            self.feature_control_anchor[1],
+            self.feature_control_anchor[2],
+            self.tolerance_plus,
+            self.tolerance_minus,
+        )
+    }
+}
+
+/// Parse the raw C parameters common to `rrcad_shape_export_svg` and
+/// `rrcad_shape_export_dxf`. Returns `None` (with `error_out` set) if the
+/// output path fails validation.
+///
+/// # Safety
+/// All pointer arguments must satisfy the same invariants as the extern "C"
+/// exporters that forward to this helper (valid NUL-terminated strings,
+/// writable `error_out`).
+#[allow(clippy::too_many_arguments)] // mirrors the flat scalar parameter list of the extern "C" exporters
+unsafe fn parse_drawing_export_opts(
+    path: *const c_char,
+    view: *const c_char,
+    scale: f64,
+    hidden: i32,
+    center_marks: i32,
+    dimensions: i32,
+    title_block: i32,
+    callouts: i32,
+    datum: *const c_char,
+    datum_anchor_valid: i32,
+    datum_anchor_x: f64,
+    datum_anchor_y: f64,
+    datum_anchor_z: f64,
+    feature_control: *const c_char,
+    feature_control_anchor_valid: i32,
+    feature_control_anchor_x: f64,
+    feature_control_anchor_y: f64,
+    feature_control_anchor_z: f64,
+    tolerance_plus: f64,
+    tolerance_minus: f64,
+    error_out: *mut *const c_char,
+) -> Option<DrawingExportOpts> {
+    let safe = unsafe { resolve_path(path, error_out) }?;
+    let path = safe.to_string_lossy().into_owned();
+    let view = unsafe { std::ffi::CStr::from_ptr(view) }
+        .to_str()
+        .unwrap_or("top")
+        .to_owned();
+    let datum = unsafe { std::ffi::CStr::from_ptr(datum) }
+        .to_str()
+        .unwrap_or("")
+        .to_owned();
+    let feature_control = unsafe { std::ffi::CStr::from_ptr(feature_control) }
+        .to_str()
+        .unwrap_or("")
+        .to_owned();
+    Some(DrawingExportOpts {
+        path,
+        view,
+        scale,
+        hidden: hidden != 0,
+        center_marks: center_marks != 0,
+        dimensions: dimensions != 0,
+        title_block: title_block != 0,
+        callouts: callouts != 0,
+        datum,
+        datum_anchor_valid: datum_anchor_valid != 0,
+        datum_anchor: [datum_anchor_x, datum_anchor_y, datum_anchor_z],
+        feature_control,
+        feature_control_anchor_valid: feature_control_anchor_valid != 0,
+        feature_control_anchor: [
+            feature_control_anchor_x,
+            feature_control_anchor_y,
+            feature_control_anchor_z,
+        ],
+        tolerance_plus,
+        tolerance_minus,
+    })
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rrcad_shape_export_svg(
     ptr: *mut c_void,
@@ -284,39 +418,34 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
 ) {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
+    let Some(opts) = (unsafe {
+        parse_drawing_export_opts(
+            path,
+            view,
+            scale,
+            hidden,
+            center_marks,
+            dimensions,
+            title_block,
+            callouts,
+            datum,
+            datum_anchor_valid,
+            datum_anchor_x,
+            datum_anchor_y,
+            datum_anchor_z,
+            feature_control,
+            feature_control_anchor_valid,
+            feature_control_anchor_x,
+            feature_control_anchor_y,
+            feature_control_anchor_z,
+            tolerance_plus,
+            tolerance_minus,
+            error_out,
+        )
+    }) else {
         return;
     };
-    let safe_str = safe.to_string_lossy();
-    let view_str = unsafe { std::ffi::CStr::from_ptr(view) }
-        .to_str()
-        .unwrap_or("top");
-    if let Err(e) = shape.export_svg_with_anchor(
-        &safe_str,
-        view_str,
-        scale,
-        hidden != 0,
-        center_marks != 0,
-        dimensions != 0,
-        title_block != 0,
-        callouts != 0,
-        unsafe { std::ffi::CStr::from_ptr(datum) }
-            .to_str()
-            .unwrap_or(""),
-        datum_anchor_valid != 0,
-        datum_anchor_x,
-        datum_anchor_y,
-        datum_anchor_z,
-        unsafe { std::ffi::CStr::from_ptr(feature_control) }
-            .to_str()
-            .unwrap_or(""),
-        feature_control_anchor_valid != 0,
-        feature_control_anchor_x,
-        feature_control_anchor_y,
-        feature_control_anchor_z,
-        tolerance_plus,
-        tolerance_minus,
-    ) {
+    if let Err(e) = opts.export(shape, DrawingFormat::Svg) {
         unsafe { set_err(error_out, &e) };
     }
 }
@@ -348,39 +477,34 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
 ) {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
+    let Some(opts) = (unsafe {
+        parse_drawing_export_opts(
+            path,
+            view,
+            scale,
+            hidden,
+            center_marks,
+            dimensions,
+            title_block,
+            callouts,
+            datum,
+            datum_anchor_valid,
+            datum_anchor_x,
+            datum_anchor_y,
+            datum_anchor_z,
+            feature_control,
+            feature_control_anchor_valid,
+            feature_control_anchor_x,
+            feature_control_anchor_y,
+            feature_control_anchor_z,
+            tolerance_plus,
+            tolerance_minus,
+            error_out,
+        )
+    }) else {
         return;
     };
-    let safe_str = safe.to_string_lossy();
-    let view_str = unsafe { std::ffi::CStr::from_ptr(view) }
-        .to_str()
-        .unwrap_or("top");
-    if let Err(e) = shape.export_dxf_with_anchor(
-        &safe_str,
-        view_str,
-        scale,
-        hidden != 0,
-        center_marks != 0,
-        dimensions != 0,
-        title_block != 0,
-        callouts != 0,
-        unsafe { std::ffi::CStr::from_ptr(datum) }
-            .to_str()
-            .unwrap_or(""),
-        datum_anchor_valid != 0,
-        datum_anchor_x,
-        datum_anchor_y,
-        datum_anchor_z,
-        unsafe { std::ffi::CStr::from_ptr(feature_control) }
-            .to_str()
-            .unwrap_or(""),
-        feature_control_anchor_valid != 0,
-        feature_control_anchor_x,
-        feature_control_anchor_y,
-        feature_control_anchor_z,
-        tolerance_plus,
-        tolerance_minus,
-    ) {
+    if let Err(e) = opts.export(shape, DrawingFormat::Dxf) {
         unsafe { set_err(error_out, &e) };
     }
 }
@@ -392,21 +516,14 @@ mod tests {
         rrcad_shape_export_svg,
     };
     use crate::occt::Shape;
+    use crate::test_util::unique_test_dir;
     use std::{
         ffi::{CStr, CString},
         fs,
         os::raw::c_char,
         path::PathBuf,
         ptr,
-        sync::atomic::{AtomicUsize, Ordering},
     };
-
-    static TEST_SEQ: AtomicUsize = AtomicUsize::new(1);
-
-    fn unique_test_dir(prefix: &str) -> PathBuf {
-        let seq = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!("{prefix}-{}-{seq}", std::process::id()))
-    }
 
     fn with_cwd<T>(dir: &PathBuf, f: impl FnOnce() -> T) -> T {
         let original = std::env::current_dir().expect("current dir");

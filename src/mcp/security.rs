@@ -16,6 +16,16 @@ pub(crate) const MCP_EVAL_TIMEOUT_SECS: u64 = 30;
 /// `safe_path()` in the native layer.
 pub(crate) const MCP_SANDBOX_DIR: &str = "/tmp/rrcad_mcp";
 
+/// Filename of the GLB written inside `MCP_SANDBOX_DIR` by the `cad_preview`
+/// tool and served back by the preview HTTP server.
+pub(crate) const MCP_PREVIEW_GLB: &str = "preview.glb";
+
+/// Export formats accepted by the `cad_export` tool (Mitigation 7c).
+///
+/// Single source of truth: `validate_format()` checks membership and the
+/// `cad_export` JSON schema enum in `resources.rs` is built from this list.
+pub(crate) const MCP_EXPORT_FORMATS: &[&str] = &["step", "stl", "glb", "gltf", "obj"];
+
 /// Address-space ceiling applied once at server startup (Mitigation 4).
 ///
 /// `setrlimit(RLIMIT_AS)` is **process-wide** on Linux. We apply it once in
@@ -43,6 +53,14 @@ pub(crate) const MCP_MEMORY_LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 /// Uses `Kernel.module_eval` (a Module instance method, not a Kernel one) so
 /// that undef'ing `:send` / `:__send__` mid-loop does not break the loop
 /// itself — `module_eval` was already invoked once before any undef occurred.
+///
+/// **Defense-in-depth only.** The real sandbox is the compile-time gem
+/// restriction in `mruby_configs/mcp_safe.gembox`: no mruby-io, socket, dir,
+/// eval, or metaprogramming gems are linked, so the dangerous methods listed
+/// below mostly do not exist in the first place. This prelude does *not* undef
+/// `const_get`, `ObjectSpace`, `Marshal`, or `instance_variable_get` — if the
+/// gembox ever gains metaprogramming or IO gems, this prelude must be
+/// revisited and extended accordingly.
 pub(crate) const MCP_SECURITY_PRELUDE: &str = r#"
 BasicObject.module_eval do
   [
@@ -157,11 +175,13 @@ pub fn validate_code(code: &str) -> Result<(), String> {
 
 /// Mitigation 7c: validate the export format against the allowlist.
 pub fn validate_format(format: &str) -> Result<(), String> {
-    match format {
-        "step" | "stl" | "glb" | "gltf" | "obj" => Ok(()),
-        other => Err(format!(
-            "Unsupported export format '{other}'. Allowed: step, stl, glb, gltf, obj."
-        )),
+    if MCP_EXPORT_FORMATS.contains(&format) {
+        Ok(())
+    } else {
+        Err(format!(
+            "Unsupported export format '{format}'. Allowed: {}.",
+            MCP_EXPORT_FORMATS.join(", ")
+        ))
     }
 }
 

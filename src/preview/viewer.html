@@ -194,6 +194,27 @@
     }
   }
   </script>
+  <script>
+  // CDN failure fallback: Three.js is imported from jsdelivr by the module
+  // script below.  If the import fails (offline / blocked CDN) the module
+  // never runs, leaving the page stuck on "connecting…" with only a console
+  // error.  The module sets window.__rrcadViewerStarted once its imports
+  // resolve; if that has not happened shortly after load — or a script error
+  // fires first — surface a clear message in the status line.
+  (function () {
+    function cdnFailed() {
+      if (window.__rrcadViewerStarted) return;
+      window.__rrcadViewerStarted = true;  // report only once
+      document.getElementById('status').textContent =
+        'rrcad preview — failed to load Three.js from CDN — internet connection required';
+    }
+    window.addEventListener('error', e => {
+      // Module import failures surface as uncaught errors with no viewer init.
+      if (!window.__rrcadViewerStarted) cdnFailed();
+    }, true);
+    setTimeout(cdnFailed, 5000);
+  })();
+  </script>
 </head>
 <body>
 <div id="vignette"></div>
@@ -271,6 +292,9 @@ import * as THREE from 'three';
 import { GLTFLoader }      from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls }   from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+
+// Imports resolved — tell the CDN-failure fallback in <head> not to fire.
+window.__rrcadViewerStarted = true;
 
 // ── Renderer ──────────────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -416,6 +440,19 @@ const flatMaterial = new THREE.MeshLambertMaterial({
 // flat-line mode does not allocate a new LineBasicMaterial per mesh per enable.
 const edgeMaterial = new THREE.LineBasicMaterial({ color: 0x555555 });
 
+// All materials the model can render with.  Section clipping is applied to
+// these (per-material, localClippingEnabled) rather than the global
+// renderer.clippingPlanes so the studio floor, axes helper, and measure
+// markers stay unclipped.
+const modelMaterials = [plastic, flatMaterial, edgeMaterial];
+
+function setModelClippingPlanes(planes) {
+  for (const material of modelMaterials) {
+    material.clippingPlanes = planes;
+    material.needsUpdate = true;  // toggling clipping requires a shader rebuild
+  }
+}
+
 // Apply (or clear) edge-line helpers attached to each mesh as children.
 function setEdgeLines(model, enabled) {
   if (!model) return;
@@ -544,7 +581,7 @@ function sectionNormal(axis) {
 
 function updateSectionPlane() {
   if (sectionAxis === 'off' || !currentModel) {
-    renderer.clippingPlanes = [];
+    setModelClippingPlanes(null);  // restore unclipped rendering
     return;
   }
 
@@ -556,7 +593,7 @@ function updateSectionPlane() {
   const point = center.clone().add(normal.clone().multiplyScalar(sectionOffset * span));
   sectionPlane.normal.copy(normal);
   sectionPlane.constant = -point.dot(normal);
-  renderer.clippingPlanes = [sectionPlane];
+  setModelClippingPlanes([sectionPlane]);
 }
 
 function setSectionAxis(axis) {
@@ -682,7 +719,8 @@ function measurementText() {
 
 function setMeasureMode(enabled) {
   measureMode = enabled;
-  controls.enabled = !enabled;
+  // Orbit controls stay enabled: the pointerup handler distinguishes clicks
+  // from drags, so users can rotate the model between measurement picks.
   propDistance.textContent = measurementText();
   status.textContent = statusText();
   syncMenu();
@@ -857,6 +895,8 @@ renderer.domElement.addEventListener('pointerup', event => {
 });
 
 window.addEventListener('keydown', e => {
+  // Ignore browser/OS shortcuts (Ctrl+F, Cmd+A, …) — only bare keys are viewer shortcuts.
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (e.key === 'Escape') {
     menuPanel.classList.remove('open');
     menuBtn.classList.remove('open');
@@ -1056,6 +1096,9 @@ let reconnectAttempt = 0;
 function connectWS() {
   const ws = new WebSocket('ws://' + location.host + '/ws');
   ws.onopen    = () => {
+    // After a successful *re*connect the server was restarted and may hold new
+    // geometry — reload immediately rather than waiting for the next file save.
+    if (reconnectAttempt > 0) loadModel();
     reconnectAttempt = 0;          // reset backoff on successful connect
     status.textContent = statusText();
   };

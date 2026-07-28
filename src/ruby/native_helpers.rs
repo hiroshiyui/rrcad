@@ -1,3 +1,5 @@
+// NOTE: the module-level safety contract in `native.rs` applies to every `extern "C"` function in this file.
+
 use std::ffi::{CString, c_char, c_void};
 use std::path::{Path, PathBuf};
 
@@ -138,21 +140,8 @@ pub(crate) fn split_csv_list(value: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{cstr_arg, resolve_path, safe_path, split_csv_list};
-    use std::{
-        ffi::CString,
-        fs,
-        os::raw::c_char,
-        path::PathBuf,
-        ptr,
-        sync::atomic::{AtomicUsize, Ordering},
-    };
-
-    static TEST_SEQ: AtomicUsize = AtomicUsize::new(1);
-
-    fn unique_test_dir(prefix: &str) -> PathBuf {
-        let seq = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!("{prefix}-{}-{seq}", std::process::id()))
-    }
+    use crate::test_util::unique_test_dir;
+    use std::{ffi::CString, fs, os::raw::c_char, ptr};
 
     #[test]
     fn safe_path_accepts_relative_paths_inside_cwd() {

@@ -10,8 +10,9 @@ DSL one line at a time.
 cargo run -- --preview script.rb
 ```
 
-1. Launches an HTTP server (default `http://localhost:3000`, or a free
-   port if `3000` is taken or `preview_port` is set in `rrcad.toml`).
+1. Launches an HTTP server. The port auto-selects a free port by default;
+   `--preview-port` or `preview_port` in `rrcad.toml` pin a fixed one. The
+   exact URL is printed at startup.
 2. Opens your browser to a Three.js 3D viewer.
 3. Watches the script file; on every save, re-evaluates the script and
    pushes the new geometry over WebSocket.
@@ -46,7 +47,7 @@ The hamburger menu exposes the same toggles plus a **Scene** selector:
 |-------------|---------|
 | View | Normal (PBR studio material) · Flat-line (technical illustration style) |
 | Scene | Showroom (dark studio, default) · White (bright neutral background) |
-| Show | Axes on/off |
+| Show | Axes on/off · Measure on/off · Explode on/off |
 | Section | Off, X/Y/Z clipping planes, and offset slider |
 
 The top-left model panel updates with each `preview(shape)` call and

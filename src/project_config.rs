@@ -1,9 +1,5 @@
 use serde::Deserialize;
-use std::{
-    collections::BTreeMap,
-    fs,
-    path::Path,
-};
+use std::{collections::BTreeMap, fs, path::Path};
 
 /// Project-local configuration loaded from `rrcad.toml`.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -35,6 +31,18 @@ pub fn load_for_script(script_path: &Path) -> Result<ProjectConfig, String> {
 }
 
 fn load_from_start_dir(start_dir: &Path) -> Result<ProjectConfig, String> {
+    // A bare relative script path like `part.rb` yields a parent of "" whose
+    // `ancestors()` iterator is just [""] — the documented walk up parent
+    // directories would silently never happen.  Anchor the start directory to
+    // the current working directory so `ancestors()` climbs the real
+    // filesystem hierarchy.
+    let start_dir = if start_dir.is_absolute() {
+        start_dir.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|e| format!("error: could not get cwd: {e}"))?
+            .join(start_dir)
+    };
     for dir in start_dir.ancestors() {
         let config_path = dir.join("rrcad.toml");
         if config_path.is_file() {
@@ -47,8 +55,8 @@ fn load_from_start_dir(start_dir: &Path) -> Result<ProjectConfig, String> {
 fn load_file(path: &Path) -> Result<ProjectConfig, String> {
     let src = fs::read_to_string(path)
         .map_err(|e| format!("error: could not read '{}': {e}", path.display()))?;
-    let raw: RawProjectConfig = toml::from_str(&src)
-        .map_err(|e| format!("error: invalid '{}': {e}", path.display()))?;
+    let raw: RawProjectConfig =
+        toml::from_str(&src).map_err(|e| format!("error: invalid '{}': {e}", path.display()))?;
 
     let mut params = Vec::with_capacity(raw.params.len());
     for (name, value) in raw.params {
@@ -70,26 +78,18 @@ fn toml_value_to_param_string(value: &toml::Value) -> Result<String, String> {
         toml::Value::Float(f) => Ok(f.to_string()),
         toml::Value::Boolean(b) => Ok(b.to_string()),
         toml::Value::Datetime(dt) => Ok(dt.to_string()),
-        _ => Err("params entries must be scalar values (string, number, boolean, or datetime)"
-            .to_string()),
+        _ => Err(
+            "params entries must be scalar values (string, number, boolean, or datetime)"
+                .to_string(),
+        ),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{
-        fs,
-        path::PathBuf,
-        sync::atomic::{AtomicUsize, Ordering},
-    };
-
-    static TEST_SEQ: AtomicUsize = AtomicUsize::new(1);
-
-    fn unique_test_dir(prefix: &str) -> PathBuf {
-        let seq = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!("{prefix}-{}-{seq}", std::process::id()))
-    }
+    use crate::test_util::unique_test_dir;
+    use std::fs;
 
     #[test]
     fn load_for_script_finds_nearest_config() {
@@ -135,6 +135,30 @@ label = "bracket"
         let config = load_for_script(&script).expect("load config");
         assert_eq!(config.preview_port, None);
         assert!(config.params.is_empty());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_for_script_walks_up_from_bare_relative_path() {
+        // Regression test: `rrcad --preview part.rb` gives a script path with
+        // parent "" — the walk-up must still find rrcad.toml in an ancestor of
+        // the current working directory.
+        let dir = unique_test_dir("rrcad-project-config-relative");
+        let nested = dir.join("project/models");
+        fs::create_dir_all(&nested).expect("create nested dirs");
+        fs::write(dir.join("rrcad.toml"), "preview_port = 5678\n").expect("write config");
+        fs::write(nested.join("part.rb"), "box(1, 1, 1)").expect("write script");
+
+        // cargo test runs single-threaded (RUST_TEST_THREADS=1), so changing
+        // the process CWD is safe as long as we restore it afterwards.
+        let original = std::env::current_dir().expect("current dir");
+        std::env::set_current_dir(&nested).expect("enter nested dir");
+        let result = load_for_script(Path::new("part.rb"));
+        std::env::set_current_dir(original).expect("restore cwd");
+
+        let config = result.expect("load config");
+        assert_eq!(config.preview_port, Some(5678));
 
         let _ = fs::remove_dir_all(&dir);
     }

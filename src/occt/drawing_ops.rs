@@ -10,7 +10,7 @@ impl Shape {
     /// `dimensions` adds overall width and height annotations.
     /// `callouts` adds diameter callouts for cylindrical faces aligned to the view axis.
     /// `datum` and `feature_control` add a simple framed GD&T annotation block.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)] // mirrors the flat scalar parameter list of the C++ FFI export
     pub fn export_svg(
         &self,
         path: &str,
@@ -50,7 +50,7 @@ impl Shape {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)] // mirrors the flat scalar parameter list of the C++ FFI export
     pub(crate) fn export_svg_with_anchor(
         &self,
         path: &str,
@@ -136,7 +136,7 @@ impl Shape {
     /// `dimensions` adds overall width/height labels.
     /// `callouts` adds diameter callouts on a `CALLOUT` layer.
     /// `datum` and `feature_control` add a simple framed GD&T annotation block.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)] // mirrors the flat scalar parameter list of the C++ FFI export
     pub fn export_dxf(
         &self,
         path: &str,
@@ -176,7 +176,7 @@ impl Shape {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)] // mirrors the flat scalar parameter list of the C++ FFI export
     pub(crate) fn export_dxf_with_anchor(
         &self,
         path: &str,

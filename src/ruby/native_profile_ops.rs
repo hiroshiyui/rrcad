@@ -1,3 +1,5 @@
+// NOTE: the module-level safety contract in `native.rs` applies to every `extern "C"` function in this file.
+
 use std::ffi::{c_char, c_void};
 
 use crate::occt::Shape;

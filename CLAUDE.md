@@ -48,7 +48,7 @@ OCCT geometry kernel        (src/occt/)
 Live preview               (src/preview/)
   • export_glb → <temp-dir>/rrcad_preview_<uuid>.glb (CLI --preview)
                  or /tmp/rrcad_mcp/preview.glb (MCP cad_preview)
-  • axum HTTP: GET / (Three.js HTML), GET /model.glb, GET /logo.png, GET /ws (WebSocket)
+  • axum HTTP: GET / (Three.js HTML), GET /model.glb, GET /metadata.json, GET /logo.png, GET /ws (WebSocket)
   • notify watches .rb script → re-eval → GLB → WS "reload"
 ```
 
@@ -63,7 +63,7 @@ Live preview               (src/preview/)
 - **Preview** — `axum` HTTP server + WebSocket + Three.js. OCCT tessellates to binary GLB via `RWGltf_CafWriter` (isBinary=true); `notify` watches the `.rb` script; `preview(shape)` writes the GLB and fires a WebSocket reload. Activated with `rrcad --preview <script.rb>`. `preview(shape)` is a no-op outside this mode. The web-based preview is the long-term approach; a native egui/wgpu viewer is not planned.
 - **Project config** — optional `rrcad.toml` files are loaded from the script directory or current working directory, walking up parent directories. Use `preview_port` for `--preview` defaults and `[params]` for default `param()` overrides; CLI flags still override the file.
 - **Config template** — [`rrcad.toml.example`](rrcad.toml.example) is the repo template for standalone CAD projects. Copy it to `rrcad.toml` in your project root if you want to set default `preview_port` or `[params]` values.
-- **MCP server** — `rmcp` crate (stdio transport). Public wiring lives in `src/mcp/mod.rs`; implementation is split across focused helpers in `src/mcp/`. A fresh `MrubyVm` is created per tool call (no shared state). Security prelude strips dangerous Kernel methods at runtime; `tokio::time::timeout` enforces 30 s limit; CWD is changed to `/tmp/rrcad_mcp/` at startup so export paths satisfy `safe_path()`. Do not share a VM across requests.
+- **MCP server** — `rmcp` crate (stdio transport). Public wiring lives in `src/mcp/mod.rs`; implementation is split across focused helpers in `src/mcp/`. A fresh `MrubyVm` is created per tool call (no shared state). Security prelude strips dangerous Kernel methods at runtime; each tool call runs in a one-shot worker child process (`src/mcp/worker.rs`) that the parent kills after 30 s and that caps itself at 2 GB via `setrlimit(RLIMIT_AS)`; CWD is changed to `/tmp/rrcad_mcp/` at startup so export paths satisfy `safe_path()`. Do not share a VM across requests.
 
 ## While Coding
 

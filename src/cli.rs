@@ -422,6 +422,12 @@ where
         Some(path) => Mode::Script(path.to_string()),
     };
 
+    // --preview-port only makes sense with --preview; silently ignoring it in
+    // other modes would hide user mistakes, so make it a hard error instead.
+    if preview_port.is_some() && !matches!(mode, Mode::Preview { .. }) {
+        return Err("error: --preview-port requires --preview".to_string());
+    }
+
     Ok(CliArgs { mode, params })
 }
 
@@ -649,8 +655,15 @@ fn make_preview_glb_path() -> std::path::PathBuf {
     std::env::temp_dir().join(format!("rrcad_preview_{token}.glb"))
 }
 
+/// Resolve the preview port from CLI flag and project config.
+///
+/// Precedence: `--preview-port` flag > `preview_port` in `rrcad.toml` > `0`
+/// (which asks the OS to auto-select a free port).
+fn effective_preview_port(cli_port: Option<u16>, config_port: Option<u16>) -> u16 {
+    cli_port.or(config_port).unwrap_or(0)
+}
+
 fn run_preview(script_path: &str, params: &[(String, String)], port: Option<u16>) {
-    use notify::{RecursiveMode, Watcher};
     use rrcad::preview;
 
     // The CLI input script may live anywhere the user can read — no CWD restriction.
@@ -665,7 +678,7 @@ fn run_preview(script_path: &str, params: &[(String, String)], port: Option<u16>
     // Keep a copy so we can delete the file when the process exits.
     let glb_path_for_cleanup = glb_path.clone();
     let effective_params = merge_params(&project.params, params);
-    let preview_port = port.or(project.preview_port).unwrap_or(0);
+    let preview_port = effective_preview_port(port, project.preview_port);
     let _rt = match preview::start(glb_path, preview_port) {
         Ok(rt) => rt,
         Err(e) => {
@@ -691,6 +704,23 @@ fn run_preview(script_path: &str, params: &[(String, String)], port: Option<u16>
 
     // Initial eval.
     eval_script(script_path);
+
+    // Delegate to the file-watcher loop; it returns when the watcher channel
+    // closes (normally never — the process exits via Ctrl-C).
+    watch_script_loop(script_path, &eval_script);
+
+    // Best-effort cleanup: remove the randomised temp GLB file so it does not
+    // accumulate in /tmp across restarts.  Errors are silently ignored.
+    std::fs::remove_file(&glb_path_for_cleanup).ok();
+}
+
+/// Watch `script_path` for changes and call `eval_script` on every change.
+///
+/// Blocks until the watcher channel closes.  Extracted from `run_preview` so
+/// that function reads as: load config → start server → initial eval →
+/// delegate here.
+fn watch_script_loop(script_path: &str, eval_script: &dyn Fn(&str)) {
+    use notify::{RecursiveMode, Watcher};
 
     // Watch the script file; re-eval on every change.
     //
@@ -749,17 +779,15 @@ fn run_preview(script_path: &str, params: &[(String, String)], port: Option<u16>
             Err(_) => break,
         }
     }
-
-    // Best-effort cleanup: remove the randomised temp GLB file so it does not
-    // accumulate in /tmp across restarts.  Errors are silently ignored.
-    std::fs::remove_file(&glb_path_for_cleanup).ok();
 }
 
 fn load_project_config_for_cwd() -> Result<project_config::ProjectConfig, String> {
     project_config::load_for_cwd()
 }
 
-fn load_project_config_for_script(script_path: &str) -> Result<project_config::ProjectConfig, String> {
+fn load_project_config_for_script(
+    script_path: &str,
+) -> Result<project_config::ProjectConfig, String> {
     project_config::load_for_script(std::path::Path::new(script_path))
 }
 
@@ -931,6 +959,50 @@ mod parse_args_tests {
         let err = parse_args_from(args(&["--mcp-worker"])).expect_err("missing worker kind");
         assert!(err.contains("usage: rrcad --mcp-worker"));
     }
+
+    #[test]
+    fn parse_args_rejects_preview_port_without_preview() {
+        // Script mode.
+        let err = parse_args_from(args(&["--preview-port", "4321", "script.rb"]))
+            .expect_err("preview-port without preview must fail");
+        assert!(err.contains("--preview-port requires --preview"));
+
+        // REPL mode.
+        let err = parse_args_from(args(&["--preview-port", "4321"]))
+            .expect_err("preview-port without preview must fail");
+        assert!(err.contains("--preview-port requires --preview"));
+
+        // Design-table mode.
+        let err = parse_args_from(args(&[
+            "--preview-port",
+            "4321",
+            "--design-table",
+            "table.csv",
+            "script.rb",
+        ]))
+        .expect_err("preview-port without preview must fail");
+        assert!(err.contains("--preview-port requires --preview"));
+    }
+}
+
+#[cfg(test)]
+mod preview_port_tests {
+    use super::effective_preview_port;
+
+    #[test]
+    fn cli_flag_wins_over_config() {
+        assert_eq!(effective_preview_port(Some(1111), Some(2222)), 1111);
+    }
+
+    #[test]
+    fn config_used_when_no_cli_flag() {
+        assert_eq!(effective_preview_port(None, Some(2222)), 2222);
+    }
+
+    #[test]
+    fn defaults_to_zero_for_auto_port() {
+        assert_eq!(effective_preview_port(None, None), 0);
+    }
 }
 
 #[cfg(test)]
@@ -987,6 +1059,8 @@ mod runtime_tests {
 
     static TEST_SEQ: AtomicUsize = AtomicUsize::new(1);
 
+    // Local duplicate of the lib crate's `test_util::unique_test_dir`: cli.rs is
+    // part of the binary crate, which cannot see the lib's #[cfg(test)] modules.
     fn unique_test_dir(prefix: &str) -> PathBuf {
         let seq = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
         std::env::temp_dir().join(format!("{prefix}-{}-{seq}", std::process::id()))

@@ -5,7 +5,8 @@ use serde_json::{Value, json};
 use tokio::{io::AsyncWriteExt, process::Command, time::timeout};
 
 use super::security::{
-    MCP_EVAL_TIMEOUT_SECS, apply_memory_limit, create_mcp_vm, validate_code, validate_format,
+    MCP_EVAL_TIMEOUT_SECS, MCP_PREVIEW_GLB, apply_memory_limit, create_mcp_vm, validate_code,
+    validate_format,
 };
 
 // ---------------------------------------------------------------------------
@@ -242,7 +243,7 @@ pub fn run_worker(kind: &str) -> i32 {
             let filename = request.filename.as_deref().unwrap_or("");
             worker_export(&request.code, format, filename)
         }
-        "preview" => worker_export(&request.code, "glb", "preview.glb"),
+        "preview" => worker_export(&request.code, "glb", MCP_PREVIEW_GLB),
         "validate" => worker_validate_json(&request.code),
         other => {
             eprintln!("unknown MCP worker kind: {other}");
@@ -270,18 +271,8 @@ pub fn run_worker(kind: &str) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{worker_eval_json, worker_export, worker_validate_json};
-    use std::{
-        fs,
-        path::PathBuf,
-        sync::atomic::{AtomicUsize, Ordering},
-    };
-
-    static TEST_SEQ: AtomicUsize = AtomicUsize::new(1);
-
-    fn unique_test_dir(prefix: &str) -> PathBuf {
-        let seq = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!("{prefix}-{}-{seq}", std::process::id()))
-    }
+    use crate::test_util::unique_test_dir;
+    use std::fs;
 
     #[test]
     fn worker_eval_json_reports_shape_metadata() {

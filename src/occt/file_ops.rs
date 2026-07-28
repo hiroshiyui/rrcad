@@ -4,6 +4,7 @@ use crate::occt::shape_core::{hint, summarize};
 impl Shape {
     // --- Import ---
 
+    /// Import a STEP file (`.step` / `.stp`) as a new `Shape`.
     pub fn import_step(path: &str) -> Result<Self, String> {
         ffi::import_step(path)
             .map(|p| {
@@ -23,6 +24,7 @@ impl Shape {
             })
     }
 
+    /// Import an STL mesh file (`.stl`) as a new `Shape`.
     pub fn import_stl(path: &str) -> Result<Self, String> {
         ffi::import_stl(path)
             .map(|p| {
@@ -44,6 +46,7 @@ impl Shape {
 
     // --- Export ---
 
+    /// Export to STEP. Exact BRep geometry — no tessellation involved.
     pub fn export_step(&self, path: &str) -> Result<(), String> {
         ffi::export_step(&self.inner, path).map_err(|e| {
             self.fail_with_debug(
@@ -54,6 +57,7 @@ impl Shape {
         })
     }
 
+    /// Export to STL. Tessellates the shape with OCCT's default deflection.
     pub fn export_stl(&self, path: &str) -> Result<(), String> {
         ffi::export_stl(&self.inner, path).map_err(|e| {
             self.fail_with_debug(

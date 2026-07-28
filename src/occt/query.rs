@@ -3,6 +3,8 @@ use super::{NamedRef, Shape, ffi};
 impl Shape {
     // --- Phase 3: sub-shape selectors ---
 
+    /// Returns all faces matching the selector (e.g. `"all"`, `"+z"`, or a
+    /// named reference registered via `name_face` / `datum`).
     pub fn faces(&self, selector: &str) -> Result<Vec<Shape>, String> {
         if let Some(named) = self.resolve_named_selector(selector) {
             match named {
@@ -35,6 +37,8 @@ impl Shape {
             .collect()
     }
 
+    /// Returns all edges matching the selector (e.g. `"all"`, `"vertical"`, or
+    /// a named reference registered via `name_edge` / `datum`).
     pub fn edges(&self, selector: &str) -> Result<Vec<Shape>, String> {
         if let Some(named) = self.resolve_named_selector(selector) {
             match named {
@@ -93,10 +97,12 @@ impl Shape {
         Ok(out)
     }
 
+    /// Volume of the shape (model units cubed).
     pub fn volume(&self) -> Result<f64, String> {
         ffi::shape_volume(&self.inner).map_err(|e| e.to_string())
     }
 
+    /// Total surface area of the shape (model units squared).
     pub fn surface_area(&self) -> Result<f64, String> {
         ffi::shape_surface_area(&self.inner).map_err(|e| e.to_string())
     }

@@ -178,11 +178,11 @@
 #include <XCAFDoc_ShapeTool.hxx>
 
 #include <atomic>
-#include <filesystem>
 #include <cmath>
-#include <unistd.h>
+#include <filesystem>
 #include <stdexcept>
 #include <string>
+#include <unistd.h>
 
 namespace rrcad {
 
@@ -198,8 +198,7 @@ std::filesystem::path atomic_export_temp_path(const std::string& final_path) {
     return final.parent_path() / name;
 }
 
-void rename_export_artifact(const std::filesystem::path& from,
-                            const std::filesystem::path& to) {
+void rename_export_artifact(const std::filesystem::path& from, const std::filesystem::path& to) {
     if (std::filesystem::exists(from)) {
         std::filesystem::rename(from, to);
     }
@@ -314,8 +313,7 @@ std::unique_ptr<OcctShape> shape_set_color(const OcctShape& shape, double r, dou
 std::unique_ptr<OcctShape> shape_copy(const OcctShape& shape) {
     try {
         if (shape.has_color())
-            return wrap_colored(shape.get(), shape.color_r(), shape.color_g(),
-                                shape.color_b());
+            return wrap_colored(shape.get(), shape.color_r(), shape.color_g(), shape.color_b());
         return wrap(shape.get());
     } catch (const Standard_Failure& e) {
         throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
@@ -755,11 +753,29 @@ SewingBuilder::SewingBuilder(double tolerance) : impl(std::make_unique<Impl>(tol
 SewingBuilder::~SewingBuilder() = default;
 
 std::unique_ptr<SewingBuilder> sewing_new(double tolerance) {
-    return std::make_unique<SewingBuilder>(tolerance);
+    // OCCT Standard_Failure does not derive std::exception; without this guard an
+    // escaping OCCT exception would abort the process at the cxx bridge boundary.
+    try {
+        return std::make_unique<SewingBuilder>(tolerance);
+    } catch (const Standard_Failure& e) {
+        throw std::runtime_error(std::string("sewing_new failed: ") + e.GetMessageString());
+    } catch (const std::exception&) {
+        throw;
+    } catch (...) {
+        throw std::runtime_error("unknown C++ exception in sewing_new");
+    }
 }
 
 void sewing_add(SewingBuilder& builder, const OcctShape& shape) {
-    builder.impl->sewing.Add(shape.get());
+    try {
+        builder.impl->sewing.Add(shape.get());
+    } catch (const Standard_Failure& e) {
+        throw std::runtime_error(std::string("sewing_add failed: ") + e.GetMessageString());
+    } catch (const std::exception&) {
+        throw;
+    } catch (...) {
+        throw std::runtime_error("unknown C++ exception in sewing_add");
+    }
 }
 
 // Perform sewing, then attempt to close the resulting shell into a solid.
@@ -1065,7 +1081,17 @@ ThruSectionsBuilder::ThruSectionsBuilder(bool solid, bool ruled)
 ThruSectionsBuilder::~ThruSectionsBuilder() = default;
 
 std::unique_ptr<ThruSectionsBuilder> thru_sections_new(bool solid, bool ruled) {
-    return std::make_unique<ThruSectionsBuilder>(solid, ruled);
+    // OCCT Standard_Failure does not derive std::exception; without this guard an
+    // escaping OCCT exception would abort the process at the cxx bridge boundary.
+    try {
+        return std::make_unique<ThruSectionsBuilder>(solid, ruled);
+    } catch (const Standard_Failure& e) {
+        throw std::runtime_error(std::string("thru_sections_new failed: ") + e.GetMessageString());
+    } catch (const std::exception&) {
+        throw;
+    } catch (...) {
+        throw std::runtime_error("unknown C++ exception in thru_sections_new");
+    }
 }
 
 void thru_sections_add(ThruSectionsBuilder& b, const OcctShape& profile) {
@@ -1129,21 +1155,32 @@ struct PipeShellBuilder::Impl {
 };
 
 PipeShellBuilder::PipeShellBuilder(const OcctShape& path) : impl(std::make_unique<Impl>()) {
-    const TopoDS_Shape& s = path.get();
-    if (s.ShapeType() != TopAbs_WIRE)
-        throw std::runtime_error("sweep_sections: path must be a Wire (use spline_3d)");
+    // OCCT Standard_Failure does not derive std::exception; without this guard an
+    // escaping OCCT exception would abort the process at the cxx bridge boundary.
+    try {
+        const TopoDS_Shape& s = path.get();
+        if (s.ShapeType() != TopAbs_WIRE)
+            throw std::runtime_error("sweep_sections: path must be a Wire (use spline_3d)");
 
-    impl->spineWire = TopoDS::Wire(s);
+        impl->spineWire = TopoDS::Wire(s);
 
-    // Expect a single-edge wire (spline_3d always produces one).
-    BRepTools_WireExplorer wExp(impl->spineWire);
-    if (!wExp.More())
-        throw std::runtime_error("sweep_sections: spine wire has no edges");
-    impl->spineEdge = wExp.Current();
+        // Expect a single-edge wire (spline_3d always produces one).
+        BRepTools_WireExplorer wExp(impl->spineWire);
+        if (!wExp.More())
+            throw std::runtime_error("sweep_sections: spine wire has no edges");
+        impl->spineEdge = wExp.Current();
 
-    impl->curve = BRep_Tool::Curve(impl->spineEdge, impl->tFirst, impl->tLast);
-    if (impl->curve.IsNull())
-        throw std::runtime_error("sweep_sections: could not extract curve from spine edge");
+        impl->curve = BRep_Tool::Curve(impl->spineEdge, impl->tFirst, impl->tLast);
+        if (impl->curve.IsNull())
+            throw std::runtime_error("sweep_sections: could not extract curve from spine edge");
+    } catch (const Standard_Failure& e) {
+        throw std::runtime_error(std::string("sweep_sections path setup failed: ") +
+                                 e.GetMessageString());
+    } catch (const std::exception&) {
+        throw;
+    } catch (...) {
+        throw std::runtime_error("unknown C++ exception in PipeShellBuilder constructor");
+    }
 }
 
 PipeShellBuilder::~PipeShellBuilder() = default;
@@ -1154,16 +1191,27 @@ std::unique_ptr<PipeShellBuilder> pipe_shell_new(const OcctShape& path) {
 
 void pipe_shell_add(PipeShellBuilder& b, const OcctShape& profile) {
     // Accumulate sections in order; they are placed in pipe_shell_build().
-    const TopoDS_Shape& s = profile.get();
-    if (s.ShapeType() == TopAbs_FACE) {
-        // MakePipeShell works with wires; extract the outer boundary wire here.
-        b.impl->sections.push_back(BRepTools::OuterWire(TopoDS::Face(s)));
-    } else if (s.ShapeType() == TopAbs_WIRE) {
-        b.impl->sections.push_back(s);
-    } else if (s.ShapeType() == TopAbs_VERTEX) {
-        b.impl->sections.push_back(s);
-    } else {
-        throw std::runtime_error("sweep_sections: each profile must be a Face, Wire, or Vertex");
+    // Guarded: BRepTools::OuterWire may raise Standard_Failure, which does not
+    // derive std::exception and would otherwise abort at the cxx bridge boundary.
+    try {
+        const TopoDS_Shape& s = profile.get();
+        if (s.ShapeType() == TopAbs_FACE) {
+            // MakePipeShell works with wires; extract the outer boundary wire here.
+            b.impl->sections.push_back(BRepTools::OuterWire(TopoDS::Face(s)));
+        } else if (s.ShapeType() == TopAbs_WIRE) {
+            b.impl->sections.push_back(s);
+        } else if (s.ShapeType() == TopAbs_VERTEX) {
+            b.impl->sections.push_back(s);
+        } else {
+            throw std::runtime_error(
+                "sweep_sections: each profile must be a Face, Wire, or Vertex");
+        }
+    } catch (const Standard_Failure& e) {
+        throw std::runtime_error(std::string("pipe_shell_add failed: ") + e.GetMessageString());
+    } catch (const std::exception&) {
+        throw;
+    } catch (...) {
+        throw std::runtime_error("unknown C++ exception in pipe_shell_add");
     }
 }
 
@@ -3220,8 +3268,8 @@ static std::string format_tolerance(double plus, double minus) {
         return std::string("\xC2\xB1") + format_measurement(plus);
     }
 
-    std::string text = std::string("+") + format_measurement(plus) + "/-" +
-                       format_measurement(minus);
+    std::string text =
+        std::string("+") + format_measurement(plus) + "/-" + format_measurement(minus);
     return text;
 }
 
@@ -3383,8 +3431,7 @@ static DrawingViewData build_drawing_view(const OcctShape& shape, const std::str
 }
 
 static void include_placed_bounds(double& xmin, double& xmax, double& ymin, double& ymax,
-                                  const DrawingViewData& view, double offset_x,
-                                  double offset_y) {
+                                  const DrawingViewData& view, double offset_x, double offset_y) {
     xmin = std::min(xmin, view.xmin + offset_x);
     xmax = std::max(xmax, view.xmax + offset_x);
     ymin = std::min(ymin, view.ymin + offset_y);
@@ -3398,6 +3445,45 @@ static std::pair<double, double> project_point_2d(const std::string& view, doubl
     if (view == "side")
         return {y, z};
     return {x, y};
+}
+
+// Placement geometry shared by the SVG and DXF dimension annotations:
+// extension-line extents, label midpoints, and the offset dimension lines.
+struct DimensionLayout {
+    static constexpr double gap = 8.0;          // gap between geometry and dimension line
+    static constexpr double tick = 1.5;         // slash tick half-length at line ends
+    static constexpr double label_offset = 3.5; // distance from dimension line to label
+    static constexpr double font_size = 3.0;    // annotation text height
+    double xmin, xmax, ymin, ymax;              // placed geometry bounds
+    double width, height;                       // measured extents (unplaced)
+    double hx, hy;                              // label midpoints
+    double dim_x, dim_y;                        // vertical / horizontal dimension line positions
+};
+
+static DimensionLayout compute_dimension_layout(const DrawingViewData& view, double offset_x,
+                                                double offset_y) {
+    DimensionLayout d{};
+    d.xmin = view.geom_xmin + offset_x;
+    d.xmax = view.geom_xmax + offset_x;
+    d.ymin = view.geom_ymin + offset_y;
+    d.ymax = view.geom_ymax + offset_y;
+    d.width = view.width;
+    d.height = view.height;
+    d.hx = (d.xmin + d.xmax) * 0.5;
+    d.hy = (d.ymin + d.ymax) * 0.5;
+    d.dim_y = d.ymin - DimensionLayout::gap;
+    d.dim_x = d.xmin - DimensionLayout::gap;
+    return d;
+}
+
+// Compose a dimension label ("[axis ]value[ tol]") shared by SVG and DXF output.
+static std::string compose_dim_label(const char* axis, double value, const std::string& tol) {
+    std::string label = format_measurement(value);
+    if (!tol.empty())
+        label += " " + tol;
+    if (axis)
+        label = std::string(axis) + " " + label;
+    return label;
 }
 
 static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double offset_x,
@@ -3431,10 +3517,12 @@ static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double
         if (sheet_mode) {
             f << "  <g class=\"view view-" << view.name
               << " hidden\" stroke=\"#888\" stroke-width=\"0.25\" fill=\"none\"";
-            f << " stroke-dasharray=\"2 1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n";
+            f << " stroke-dasharray=\"2 1.5\" stroke-linecap=\"round\" "
+                 "stroke-linejoin=\"round\">\n";
         } else {
             f << "  <g class=\"hidden\" stroke=\"#888\" stroke-width=\"0.25\" fill=\"none\"";
-            f << " stroke-dasharray=\"2 1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n";
+            f << " stroke-dasharray=\"2 1.5\" stroke-linecap=\"round\" "
+                 "stroke-linejoin=\"round\">\n";
         }
         for (auto& pts : view.hidden) {
             if (pts.size() < 2)
@@ -3451,34 +3539,23 @@ static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double
               << " center-marks\" stroke=\"#6b7280\" stroke-width=\"0.25\" fill=\"none\"";
             f << " stroke-linecap=\"round\">\n";
         } else {
-            f << "  <g class=\"center-marks\" stroke=\"#6b7280\" stroke-width=\"0.25\" fill=\"none\"";
+            f << "  <g class=\"center-marks\" stroke=\"#6b7280\" stroke-width=\"0.25\" "
+                 "fill=\"none\"";
             f << " stroke-linecap=\"round\">\n";
         }
         for (const auto& mark : view.marks) {
             const double x = mark.x + offset_x;
             const double y = mark.y + offset_y;
-            f << "    <line x1=\"" << (x - mark.size) << "\" y1=\"" << (-y)
-              << "\" x2=\"" << (x + mark.size) << "\" y2=\"" << (-y) << "\"/>\n";
-            f << "    <line x1=\"" << x << "\" y1=\"" << (-(y - mark.size))
-              << "\" x2=\"" << x << "\" y2=\"" << (-(y + mark.size)) << "\"/>\n";
+            f << "    <line x1=\"" << (x - mark.size) << "\" y1=\"" << (-y) << "\" x2=\""
+              << (x + mark.size) << "\" y2=\"" << (-y) << "\"/>\n";
+            f << "    <line x1=\"" << x << "\" y1=\"" << (-(y - mark.size)) << "\" x2=\"" << x
+              << "\" y2=\"" << (-(y + mark.size)) << "\"/>\n";
         }
         f << "  </g>\n";
     }
     if (dimensions) {
-        const double dim_gap = 8.0;
-        const double tick = 1.5;
-        const double label_offset = 3.5;
-        const double font_size = 3.0;
-        const double dim_xmin = view.geom_xmin + offset_x;
-        const double dim_xmax = view.geom_xmax + offset_x;
-        const double dim_ymin = view.geom_ymin + offset_y;
-        const double dim_ymax = view.geom_ymax + offset_y;
-        const double width = view.width;
-        const double height = view.height;
-        const double hx = (dim_xmin + dim_xmax) * 0.5;
-        const double hy = (dim_ymin + dim_ymax) * 0.5;
-        const double dim_y = dim_ymin - dim_gap;
-        const double dim_x = dim_xmin - dim_gap;
+        const DimensionLayout d = compute_dimension_layout(view, offset_x, offset_y);
+        const double tick = DimensionLayout::tick;
         if (sheet_mode) {
             f << "  <g class=\"view view-" << view.name
               << " dimensions\" stroke=\"#9ca3af\" stroke-width=\"0.25\" fill=\"none\"";
@@ -3486,42 +3563,32 @@ static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double
             f << "  <g class=\"dimensions\" stroke=\"#9ca3af\" stroke-width=\"0.25\" fill=\"none\"";
         }
         f << " stroke-linecap=\"round\" stroke-linejoin=\"round\" font-family=\"monospace\"";
-        f << " font-size=\"" << font_size << "\">\n";
-        f << "    <line x1=\"" << dim_xmin << "\" y1=\"" << dim_y << "\" x2=\"" << dim_xmax
-          << "\" y2=\"" << dim_y << "\"/>\n";
-        f << "    <line x1=\"" << dim_xmin << "\" y1=\"" << dim_y << "\" x2=\"" << dim_xmin
-          << "\" y2=\"" << dim_ymin << "\"/>\n";
-        f << "    <line x1=\"" << dim_xmax << "\" y1=\"" << dim_y << "\" x2=\"" << dim_xmax
-          << "\" y2=\"" << dim_ymin << "\"/>\n";
-        f << "    <line x1=\"" << (dim_xmin + tick) << "\" y1=\"" << (dim_y - tick)
-          << "\" x2=\"" << (dim_xmin - tick) << "\" y2=\"" << (dim_y + tick) << "\"/>\n";
-        f << "    <line x1=\"" << (dim_xmax + tick) << "\" y1=\"" << (dim_y - tick)
-          << "\" x2=\"" << (dim_xmax - tick) << "\" y2=\"" << (dim_y + tick) << "\"/>\n";
+        f << " font-size=\"" << DimensionLayout::font_size << "\">\n";
+        f << "    <line x1=\"" << d.xmin << "\" y1=\"" << d.dim_y << "\" x2=\"" << d.xmax
+          << "\" y2=\"" << d.dim_y << "\"/>\n";
+        f << "    <line x1=\"" << d.xmin << "\" y1=\"" << d.dim_y << "\" x2=\"" << d.xmin
+          << "\" y2=\"" << d.ymin << "\"/>\n";
+        f << "    <line x1=\"" << d.xmax << "\" y1=\"" << d.dim_y << "\" x2=\"" << d.xmax
+          << "\" y2=\"" << d.ymin << "\"/>\n";
+        f << "    <line x1=\"" << (d.xmin + tick) << "\" y1=\"" << (d.dim_y - tick) << "\" x2=\""
+          << (d.xmin - tick) << "\" y2=\"" << (d.dim_y + tick) << "\"/>\n";
+        f << "    <line x1=\"" << (d.xmax + tick) << "\" y1=\"" << (d.dim_y - tick) << "\" x2=\""
+          << (d.xmax - tick) << "\" y2=\"" << (d.dim_y + tick) << "\"/>\n";
         const bool axis_labels = sheet_mode && width_axis && height_axis;
         const std::string tol = format_tolerance(tolerance_plus, tolerance_minus);
-        f << "    <text x=\"" << hx << "\" y=\"" << (dim_y - label_offset)
-          << "\" text-anchor=\"middle\" fill=\"#6b7280\">";
-        if (axis_labels)
-            f << width_axis << " ";
-        f << format_measurement(width);
-        if (!tol.empty())
-            f << " " << tol;
-        f << "</text>\n";
-        f << "    <line x1=\"" << dim_x << "\" y1=\"" << dim_ymin << "\" x2=\"" << dim_x
-          << "\" y2=\"" << dim_ymax << "\"/>\n";
-        f << "    <line x1=\"" << (dim_x - tick) << "\" y1=\"" << (dim_ymin + tick)
-          << "\" x2=\"" << (dim_x + tick) << "\" y2=\"" << (dim_ymin - tick) << "\"/>\n";
-        f << "    <line x1=\"" << (dim_x - tick) << "\" y1=\"" << (dim_ymax + tick)
-          << "\" x2=\"" << (dim_x + tick) << "\" y2=\"" << (dim_ymax - tick) << "\"/>\n";
-        f << "    <text x=\"" << (dim_x - label_offset) << "\" y=\"" << hy
+        f << "    <text x=\"" << d.hx << "\" y=\"" << (d.dim_y - DimensionLayout::label_offset)
+          << "\" text-anchor=\"middle\" fill=\"#6b7280\">"
+          << compose_dim_label(axis_labels ? width_axis : nullptr, d.width, tol) << "</text>\n";
+        f << "    <line x1=\"" << d.dim_x << "\" y1=\"" << d.ymin << "\" x2=\"" << d.dim_x
+          << "\" y2=\"" << d.ymax << "\"/>\n";
+        f << "    <line x1=\"" << (d.dim_x - tick) << "\" y1=\"" << (d.ymin + tick) << "\" x2=\""
+          << (d.dim_x + tick) << "\" y2=\"" << (d.ymin - tick) << "\"/>\n";
+        f << "    <line x1=\"" << (d.dim_x - tick) << "\" y1=\"" << (d.ymax + tick) << "\" x2=\""
+          << (d.dim_x + tick) << "\" y2=\"" << (d.ymax - tick) << "\"/>\n";
+        f << "    <text x=\"" << (d.dim_x - DimensionLayout::label_offset) << "\" y=\"" << d.hy
           << "\" text-anchor=\"middle\" fill=\"#6b7280\" transform=\"rotate(-90 "
-          << (dim_x - label_offset) << " " << hy << ")\">";
-        if (axis_labels)
-            f << height_axis << " ";
-        f << format_measurement(height);
-        if (!tol.empty())
-            f << " " << tol;
-        f << "</text>\n";
+          << (d.dim_x - DimensionLayout::label_offset) << " " << d.hy << ")\">"
+          << compose_dim_label(axis_labels ? height_axis : nullptr, d.height, tol) << "</text>\n";
         f << "  </g>\n";
     }
     if (callouts && !view.callouts.empty()) {
@@ -3538,10 +3605,9 @@ static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double
             const double y = callout.y + offset_y;
             const double lx = callout.leader_x + offset_x;
             const double ly = callout.leader_y + offset_y;
-            f << "    <line x1=\"" << x << "\" y1=\"" << (-y) << "\" x2=\"" << lx
-              << "\" y2=\"" << (-ly) << "\"/>\n";
-            f << "    <text x=\"" << (lx + 2.0) << "\" y=\"" << (-ly)
-              << "\" fill=\"#b45309\">";
+            f << "    <line x1=\"" << x << "\" y1=\"" << (-y) << "\" x2=\"" << lx << "\" y2=\""
+              << (-ly) << "\"/>\n";
+            f << "    <text x=\"" << (lx + 2.0) << "\" y=\"" << (-ly) << "\" fill=\"#b45309\">";
             f << callout.text << "</text>\n";
         }
         f << "  </g>\n";
@@ -3602,99 +3668,49 @@ static void write_dxf_view(std::ofstream& f, const DrawingViewData& view, double
         }
     }
     if (dimensions) {
-        const double dim_gap = 8.0;
-        const double tick = 1.5;
-        const double label_offset = 3.5;
-        const double font_size = 3.0;
-        const double dim_xmin = view.geom_xmin + offset_x;
-        const double dim_xmax = view.geom_xmax + offset_x;
-        const double dim_ymin = view.geom_ymin + offset_y;
-        const double dim_ymax = view.geom_ymax + offset_y;
-        const double width = view.width;
-        const double height = view.height;
-        const double hx = (dim_xmin + dim_xmax) * 0.5;
-        const double hy = (dim_ymin + dim_ymax) * 0.5;
-        const double dim_y = dim_ymin - dim_gap;
-        const double dim_x = dim_xmin - dim_gap;
+        const DimensionLayout d = compute_dimension_layout(view, offset_x, offset_y);
+        const double tick = DimensionLayout::tick;
 
+        auto write_line = [&](double x1, double y1, double x2, double y2) {
+            f << "  0\nLINE\n";
+            f << "  8\nDIMENSION\n";
+            f << " 10\n" << x1 << "\n";
+            f << " 20\n" << y1 << "\n";
+            f << " 30\n0.0\n";
+            f << " 11\n" << x2 << "\n";
+            f << " 21\n" << y2 << "\n";
+            f << " 31\n0.0\n";
+        };
         auto write_text = [&](double x, double y, const std::string& text, double rotation) {
             f << "  0\nTEXT\n";
             f << "  8\nDIMENSION\n";
             f << " 10\n" << x << "\n";
             f << " 20\n" << y << "\n";
             f << " 30\n0.0\n";
-            f << " 40\n" << font_size << "\n";
+            f << " 40\n" << DimensionLayout::font_size << "\n";
             f << "  1\n" << text << "\n";
             if (rotation != 0.0)
                 f << " 50\n" << rotation << "\n";
         };
 
-        f << "  0\nLINE\n";
-        f << "  8\nDIMENSION\n";
-        f << " 10\n" << dim_xmin << "\n";
-        f << " 20\n" << dim_y << "\n";
-        f << " 30\n0.0\n";
-        f << " 11\n" << dim_xmax << "\n";
-        f << " 21\n" << dim_y << "\n";
-        f << " 31\n0.0\n";
-        f << "  0\nLINE\n";
-        f << "  8\nDIMENSION\n";
-        f << " 10\n" << dim_x << "\n";
-        f << " 20\n" << dim_ymin << "\n";
-        f << " 30\n0.0\n";
-        f << " 11\n" << dim_x << "\n";
-        f << " 21\n" << dim_ymax << "\n";
-        f << " 31\n0.0\n";
-
-        f << "  0\nLINE\n";
-        f << "  8\nDIMENSION\n";
-        f << " 10\n" << (dim_xmin + tick) << "\n";
-        f << " 20\n" << (dim_y - tick) << "\n";
-        f << " 30\n0.0\n";
-        f << " 11\n" << (dim_xmin - tick) << "\n";
-        f << " 21\n" << (dim_y + tick) << "\n";
-        f << " 31\n0.0\n";
-        f << "  0\nLINE\n";
-        f << "  8\nDIMENSION\n";
-        f << " 10\n" << (dim_xmax + tick) << "\n";
-        f << " 20\n" << (dim_y - tick) << "\n";
-        f << " 30\n0.0\n";
-        f << " 11\n" << (dim_xmax - tick) << "\n";
-        f << " 21\n" << (dim_y + tick) << "\n";
-        f << " 31\n0.0\n";
+        // Dimension lines: horizontal below the geometry, vertical to its left.
+        write_line(d.xmin, d.dim_y, d.xmax, d.dim_y);
+        write_line(d.dim_x, d.ymin, d.dim_x, d.ymax);
+        // Slash ticks at the horizontal dimension line ends.
+        write_line(d.xmin + tick, d.dim_y - tick, d.xmin - tick, d.dim_y + tick);
+        write_line(d.xmax + tick, d.dim_y - tick, d.xmax - tick, d.dim_y + tick);
 
         const bool axis_labels = sheet_mode && width_axis && height_axis;
         const std::string tol = format_tolerance(tolerance_plus, tolerance_minus);
-        std::string width_label = format_measurement(width);
-        if (!tol.empty())
-            width_label += std::string(" ") + tol;
-        if (axis_labels)
-            width_label = std::string(width_axis) + " " + width_label;
-        write_text(hx, dim_y - label_offset, width_label, 0.0);
+        write_text(d.hx, d.dim_y - DimensionLayout::label_offset,
+                   compose_dim_label(axis_labels ? width_axis : nullptr, d.width, tol), 0.0);
 
-        f << "  0\nLINE\n";
-        f << "  8\nDIMENSION\n";
-        f << " 10\n" << (dim_x - tick) << "\n";
-        f << " 20\n" << (dim_ymin + tick) << "\n";
-        f << " 30\n0.0\n";
-        f << " 11\n" << (dim_x + tick) << "\n";
-        f << " 21\n" << (dim_ymin - tick) << "\n";
-        f << " 31\n0.0\n";
-        f << "  0\nLINE\n";
-        f << "  8\nDIMENSION\n";
-        f << " 10\n" << (dim_x - tick) << "\n";
-        f << " 20\n" << (dim_ymax + tick) << "\n";
-        f << " 30\n0.0\n";
-        f << " 11\n" << (dim_x + tick) << "\n";
-        f << " 21\n" << (dim_ymax - tick) << "\n";
-        f << " 31\n0.0\n";
+        // Slash ticks at the vertical dimension line ends.
+        write_line(d.dim_x - tick, d.ymin + tick, d.dim_x + tick, d.ymin - tick);
+        write_line(d.dim_x - tick, d.ymax + tick, d.dim_x + tick, d.ymax - tick);
 
-        std::string height_label = format_measurement(height);
-        if (!tol.empty())
-            height_label += std::string(" ") + tol;
-        if (axis_labels)
-            height_label = std::string(height_axis) + " " + height_label;
-        write_text(dim_x - label_offset, hy, height_label, -90.0);
+        write_text(d.dim_x - DimensionLayout::label_offset, d.hy,
+                   compose_dim_label(axis_labels ? height_axis : nullptr, d.height, tol), -90.0);
     }
     if (callouts && !view.callouts.empty()) {
         auto write_text = [&](double x, double y, const std::string& text) {
@@ -3745,8 +3761,8 @@ static void write_svg_title_block(std::ofstream& f, const DrawingCanvasBounds& c
       << "\" y2=\"" << (-(y0 + 12.0)) << "\"/>\n";
     f << "    <text x=\"" << (x0 + 2.0) << "\" y=\"" << (-(top_y - 1.0))
       << "\" fill=\"#111827\">rrcad</text>\n";
-    f << "    <text x=\"" << (x0 + 2.0) << "\" y=\"" << (-(mid_y - 1.0))
-      << "\" fill=\"#111827\">" << (sheet_mode ? sheet_name : view_name) << "</text>\n";
+    f << "    <text x=\"" << (x0 + 2.0) << "\" y=\"" << (-(mid_y - 1.0)) << "\" fill=\"#111827\">"
+      << (sheet_mode ? sheet_name : view_name) << "</text>\n";
     f << "    <text x=\"" << (x0 + 2.0) << "\" y=\"" << (-(y0 + 1.0))
       << "\" fill=\"#111827\">scale 1:" << (1.0 / scale) << "</text>\n";
     std::string tol = format_tolerance(tolerance_plus, tolerance_minus);
@@ -3761,8 +3777,7 @@ static void write_svg_gdt_frame(std::ofstream& f, const DrawingCanvasBounds& can
                                 const std::string& datum, const std::string& feature_control,
                                 bool datum_anchor_valid, double datum_anchor_x,
                                 double datum_anchor_y, bool feature_control_anchor_valid,
-                                double feature_control_anchor_x,
-                                double feature_control_anchor_y) {
+                                double feature_control_anchor_x, double feature_control_anchor_y) {
     if (datum.empty() && feature_control.empty())
         return;
 
@@ -3786,8 +3801,8 @@ static void write_svg_gdt_frame(std::ofstream& f, const DrawingCanvasBounds& can
     f << "    <text x=\"" << (x0 + 2.0) << "\" y=\"" << (-(y0 + (has_both ? 1.0 : 2.0)))
       << "\" fill=\"#111827\">" << datum_text << "</text>\n";
     if (has_both) {
-        f << "    <text x=\"" << (x0 + 2.0) << "\" y=\"" << (-(y0 + 7.0))
-          << "\" fill=\"#111827\">" << fc_text << "</text>\n";
+        f << "    <text x=\"" << (x0 + 2.0) << "\" y=\"" << (-(y0 + 7.0)) << "\" fill=\"#111827\">"
+          << fc_text << "</text>\n";
     }
     if (datum_anchor_valid) {
         const double leader_x = x0 + block_w;
@@ -3858,8 +3873,7 @@ static void write_dxf_gdt_frame(std::ofstream& f, const DrawingCanvasBounds& can
                                 const std::string& datum, const std::string& feature_control,
                                 bool datum_anchor_valid, double datum_anchor_x,
                                 double datum_anchor_y, bool feature_control_anchor_valid,
-                                double feature_control_anchor_x,
-                                double feature_control_anchor_y) {
+                                double feature_control_anchor_x, double feature_control_anchor_y) {
     if (datum.empty() && feature_control.empty())
         return;
 
@@ -3896,8 +3910,8 @@ static void write_dxf_gdt_frame(std::ofstream& f, const DrawingCanvasBounds& can
     line(x0 + block_w, y0, x0 + block_w, y0 + block_h);
     if (has_both)
         line(x0, line_y, x0 + block_w, line_y);
-    text(x0 + 2.0, y0 + (has_both ? 1.0 : 2.0), datum.empty() ? feature_control
-                                                               : std::string("DATUM ") + datum);
+    text(x0 + 2.0, y0 + (has_both ? 1.0 : 2.0),
+         datum.empty() ? feature_control : std::string("DATUM ") + datum);
     if (has_both)
         text(x0 + 2.0, y0 + 7.0, feature_control);
     if (datum_anchor_valid) {
@@ -3964,85 +3978,125 @@ static HlrProjection hlr_project(const OcctShape& shape, const std::string& view
     return projection;
 }
 
+// Parsed and validated arguments shared by export_svg and export_dxf.
+struct DrawingExportSetup {
+    std::string path;
+    std::string view;
+    std::string datum;
+    std::string feature_control;
+    bool sheet_mode = false;
+    // Datum anchor projected into 2-D view space (unscaled).
+    std::pair<double, double> anchor_2d{0.0, 0.0};
+    // Feature-control anchor already scaled into canvas coordinates.
+    double feature_anchor_canvas_x = 0.0;
+    double feature_anchor_canvas_y = 0.0;
+};
+
+// Common front matter for export_svg / export_dxf: copy the rust::Str inputs
+// into owned strings, validate the scale, and project both GD&T anchors into
+// the drawing plane of the requested view.
+static DrawingExportSetup prepare_drawing_export(const char* fn_name, rust::Str path,
+                                                 rust::Str view, double scale, rust::Str datum,
+                                                 rust::Str feature_control, double datum_anchor_x,
+                                                 double datum_anchor_y, double datum_anchor_z,
+                                                 double feature_control_anchor_x,
+                                                 double feature_control_anchor_y,
+                                                 double feature_control_anchor_z) {
+    DrawingExportSetup s;
+    s.path = std::string(path.data(), path.size());
+    s.view = std::string(view.data(), view.size());
+    s.datum = std::string(datum.data(), datum.size());
+    s.feature_control = std::string(feature_control.data(), feature_control.size());
+    if (!(scale > 0.0) || !std::isfinite(scale))
+        throw std::runtime_error(std::string(fn_name) + ": scale must be positive and finite");
+    s.sheet_mode = (s.view == "sheet");
+    // In sheet mode the anchors are drawn relative to the top view.
+    const std::string anchor_view = s.sheet_mode ? "top" : s.view;
+    s.anchor_2d = project_point_2d(anchor_view, datum_anchor_x, datum_anchor_y, datum_anchor_z);
+    const auto feature_anchor_2d = project_point_2d(
+        anchor_view, feature_control_anchor_x, feature_control_anchor_y, feature_control_anchor_z);
+    s.feature_anchor_canvas_x = feature_anchor_2d.first * scale;
+    s.feature_anchor_canvas_y = feature_anchor_2d.second * scale;
+    return s;
+}
+
+// Placement offsets and overall bounds for the three-view "sheet" layout.
+struct SheetLayout {
+    double top_dx = 0.0;
+    double top_dy = 0.0;
+    double front_dx = 0.0;
+    double front_dy = 0.0;
+    double side_dx = 0.0;
+    double side_dy = 0.0;
+    DrawingCanvasBounds canvas;
+};
+
+// `top_dy` is supplied by the caller: the SVG and DXF exporters historically
+// compute the top-view vertical offset differently, so it is not unified here.
+static SheetLayout compute_sheet_layout(const DrawingViewData& top_view,
+                                        const DrawingViewData& front_view,
+                                        const DrawingViewData& side_view, double sheet_gap,
+                                        double top_dy) {
+    SheetLayout l;
+    // Centre the top view horizontally over the front view.
+    l.top_dx = (front_view.geom_xmin + front_view.geom_xmax) * 0.5 -
+               (top_view.geom_xmin + top_view.geom_xmax) * 0.5;
+    l.top_dy = top_dy;
+    // Side view sits to the right of the front view, vertically centred on it.
+    l.side_dx = front_view.geom_xmax - side_view.geom_xmin + sheet_gap;
+    l.side_dy = (front_view.geom_ymin + front_view.geom_ymax) * 0.5 -
+                (side_view.geom_ymin + side_view.geom_ymax) * 0.5;
+    double xmin = 1e30, xmax = -1e30, ymin = 1e30, ymax = -1e30;
+    include_placed_bounds(xmin, xmax, ymin, ymax, top_view, l.top_dx, l.top_dy);
+    include_placed_bounds(xmin, xmax, ymin, ymax, front_view, l.front_dx, l.front_dy);
+    include_placed_bounds(xmin, xmax, ymin, ymax, side_view, l.side_dx, l.side_dy);
+    l.canvas = DrawingCanvasBounds{xmin, xmax, ymin, ymax};
+    return l;
+}
+
 // ---------------------------------------------------------------------------
 // SVG export
 // ---------------------------------------------------------------------------
-void export_svg(const OcctShape& shape,
-                rust::Str path,
-                rust::Str view,
-                double scale,
-                bool hidden,
-                bool center_marks,
-                bool dimensions,
-                bool title_block,
-                bool callouts,
-                rust::Str datum,
-                bool datum_anchor_valid,
-                double datum_anchor_x,
-                double datum_anchor_y,
-                double datum_anchor_z,
-                rust::Str feature_control,
-                bool feature_control_anchor_valid,
-                double feature_control_anchor_x,
-                double feature_control_anchor_y,
-                double feature_control_anchor_z,
-                double tolerance_plus,
-                double tolerance_minus) {
+void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double scale, bool hidden,
+                bool center_marks, bool dimensions, bool title_block, bool callouts,
+                rust::Str datum, bool datum_anchor_valid, double datum_anchor_x,
+                double datum_anchor_y, double datum_anchor_z, rust::Str feature_control,
+                bool feature_control_anchor_valid, double feature_control_anchor_x,
+                double feature_control_anchor_y, double feature_control_anchor_z,
+                double tolerance_plus, double tolerance_minus) {
     try {
-        std::string path_str(path.data(), path.size());
-        std::string view_str(view.data(), view.size());
-        std::string datum_str(datum.data(), datum.size());
-        std::string feature_control_str(feature_control.data(), feature_control.size());
-        if (!(scale > 0.0) || !std::isfinite(scale)) {
-            throw std::runtime_error("export_svg: scale must be positive and finite");
-        }
-        const std::string anchor_view = (view_str == "sheet") ? "top" : view_str;
-        const std::pair<double, double> anchor_2d = project_point_2d(
-            anchor_view, datum_anchor_x, datum_anchor_y, datum_anchor_z);
-        const std::pair<double, double> feature_anchor_2d = project_point_2d(
-            anchor_view, feature_control_anchor_x, feature_control_anchor_y,
+        const DrawingExportSetup setup = prepare_drawing_export(
+            "export_svg", path, view, scale, datum, feature_control, datum_anchor_x, datum_anchor_y,
+            datum_anchor_z, feature_control_anchor_x, feature_control_anchor_y,
             feature_control_anchor_z);
         bool has_anchor = datum_anchor_valid;
         double anchor_canvas_x = 0.0;
         double anchor_canvas_y = 0.0;
-        double feature_anchor_canvas_x = feature_anchor_2d.first * scale;
-        double feature_anchor_canvas_y = feature_anchor_2d.second * scale;
 
-        const bool sheet_mode = (view_str == "sheet");
         const double margin = 5.0;
         const double sheet_gap = 16.0;
 
-        if (sheet_mode) {
-            auto top_view = build_drawing_view(shape, "top", scale, hidden, center_marks,
-                                               dimensions, callouts);
+        if (setup.sheet_mode) {
+            auto top_view =
+                build_drawing_view(shape, "top", scale, hidden, center_marks, dimensions, callouts);
             auto front_view = build_drawing_view(shape, "front", scale, hidden, center_marks,
                                                  dimensions, callouts);
             auto side_view = build_drawing_view(shape, "side", scale, hidden, center_marks,
                                                 dimensions, callouts);
 
-            const double top_dx = (front_view.geom_xmin + front_view.geom_xmax) * 0.5 -
-                                  (top_view.geom_xmin + top_view.geom_xmax) * 0.5;
-            const double top_dy = front_view.geom_ymax - top_view.geom_ymin + sheet_gap;
-            const double front_dx = 0.0;
-            const double front_dy = 0.0;
-            const double side_dx = front_view.geom_xmax - side_view.geom_xmin + sheet_gap;
-            const double side_dy = (front_view.geom_ymin + front_view.geom_ymax) * 0.5 -
-                                   (side_view.geom_ymin + side_view.geom_ymax) * 0.5;
+            const SheetLayout layout =
+                compute_sheet_layout(top_view, front_view, side_view, sheet_gap,
+                                     front_view.geom_ymax - top_view.geom_ymin + sheet_gap);
+            const DrawingCanvasBounds& canvas = layout.canvas;
 
-            double xmin = 1e30, xmax = -1e30, ymin = 1e30, ymax = -1e30;
-            include_placed_bounds(xmin, xmax, ymin, ymax, top_view, top_dx, top_dy);
-            include_placed_bounds(xmin, xmax, ymin, ymax, front_view, front_dx, front_dy);
-            include_placed_bounds(xmin, xmax, ymin, ymax, side_view, side_dx, side_dy);
+            const double w = (canvas.xmax - canvas.xmin) + 2.0 * margin;
+            const double h = (canvas.ymax - canvas.ymin) + 2.0 * margin;
+            const double vb_x = canvas.xmin - margin;
+            const double vb_y = -(canvas.ymax + margin);
 
-            const double w = (xmax - xmin) + 2.0 * margin;
-            const double h = (ymax - ymin) + 2.0 * margin;
-            const double vb_x = xmin - margin;
-            const double vb_y = -(ymax + margin);
-            const DrawingCanvasBounds canvas{xmin, xmax, ymin, ymax};
-
-            std::ofstream f(path_str);
+            std::ofstream f(setup.path);
             if (!f.is_open())
-                throw std::runtime_error("export_svg: cannot open file: " + path_str);
+                throw std::runtime_error("export_svg: cannot open file: " + setup.path);
 
             f << std::fixed << std::setprecision(4);
             f << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
@@ -4050,32 +4104,31 @@ void export_svg(const OcctShape& shape,
             f << " width=\"" << w << "\" height=\"" << h << "\"";
             f << " viewBox=\"" << vb_x << " " << vb_y << " " << w << " " << h << "\">\n";
             f << "  <!-- Generated by rrcad — sheet view, scale: " << scale << " -->\n";
-            write_svg_view(f, top_view, top_dx, top_dy, hidden, center_marks, dimensions,
-                           callouts, true, "X", "Y", tolerance_plus, tolerance_minus);
-            write_svg_view(f, front_view, front_dx, front_dy, hidden, center_marks, dimensions,
-                           callouts, true, "X", "Z", tolerance_plus, tolerance_minus);
-            write_svg_view(f, side_view, side_dx, side_dy, hidden, center_marks, dimensions,
-                           callouts, true, "Y", "Z", tolerance_plus, tolerance_minus);
+            write_svg_view(f, top_view, layout.top_dx, layout.top_dy, hidden, center_marks,
+                           dimensions, callouts, true, "X", "Y", tolerance_plus, tolerance_minus);
+            write_svg_view(f, front_view, layout.front_dx, layout.front_dy, hidden, center_marks,
+                           dimensions, callouts, true, "X", "Z", tolerance_plus, tolerance_minus);
+            write_svg_view(f, side_view, layout.side_dx, layout.side_dy, hidden, center_marks,
+                           dimensions, callouts, true, "Y", "Z", tolerance_plus, tolerance_minus);
             if (has_anchor) {
-                anchor_canvas_x = anchor_2d.first * scale + top_dx;
-                anchor_canvas_y = anchor_2d.second * scale + top_dy;
+                anchor_canvas_x = setup.anchor_2d.first * scale + layout.top_dx;
+                anchor_canvas_y = setup.anchor_2d.second * scale + layout.top_dy;
             }
-            write_svg_gdt_frame(f, canvas, datum_str, feature_control_str, has_anchor,
+            write_svg_gdt_frame(f, canvas, setup.datum, setup.feature_control, has_anchor,
                                 anchor_canvas_x, anchor_canvas_y, feature_control_anchor_valid,
-                                feature_anchor_canvas_x + top_dx,
-                                feature_anchor_canvas_y + top_dy);
+                                setup.feature_anchor_canvas_x + layout.top_dx,
+                                setup.feature_anchor_canvas_y + layout.top_dy);
             if (title_block)
-                write_svg_title_block(f, canvas, "sheet", view_str, true, scale, tolerance_plus,
+                write_svg_title_block(f, canvas, "sheet", setup.view, true, scale, tolerance_plus,
                                       tolerance_minus);
             f << "</svg>\n";
             if (!f.good())
-                throw std::runtime_error("export_svg: write error on file: " + path_str);
+                throw std::runtime_error("export_svg: write error on file: " + setup.path);
             return;
         }
 
-        auto single_view =
-            build_drawing_view(shape, view_str, scale, hidden, center_marks, dimensions,
-                               callouts);
+        auto single_view = build_drawing_view(shape, setup.view, scale, hidden, center_marks,
+                                              dimensions, callouts);
         const double w = (single_view.xmax - single_view.xmin) + 2.0 * margin;
         const double h = (single_view.ymax - single_view.ymin) + 2.0 * margin;
         const double vb_x = single_view.xmin - margin;
@@ -4083,36 +4136,37 @@ void export_svg(const OcctShape& shape,
         const DrawingCanvasBounds canvas{single_view.xmin, single_view.xmax, single_view.ymin,
                                          single_view.ymax};
 
-        std::ofstream f(path_str);
+        std::ofstream f(setup.path);
         if (!f.is_open())
-            throw std::runtime_error("export_svg: cannot open file: " + path_str);
+            throw std::runtime_error("export_svg: cannot open file: " + setup.path);
 
         f << std::fixed << std::setprecision(4);
         f << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
         f << "<svg xmlns=\"http://www.w3.org/2000/svg\"";
         f << " width=\"" << w << "\" height=\"" << h << "\"";
         f << " viewBox=\"" << vb_x << " " << vb_y << " " << w << " " << h << "\">\n";
-        f << "  <!-- Generated by rrcad — view: " << view_str << ", scale: " << scale
-          << " -->\n";
+        f << "  <!-- Generated by rrcad — view: " << setup.view << ", scale: " << scale << " -->\n";
         if (has_anchor) {
-            anchor_canvas_x = anchor_2d.first * scale;
-            anchor_canvas_y = anchor_2d.second * scale;
+            anchor_canvas_x = setup.anchor_2d.first * scale;
+            anchor_canvas_y = setup.anchor_2d.second * scale;
         }
-        write_svg_view(f, single_view, 0.0, 0.0, hidden, center_marks, dimensions, callouts,
-                       false, nullptr, nullptr, tolerance_plus, tolerance_minus);
-        write_svg_gdt_frame(f, canvas, datum_str, feature_control_str, has_anchor,
+        write_svg_view(f, single_view, 0.0, 0.0, hidden, center_marks, dimensions, callouts, false,
+                       nullptr, nullptr, tolerance_plus, tolerance_minus);
+        write_svg_gdt_frame(f, canvas, setup.datum, setup.feature_control, has_anchor,
                             anchor_canvas_x, anchor_canvas_y, feature_control_anchor_valid,
-                            feature_anchor_canvas_x, feature_anchor_canvas_y);
+                            setup.feature_anchor_canvas_x, setup.feature_anchor_canvas_y);
         if (title_block)
-            write_svg_title_block(f, canvas, "sheet", view_str, false, scale, tolerance_plus,
+            write_svg_title_block(f, canvas, "sheet", setup.view, false, scale, tolerance_plus,
                                   tolerance_minus);
         f << "</svg>\n";
         if (!f.good())
-            throw std::runtime_error("export_svg: write error on file: " + path_str);
+            throw std::runtime_error("export_svg: write error on file: " + setup.path);
     } catch (const Standard_Failure& e) {
         throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
     } catch (const std::exception&) {
         throw;
+    } catch (...) {
+        throw std::runtime_error("unknown C++ exception in export_svg");
     }
 }
 
@@ -4122,78 +4176,40 @@ void export_svg(const OcctShape& shape,
 // Each polyline segment is written as a LINE entity.  DXF uses Y-up
 // coordinates (standard math / CAD convention) so no Y-flip is applied.
 // ---------------------------------------------------------------------------
-void export_dxf(const OcctShape& shape,
-                rust::Str path,
-                rust::Str view,
-                double scale,
-                bool hidden,
-                bool center_marks,
-                bool dimensions,
-                bool title_block,
-                bool callouts,
-                rust::Str datum,
-                bool datum_anchor_valid,
-                double datum_anchor_x,
-                double datum_anchor_y,
-                double datum_anchor_z,
-                rust::Str feature_control,
-                bool feature_control_anchor_valid,
-                double feature_control_anchor_x,
-                double feature_control_anchor_y,
-                double feature_control_anchor_z,
-                double tolerance_plus,
-                double tolerance_minus) {
+void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double scale, bool hidden,
+                bool center_marks, bool dimensions, bool title_block, bool callouts,
+                rust::Str datum, bool datum_anchor_valid, double datum_anchor_x,
+                double datum_anchor_y, double datum_anchor_z, rust::Str feature_control,
+                bool feature_control_anchor_valid, double feature_control_anchor_x,
+                double feature_control_anchor_y, double feature_control_anchor_z,
+                double tolerance_plus, double tolerance_minus) {
     try {
-        std::string path_str(path.data(), path.size());
-        std::string view_str(view.data(), view.size());
-        std::string datum_str(datum.data(), datum.size());
-        std::string feature_control_str(feature_control.data(), feature_control.size());
-        if (!(scale > 0.0) || !std::isfinite(scale)) {
-            throw std::runtime_error("export_dxf: scale must be positive and finite");
-        }
-        const std::string anchor_view = (view_str == "sheet") ? "top" : view_str;
-        const std::pair<double, double> anchor_2d = project_point_2d(
-            anchor_view, datum_anchor_x, datum_anchor_y, datum_anchor_z);
-        const std::pair<double, double> feature_anchor_2d = project_point_2d(
-            anchor_view, feature_control_anchor_x, feature_control_anchor_y,
+        const DrawingExportSetup setup = prepare_drawing_export(
+            "export_dxf", path, view, scale, datum, feature_control, datum_anchor_x, datum_anchor_y,
+            datum_anchor_z, feature_control_anchor_x, feature_control_anchor_y,
             feature_control_anchor_z);
         bool has_anchor = datum_anchor_valid;
         double anchor_canvas_x = 0.0;
         double anchor_canvas_y = 0.0;
-        double feature_anchor_canvas_x = feature_anchor_2d.first * scale;
-        double feature_anchor_canvas_y = feature_anchor_2d.second * scale;
 
-        if (view_str == "sheet") {
+        if (setup.sheet_mode) {
             const double sheet_gap = 16.0;
 
             auto top_view =
-                build_drawing_view(shape, "top", scale, hidden, center_marks, dimensions,
-                                   callouts);
-            auto front_view =
-                build_drawing_view(shape, "front", scale, hidden, center_marks, dimensions,
-                                   callouts);
-            auto side_view =
-                build_drawing_view(shape, "side", scale, hidden, center_marks, dimensions,
-                                   callouts);
+                build_drawing_view(shape, "top", scale, hidden, center_marks, dimensions, callouts);
+            auto front_view = build_drawing_view(shape, "front", scale, hidden, center_marks,
+                                                 dimensions, callouts);
+            auto side_view = build_drawing_view(shape, "side", scale, hidden, center_marks,
+                                                dimensions, callouts);
 
-            const double top_dx = (front_view.geom_xmin + front_view.geom_xmax) * 0.5 -
-                                  (top_view.geom_xmin + top_view.geom_xmax) * 0.5;
-            const double top_dy = front_view.geom_ymax - front_view.geom_ymin + sheet_gap;
-            const double front_dx = 0.0;
-            const double front_dy = 0.0;
-            const double side_dx = front_view.geom_xmax - side_view.geom_xmin + sheet_gap;
-            const double side_dy = (front_view.geom_ymin + front_view.geom_ymax) * 0.5 -
-                                   (side_view.geom_ymin + side_view.geom_ymax) * 0.5;
+            const SheetLayout layout =
+                compute_sheet_layout(top_view, front_view, side_view, sheet_gap,
+                                     front_view.geom_ymax - front_view.geom_ymin + sheet_gap);
+            const DrawingCanvasBounds& canvas = layout.canvas;
 
-            double xmin = 1e30, xmax = -1e30, ymin = 1e30, ymax = -1e30;
-            include_placed_bounds(xmin, xmax, ymin, ymax, top_view, top_dx, top_dy);
-            include_placed_bounds(xmin, xmax, ymin, ymax, front_view, front_dx, front_dy);
-            include_placed_bounds(xmin, xmax, ymin, ymax, side_view, side_dx, side_dy);
-            const DrawingCanvasBounds canvas{xmin, xmax, ymin, ymax};
-
-            std::ofstream f(path_str);
+            std::ofstream f(setup.path);
             if (!f.is_open())
-                throw std::runtime_error("export_dxf: cannot open file: " + path_str);
+                throw std::runtime_error("export_dxf: cannot open file: " + setup.path);
 
             f << std::fixed << std::setprecision(6);
             f << "  0\nSECTION\n  2\nHEADER\n";
@@ -4201,39 +4217,38 @@ void export_dxf(const OcctShape& shape,
             f << "  0\nENDSEC\n";
             f << "  0\nSECTION\n  2\nENTITIES\n";
 
-            write_dxf_view(f, top_view, top_dx, top_dy, hidden, center_marks, dimensions,
-                           callouts, true, "X", "Y", tolerance_plus, tolerance_minus);
-            write_dxf_view(f, front_view, front_dx, front_dy, hidden, center_marks, dimensions,
-                           callouts, true, "X", "Z", tolerance_plus, tolerance_minus);
-            write_dxf_view(f, side_view, side_dx, side_dy, hidden, center_marks, dimensions,
-                           callouts, true, "Y", "Z", tolerance_plus, tolerance_minus);
+            write_dxf_view(f, top_view, layout.top_dx, layout.top_dy, hidden, center_marks,
+                           dimensions, callouts, true, "X", "Y", tolerance_plus, tolerance_minus);
+            write_dxf_view(f, front_view, layout.front_dx, layout.front_dy, hidden, center_marks,
+                           dimensions, callouts, true, "X", "Z", tolerance_plus, tolerance_minus);
+            write_dxf_view(f, side_view, layout.side_dx, layout.side_dy, hidden, center_marks,
+                           dimensions, callouts, true, "Y", "Z", tolerance_plus, tolerance_minus);
             if (has_anchor) {
-                anchor_canvas_x = anchor_2d.first * scale + top_dx;
-                anchor_canvas_y = anchor_2d.second * scale + top_dy;
+                anchor_canvas_x = setup.anchor_2d.first * scale + layout.top_dx;
+                anchor_canvas_y = setup.anchor_2d.second * scale + layout.top_dy;
             }
-            write_dxf_gdt_frame(f, canvas, datum_str, feature_control_str, has_anchor,
+            write_dxf_gdt_frame(f, canvas, setup.datum, setup.feature_control, has_anchor,
                                 anchor_canvas_x, anchor_canvas_y, feature_control_anchor_valid,
-                                feature_anchor_canvas_x + top_dx,
-                                feature_anchor_canvas_y + top_dy);
+                                setup.feature_anchor_canvas_x + layout.top_dx,
+                                setup.feature_anchor_canvas_y + layout.top_dy);
             if (title_block)
-                write_dxf_title_block(f, canvas, "sheet", view_str, true, scale, tolerance_plus,
+                write_dxf_title_block(f, canvas, "sheet", setup.view, true, scale, tolerance_plus,
                                       tolerance_minus);
 
             f << "  0\nENDSEC\n  0\nEOF\n";
             if (!f.good())
-                throw std::runtime_error("export_dxf: write error on file: " + path_str);
+                throw std::runtime_error("export_dxf: write error on file: " + setup.path);
             return;
         }
 
-        auto single_view =
-            build_drawing_view(shape, view_str, scale, hidden, center_marks, dimensions,
-                               callouts);
+        auto single_view = build_drawing_view(shape, setup.view, scale, hidden, center_marks,
+                                              dimensions, callouts);
         const DrawingCanvasBounds canvas{single_view.geom_xmin, single_view.geom_xmax,
                                          single_view.geom_ymin, single_view.geom_ymax};
 
-        std::ofstream f(path_str);
+        std::ofstream f(setup.path);
         if (!f.is_open())
-            throw std::runtime_error("export_dxf: cannot open file: " + path_str);
+            throw std::runtime_error("export_dxf: cannot open file: " + setup.path);
 
         f << std::fixed << std::setprecision(6);
 
@@ -4245,26 +4260,28 @@ void export_dxf(const OcctShape& shape,
         // ENTITIES section: one LINE entity per polyline segment.
         f << "  0\nSECTION\n  2\nENTITIES\n";
 
-        write_dxf_view(f, single_view, 0.0, 0.0, hidden, center_marks, dimensions, callouts,
-                       false, nullptr, nullptr, tolerance_plus, tolerance_minus);
+        write_dxf_view(f, single_view, 0.0, 0.0, hidden, center_marks, dimensions, callouts, false,
+                       nullptr, nullptr, tolerance_plus, tolerance_minus);
         if (has_anchor) {
-            anchor_canvas_x = anchor_2d.first * scale;
-            anchor_canvas_y = anchor_2d.second * scale;
+            anchor_canvas_x = setup.anchor_2d.first * scale;
+            anchor_canvas_y = setup.anchor_2d.second * scale;
         }
-        write_dxf_gdt_frame(f, canvas, datum_str, feature_control_str, has_anchor,
+        write_dxf_gdt_frame(f, canvas, setup.datum, setup.feature_control, has_anchor,
                             anchor_canvas_x, anchor_canvas_y, feature_control_anchor_valid,
-                            feature_anchor_canvas_x, feature_anchor_canvas_y);
+                            setup.feature_anchor_canvas_x, setup.feature_anchor_canvas_y);
         if (title_block)
-            write_dxf_title_block(f, canvas, "sheet", view_str, false, scale, tolerance_plus,
+            write_dxf_title_block(f, canvas, "sheet", setup.view, false, scale, tolerance_plus,
                                   tolerance_minus);
 
         f << "  0\nENDSEC\n  0\nEOF\n";
         if (!f.good())
-            throw std::runtime_error("export_dxf: write error on file: " + path_str);
+            throw std::runtime_error("export_dxf: write error on file: " + setup.path);
     } catch (const Standard_Failure& e) {
         throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
     } catch (const std::exception&) {
         throw;
+    } catch (...) {
+        throw std::runtime_error("unknown C++ exception in export_dxf");
     }
 }
 
@@ -4281,7 +4298,19 @@ struct FragmentBuilder::Impl {
 FragmentBuilder::FragmentBuilder() : impl(std::make_unique<Impl>()) {}
 FragmentBuilder::~FragmentBuilder() = default;
 
-std::unique_ptr<FragmentBuilder> fragment_new() { return std::make_unique<FragmentBuilder>(); }
+std::unique_ptr<FragmentBuilder> fragment_new() {
+    // OCCT Standard_Failure does not derive std::exception; without this guard an
+    // escaping OCCT exception would abort the process at the cxx bridge boundary.
+    try {
+        return std::make_unique<FragmentBuilder>();
+    } catch (const Standard_Failure& e) {
+        throw std::runtime_error(std::string("fragment_new failed: ") + e.GetMessageString());
+    } catch (const std::exception&) {
+        throw;
+    } catch (...) {
+        throw std::runtime_error("unknown C++ exception in fragment_new");
+    }
+}
 
 void fragment_add(FragmentBuilder& builder, const OcctShape& shape) {
     try {

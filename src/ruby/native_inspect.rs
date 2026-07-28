@@ -1,3 +1,5 @@
+// NOTE: the module-level safety contract in `native.rs` applies to every `extern "C"` function in this file.
+
 use std::ffi::{c_char, c_void};
 
 use crate::occt::Shape;
@@ -412,13 +414,11 @@ mod tests {
 
         let mut bad_err: *const c_char = ptr::null();
         let mut out = [0.0; 3];
-        let face_err = unsafe { rrcad_shape_face_normal(solid, out.as_mut_ptr(), &mut bad_err) };
-        assert_eq!(face_err, ());
+        unsafe { rrcad_shape_face_normal(solid, out.as_mut_ptr(), &mut bad_err) };
         assert!(unsafe { error_message(bad_err) }.is_some());
 
         let mut bad_err: *const c_char = ptr::null();
-        let axis_err = unsafe { rrcad_shape_cylinder_axis(solid, axis.as_mut_ptr(), &mut bad_err) };
-        assert_eq!(axis_err, ());
+        unsafe { rrcad_shape_cylinder_axis(solid, axis.as_mut_ptr(), &mut bad_err) };
         assert!(unsafe { error_message(bad_err) }.is_some());
 
         unsafe {

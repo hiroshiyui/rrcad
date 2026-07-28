@@ -9,13 +9,15 @@
 
 use axum::{
     Router,
+    extract::Request,
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     http::{StatusCode, header},
+    middleware::{self, Next},
     response::{Html, IntoResponse, Response},
     routing::get,
 };
-use std::path::Path;
 use std::net::TcpListener as StdTcpListener;
+use std::path::Path;
 use tokio::sync::broadcast;
 
 const VIEWER_HTML: &str = include_str!("viewer.html");
@@ -34,8 +36,7 @@ pub async fn serve(port: u16) {
 /// the default preview port is already in use.
 pub fn bind_listener(port: u16) -> Result<tokio::net::TcpListener, String> {
     let addr = format!("127.0.0.1:{port}");
-    let listener = StdTcpListener::bind(&addr)
-        .map_err(|e| format!("{e}"))?;
+    let listener = StdTcpListener::bind(&addr).map_err(|e| format!("{e}"))?;
     listener
         .set_nonblocking(true)
         .map_err(|e| format!("failed to set nonblocking mode: {e}"))?;
@@ -54,7 +55,10 @@ pub async fn serve_with_listener(listener: tokio::net::TcpListener) {
         .route("/model.glb", get(handler_model))
         .route("/metadata.json", get(handler_metadata))
         .route("/logo.png", get(handler_logo))
-        .route("/ws", get(handler_ws));
+        .route("/ws", get(handler_ws))
+        // DNS-rebinding defence: refuse requests whose Host / Origin headers
+        // do not identify the local machine (see `is_local_request`).
+        .layer(middleware::from_fn(require_local_origin));
 
     // Errors are swallowed — the server exits cleanly when the runtime shuts
     // down or the listener is closed, both of which are normal shutdown paths.
@@ -92,6 +96,73 @@ async fn handler_ws(ws: WebSocketUpgrade) -> Response {
     ws.on_upgrade(handle_socket)
 }
 
+/// Middleware guarding every preview route against DNS-rebinding attacks.
+///
+/// A malicious page at `attacker.example` can point its own DNS record at
+/// 127.0.0.1 and issue same-origin requests (including WebSocket upgrades) to
+/// the preview server, reading model data.  In that attack the browser sends
+/// `Host: attacker.example`, so requiring a localhost Host header (and, when a
+/// browser supplies one, a localhost Origin) blocks it without dependencies.
+async fn require_local_origin(request: Request, next: Next) -> Response {
+    let headers = request.headers();
+    let host = headers.get(header::HOST).and_then(|v| v.to_str().ok());
+    // Distinguish "no Origin header" (allowed: non-browser or same-origin
+    // navigations) from "Origin present but not valid UTF-8" (rejected).
+    let origin = match headers.get(header::ORIGIN) {
+        None => None,
+        Some(value) => match value.to_str() {
+            Ok(s) => Some(s),
+            Err(_) => return StatusCode::FORBIDDEN.into_response(),
+        },
+    };
+
+    if is_local_request(host, origin) {
+        next.run(request).await
+    } else {
+        StatusCode::FORBIDDEN.into_response()
+    }
+}
+
+/// Return `true` when the request headers identify a local client.
+///
+/// Rules:
+/// - The `Host` header must be present and be `localhost`, `127.0.0.1`, or
+///   `[::1]`, each with an optional `:port` suffix.
+/// - The `Origin` header is optional, but when present its host part must be
+///   one of the same local names (any scheme/port).
+fn is_local_request(host: Option<&str>, origin: Option<&str>) -> bool {
+    match host {
+        Some(h) if host_is_local(h) => {}
+        _ => return false,
+    }
+    match origin {
+        None => true,
+        Some(o) => origin_is_local(o),
+    }
+}
+
+/// Check a `host[:port]` string against the allowed local hostnames.
+fn host_is_local(host: &str) -> bool {
+    // Strip a trailing `:port` (digits only). For bracketed IPv6 (`[::1]:80`)
+    // the split also isolates the port; a bare `[::1]` splits at an inner
+    // colon whose "port" is not numeric, so it falls through unchanged.
+    let name = match host.rsplit_once(':') {
+        Some((h, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => h,
+        _ => host,
+    };
+    name.eq_ignore_ascii_case("localhost") || name == "127.0.0.1" || name == "[::1]"
+}
+
+/// Check an `Origin` header value (`scheme://host[:port]`) for a local host.
+fn origin_is_local(origin: &str) -> bool {
+    let rest = match origin.split_once("://") {
+        Some((_scheme, rest)) => rest,
+        None => return false, // opaque origins like "null" are rejected
+    };
+    let authority = rest.split('/').next().unwrap_or(rest);
+    host_is_local(authority)
+}
+
 async fn preview_file_response(path: &Path, content_type: &'static str) -> Response {
     match tokio::fs::read(path).await {
         Ok(bytes) => ([(header::CONTENT_TYPE, content_type)], bytes).into_response(),
@@ -110,7 +181,7 @@ async fn handle_socket(mut socket: WebSocket) {
             result = rx.recv() => {
                 match result {
                     Ok(()) | Err(broadcast::error::RecvError::Lagged(_)) => {
-                        if socket.send(Message::Text("reload".to_string())).await.is_err() {
+                        if socket.send(Message::Text("reload".into())).await.is_err() {
                             break;
                         }
                     }
@@ -128,19 +199,10 @@ async fn handle_socket(mut socket: WebSocket) {
 mod tests {
     use super::*;
     use crate::preview::{PreviewState, metadata_path_for_glb};
+    use crate::test_util::unique_test_dir;
     use axum::body::to_bytes;
-    use std::{
-        fs,
-        sync::atomic::{AtomicUsize, Ordering},
-    };
+    use std::fs;
     use tokio::sync::broadcast;
-
-    static TEST_SEQ: AtomicUsize = AtomicUsize::new(1);
-
-    fn unique_test_dir(prefix: &str) -> std::path::PathBuf {
-        let seq = TEST_SEQ.fetch_add(1, Ordering::Relaxed);
-        std::env::temp_dir().join(format!("{prefix}-{}-{seq}", std::process::id()))
-    }
 
     fn preview_state() -> &'static PreviewState {
         crate::preview::PREVIEW.get_or_init(|| {
@@ -243,4 +305,71 @@ mod tests {
         assert_eq!(body_bytes(response).await, br#"{"hello":"world"}"#);
     }
 
+    #[test]
+    fn is_local_request_accepts_local_hosts() {
+        assert!(is_local_request(Some("localhost"), None));
+        assert!(is_local_request(Some("localhost:8080"), None));
+        assert!(is_local_request(Some("LOCALHOST:8080"), None));
+        assert!(is_local_request(Some("127.0.0.1"), None));
+        assert!(is_local_request(Some("127.0.0.1:3000"), None));
+        assert!(is_local_request(Some("[::1]"), None));
+        assert!(is_local_request(Some("[::1]:3000"), None));
+    }
+
+    #[test]
+    fn is_local_request_rejects_missing_or_foreign_hosts() {
+        assert!(!is_local_request(None, None));
+        assert!(!is_local_request(Some("attacker.example"), None));
+        assert!(!is_local_request(Some("attacker.example:8080"), None));
+        // DNS rebinding: hostname resolves to 127.0.0.1 but the Host header
+        // still carries the attacker's name — must be rejected.
+        assert!(!is_local_request(Some("rebind.attacker.example"), None));
+        // Lookalike names must not pass the suffix/port stripping.
+        assert!(!is_local_request(Some("localhost.attacker.example"), None));
+        assert!(!is_local_request(Some("127.0.0.1.attacker.example"), None));
+    }
+
+    #[test]
+    fn is_local_request_checks_origin_when_present() {
+        assert!(is_local_request(
+            Some("localhost:8080"),
+            Some("http://localhost:8080")
+        ));
+        assert!(is_local_request(
+            Some("127.0.0.1:8080"),
+            Some("http://127.0.0.1")
+        ));
+        assert!(is_local_request(
+            Some("localhost"),
+            Some("https://localhost:443")
+        ));
+        assert!(!is_local_request(
+            Some("localhost:8080"),
+            Some("http://attacker.example")
+        ));
+        assert!(!is_local_request(Some("localhost:8080"), Some("null")));
+        assert!(!is_local_request(Some("localhost:8080"), Some("")));
+        // Foreign host is rejected even with a local-looking origin.
+        assert!(!is_local_request(
+            Some("attacker.example"),
+            Some("http://localhost")
+        ));
+    }
+
+    #[tokio::test]
+    async fn bind_listener_zero_assigns_free_port() {
+        let listener = bind_listener(0).expect("bind port 0");
+        let addr = listener.local_addr().expect("local addr");
+        assert_eq!(addr.ip().to_string(), "127.0.0.1");
+        assert_ne!(addr.port(), 0, "OS must assign a concrete port");
+    }
+
+    #[tokio::test]
+    async fn bind_listener_fails_on_taken_port() {
+        let first = bind_listener(0).expect("bind port 0");
+        let taken_port = first.local_addr().expect("local addr").port();
+
+        let err = bind_listener(taken_port).expect_err("second bind must fail");
+        assert!(!err.is_empty(), "error message should not be empty");
+    }
 }

@@ -86,9 +86,6 @@ pub fn start(glb_path: PathBuf, port: u16) -> Result<tokio::runtime::Runtime, St
         .map_err(|e| format!("failed to create tokio runtime: {e}"))?;
     rt.spawn(server::serve_with_listener(listener));
 
-    // Give the server a moment to bind before opening the browser.
-    std::thread::sleep(std::time::Duration::from_millis(300));
-
     let url = format!("http://localhost:{actual_port}");
     println!("Preview server: {url}  (Ctrl-C to quit)");
     open::that(&url).ok();

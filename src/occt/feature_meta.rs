@@ -32,14 +32,6 @@ impl GdtStandard {
             other => Err(format!("unsupported GD&T standard: {other}")),
         }
     }
-
-    #[allow(dead_code)]
-    fn as_str(&self) -> &'static str {
-        match self {
-            GdtStandard::Asme => "asme",
-            GdtStandard::Iso => "iso",
-        }
-    }
 }
 
 #[derive(Clone, Debug, serde::Serialize)]

@@ -2,7 +2,7 @@
 // all `extern "C"` functions here share the same safety contract (documented
 // in the module-level doc comment below), and repeating it on every one of
 // the ~45 entry points would be pure noise.
-#![allow(clippy::missing_safety_doc)]
+#![allow(clippy::missing_safety_doc)] // shared safety contract documented once in the module doc below
 
 //! Rust-side extern "C" functions called from `glue.c`.
 //!

@@ -207,6 +207,10 @@ fn stress_mruby_eval_lock_serialises_threads() {
     let b1 = Arc::clone(&barrier);
     let t1 = std::thread::spawn(move || {
         b1.wait();
+        // The VM must be created AND dropped while `_lock` is held: `vm` is
+        // declared after `_lock`, so drop order (reverse declaration order)
+        // destroys the VM before releasing the lock. Otherwise two mRuby VMs
+        // could exist in parallel and SIGSEGV.
         let _lock = rrcad::mcp::mruby_eval_lock()
             .lock()
             .expect("lock should not be poisoned");
@@ -220,6 +224,7 @@ fn stress_mruby_eval_lock_serialises_threads() {
     let b2 = Arc::clone(&barrier);
     let t2 = std::thread::spawn(move || {
         b2.wait();
+        // Same drop-order requirement as thread 1: vm before _lock.
         let _lock = rrcad::mcp::mruby_eval_lock()
             .lock()
             .expect("lock should not be poisoned");

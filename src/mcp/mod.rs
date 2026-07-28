@@ -40,8 +40,8 @@ use std::path::PathBuf;
 use rmcp::{
     RoleServer, ServerHandler, ServiceExt,
     model::{
-        CallToolRequestParam, CallToolResult, Content, ErrorData, ListResourcesResult,
-        ListToolsResult, PaginatedRequestParam, ReadResourceRequestParam, ReadResourceResult,
+        CallToolRequestParams, CallToolResult, ContentBlock, ErrorData, ListResourcesResult,
+        ListToolsResult, PaginatedRequestParams, ReadResourceRequestParams, ReadResourceResult,
         ServerCapabilities, ServerInfo, Tool,
     },
     service::RequestContext,
@@ -58,7 +58,7 @@ mod security;
 mod worker;
 
 use resources::{api_doc, build_examples_content, code_format_schema, code_schema};
-use security::MCP_SANDBOX_DIR;
+use security::{MCP_PREVIEW_GLB, MCP_SANDBOX_DIR};
 pub use security::{create_mcp_vm, mruby_eval_lock, validate_code, validate_format};
 pub use worker::run_worker;
 
@@ -116,12 +116,12 @@ struct CadValidateArgs {
 /// Per MCP spec §4.3.5, `isError: true` signals that the tool itself failed
 /// (e.g. invalid DSL, OCCT error) rather than a protocol or server error.
 fn err_result(msg: impl Into<String>) -> CallToolResult {
-    CallToolResult::error(vec![Content::text(msg.into())])
+    CallToolResult::error(vec![ContentBlock::text(msg.into())])
 }
 
 /// Build a successful tool result with a single JSON text payload.
 fn ok_json(value: Value) -> CallToolResult {
-    CallToolResult::success(vec![Content::text(value.to_string())])
+    CallToolResult::success(vec![ContentBlock::text(value.to_string())])
 }
 
 // ---------------------------------------------------------------------------
@@ -200,7 +200,7 @@ async fn do_cad_preview(code: String) -> CallToolResult {
 
             // Wire up the preview state used by the existing axum route handlers.
             let (reload_tx, _) = broadcast::channel::<()>(16);
-            let glb_path = PathBuf::from(MCP_SANDBOX_DIR).join("preview.glb");
+            let glb_path = PathBuf::from(MCP_SANDBOX_DIR).join(MCP_PREVIEW_GLB);
             // OnceLock::set returns Err(val) if already set; that is fine —
             // a previous CLI `--preview` startup may have already initialised it.
             let _ = crate::preview::PREVIEW.set(crate::preview::PreviewState {
@@ -255,56 +255,52 @@ async fn do_cad_validate(code: String) -> CallToolResult {
 impl ServerHandler for McpServer {
     /// Advertise server identity and capabilities.
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            capabilities: ServerCapabilities::builder()
+        ServerInfo::new(
+            ServerCapabilities::builder()
                 .enable_tools()
                 .enable_resources()
                 .build(),
-            ..Default::default()
-        }
+        )
     }
 
     /// List the four CAD tools exposed by this server.
     async fn list_tools(
         &self,
-        _request: PaginatedRequestParam,
+        _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        Ok(ListToolsResult {
-            tools: vec![
-                Tool::new(
-                    "cad_eval",
-                    "Evaluate Ruby DSL CAD code and return shape properties \
+        Ok(ListToolsResult::with_all_items(vec![
+            Tool::new(
+                "cad_eval",
+                "Evaluate Ruby DSL CAD code and return shape properties \
                      (shape_type, volume, surface_area, bounding_box, valid).",
-                    code_schema(),
-                ),
-                Tool::new(
-                    "cad_export",
-                    "Evaluate Ruby DSL CAD code and export the resulting shape \
+                code_schema(),
+            ),
+            Tool::new(
+                "cad_export",
+                "Evaluate Ruby DSL CAD code and export the resulting shape \
                      to a file. Returns the absolute path of the exported file.",
-                    code_format_schema(),
-                ),
-                Tool::new(
-                    "cad_preview",
-                    "Evaluate Ruby DSL CAD code and open a live Three.js browser \
+                code_format_schema(),
+            ),
+            Tool::new(
+                "cad_preview",
+                "Evaluate Ruby DSL CAD code and open a live Three.js browser \
                      preview. Returns the localhost URL to open.",
-                    code_schema(),
-                ),
-                Tool::new(
-                    "cad_validate",
-                    "Check Ruby DSL CAD code for syntax errors and geometric validity. \
+                code_schema(),
+            ),
+            Tool::new(
+                "cad_validate",
+                "Check Ruby DSL CAD code for syntax errors and geometric validity. \
                      Returns {status: 'ok'} or {errors: ['...']}.",
-                    code_schema(),
-                ),
-            ],
-            ..Default::default()
-        })
+                code_schema(),
+            ),
+        ]))
     }
 
     /// Dispatch an incoming tool call to the appropriate handler.
     async fn call_tool(
         &self,
-        request: CallToolRequestParam,
+        request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
         let args = request.arguments.unwrap_or_default();
@@ -340,63 +336,43 @@ impl ServerHandler for McpServer {
     /// List the two static resources: the API reference and example scripts.
     async fn list_resources(
         &self,
-        _request: PaginatedRequestParam,
+        _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, ErrorData> {
-        use rmcp::model::{Annotated, RawResource};
+        use rmcp::model::Resource;
 
-        Ok(ListResourcesResult {
-            resources: vec![
-                Annotated {
-                    raw: RawResource {
-                        uri: "rrcad://api".to_string(),
-                        name: "rrcad DSL API reference".to_string(),
-                        description: Some(
-                            "Full API reference for the rrcad Ruby DSL — all methods, \
-                             parameters, and examples."
-                                .to_string(),
-                        ),
-                        mime_type: Some("text/markdown".to_string()),
-                        size: None,
-                    },
-                    annotations: None,
-                },
-                Annotated {
-                    raw: RawResource {
-                        uri: "rrcad://examples".to_string(),
-                        name: "rrcad example scripts".to_string(),
-                        description: Some(
-                            "Sample rrcad Ruby DSL scripts demonstrating common CAD workflows."
-                                .to_string(),
-                        ),
-                        mime_type: Some("text/plain".to_string()),
-                        size: None,
-                    },
-                    annotations: None,
-                },
-            ],
-            ..Default::default()
-        })
+        Ok(ListResourcesResult::with_all_items(vec![
+            Resource::new("rrcad://api", "rrcad DSL API reference")
+                .with_description(
+                    "Full API reference for the rrcad Ruby DSL — all methods, \
+                     parameters, and examples.",
+                )
+                .with_mime_type("text/markdown"),
+            Resource::new("rrcad://examples", "rrcad example scripts")
+                .with_description(
+                    "Sample rrcad Ruby DSL scripts demonstrating common CAD workflows.",
+                )
+                .with_mime_type("text/plain"),
+        ]))
     }
 
     /// Return the content of a requested resource URI.
     async fn read_resource(
         &self,
-        request: ReadResourceRequestParam,
+        request: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResult, ErrorData> {
         use rmcp::model::ResourceContents;
 
         match request.uri.as_str() {
-            "rrcad://api" => Ok(ReadResourceResult {
-                contents: vec![ResourceContents::text(api_doc(), "rrcad://api")],
-            }),
-            "rrcad://examples" => Ok(ReadResourceResult {
-                contents: vec![ResourceContents::text(
-                    build_examples_content(),
-                    "rrcad://examples",
-                )],
-            }),
+            "rrcad://api" => Ok(ReadResourceResult::new(vec![ResourceContents::text(
+                api_doc(),
+                "rrcad://api",
+            )])),
+            "rrcad://examples" => Ok(ReadResourceResult::new(vec![ResourceContents::text(
+                build_examples_content(),
+                "rrcad://examples",
+            )])),
             uri => Err(ErrorData::invalid_params(
                 format!("Unknown resource URI: '{uri}'"),
                 None,
@@ -469,21 +445,19 @@ pub fn start() -> Result<(), Box<dyn std::error::Error>> {
 mod tests {
     use super::security::MCP_MAX_CODE_BYTES;
     use super::*;
-    use rmcp::model::{NumberOrString, ReadResourceRequestParam};
-    use rmcp::service::{AtomicU32RequestIdProvider, RequestContext};
-    use std::{borrow::Cow, sync::Arc};
-    use tokio_util::sync::CancellationToken;
+    use rmcp::model::{NumberOrString, ReadResourceRequestParams};
+    use rmcp::service::{RequestContext, serve_directly};
 
     fn test_context() -> RequestContext<rmcp::RoleServer> {
-        let (peer, _rx) = rmcp::Peer::new(
-            Arc::new(AtomicU32RequestIdProvider::default()),
-            Default::default(),
-        );
-        RequestContext {
-            ct: CancellationToken::new(),
-            id: NumberOrString::Number(1),
-            peer,
-        }
+        // Peer has no public constructor in rmcp 2.x; serve a throwaway server
+        // over an in-memory duplex (skipping the init handshake) just to obtain
+        // a Peer handle. The handlers under test never talk to the peer, so the
+        // service being dropped immediately afterwards is harmless.
+        let (transport, _client_side) = tokio::io::duplex(64);
+        let running = serve_directly::<rmcp::RoleServer, _, _, _, _>(McpServer, transport, None);
+        let peer = running.peer().clone();
+        drop(running);
+        RequestContext::new(NumberOrString::Number(1), peer)
     }
 
     // --- Input validation ---------------------------------------------------
@@ -554,9 +528,7 @@ mod tests {
     fn test_mcp_vm_no_file_read() {
         let mut vm = create_mcp_vm().expect("VM should initialise");
         for constant in ["File", "IO", "Dir", "FileTest", "Process"] {
-            let err = vm
-                .eval(constant)
-                .unwrap_err();
+            let err = vm.eval(constant).unwrap_err();
             assert!(
                 err.contains("uninitialized constant") || err.contains("constant"),
                 "{constant} should be removed from MCP VM, got: {err}"
@@ -657,7 +629,7 @@ mod tests {
         let uris: Vec<_> = resources
             .resources
             .iter()
-            .map(|resource| resource.raw.uri.as_str())
+            .map(|resource| resource.uri.as_str())
             .collect();
         assert_eq!(uris, vec!["rrcad://api", "rrcad://examples"]);
     }
@@ -668,9 +640,7 @@ mod tests {
 
         let api = server
             .read_resource(
-                ReadResourceRequestParam {
-                    uri: "rrcad://api".to_string(),
-                },
+                ReadResourceRequestParams::new("rrcad://api"),
                 test_context(),
             )
             .await
@@ -679,9 +649,7 @@ mod tests {
 
         let examples = server
             .read_resource(
-                ReadResourceRequestParam {
-                    uri: "rrcad://examples".to_string(),
-                },
+                ReadResourceRequestParams::new("rrcad://examples"),
                 test_context(),
             )
             .await
@@ -690,9 +658,7 @@ mod tests {
 
         let err = server
             .read_resource(
-                ReadResourceRequestParam {
-                    uri: "rrcad://missing".to_string(),
-                },
+                ReadResourceRequestParams::new("rrcad://missing"),
                 test_context(),
             )
             .await
@@ -701,10 +667,8 @@ mod tests {
 
         let err = server
             .call_tool(
-                CallToolRequestParam {
-                    name: Cow::Borrowed("cad_eval"),
-                    arguments: Some(serde_json::json!({}).as_object().cloned().unwrap()),
-                },
+                CallToolRequestParams::new("cad_eval")
+                    .with_arguments(serde_json::json!({}).as_object().cloned().unwrap()),
                 test_context(),
             )
             .await
@@ -712,13 +676,7 @@ mod tests {
         assert_eq!(err.code.0, -32602);
 
         let err = server
-            .call_tool(
-                CallToolRequestParam {
-                    name: Cow::Borrowed("unknown_tool"),
-                    arguments: None,
-                },
-                test_context(),
-            )
+            .call_tool(CallToolRequestParams::new("unknown_tool"), test_context())
             .await
             .expect_err("unknown tool should fail");
         assert_eq!(err.code.0, -32602);

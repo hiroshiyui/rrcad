@@ -1,3 +1,5 @@
+// NOTE: the module-level safety contract in `native.rs` applies to every `extern "C"` function in this file.
+
 use std::ffi::{c_char, c_void};
 
 use crate::occt::Shape;
@@ -295,7 +297,7 @@ pub unsafe extern "C" fn rrcad_shape_fillet_wire(
     unsafe { shape_result_to_ptr(shape.fillet_wire(radius), error_out) }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments)] // 9 scalars mirror gp_Ax3(origin, normal, x_dir) across the flat C ABI
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rrcad_datum_plane(
     ox: f64,

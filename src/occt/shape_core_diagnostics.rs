@@ -127,7 +127,7 @@ impl Shape {
         parts.join(" | ")
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)] // scalars mirror the flat C FFI signature of rrcad_gdt (anchor triples + validity flags)
     pub(crate) fn gdt_export_inputs(
         &self,
         datum: &str,
