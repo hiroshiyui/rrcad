@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Sketch-level patterns** (Phase 11 Track A, `src/ruby/prelude.rb`):
+  `linear_pattern(count:, dx:, dy:)`, `polar_pattern(count:, center:,
+  angle:)`, and `grid_pattern(nx:, ny:, dx:, dy:)` inside `sketch do ... end`
+  replicate the finished profile into one compound profile, so a single
+  `extrude`, `pad`, or `pocket` covers every copy — six bolt holes become one
+  pocket rather than six. Polar patterns turn about a sketch point, an
+  `[x, y]` pair, or the origin, over a partial or full sweep, and a centre
+  that names a corner the sketch moved uses its final position. Patterning
+  runs after corner modifiers, segment edits, and the offset, so every copy
+  carries that shaping. The builder methods shadow the top-level functions of
+  the same name and delegate to them when handed a Shape, so
+  `polar_pattern(shape, n, angle)` still works inside a sketch block.
+
 - **Profile offset** (Phase 11 Track A, `src/ruby/prelude.rb`,
   `src/occt/bridge.cpp`): `offset(distance)` inside `sketch do ... end` grows
   (positive) or shrinks (negative) the finished profile in its own plane,

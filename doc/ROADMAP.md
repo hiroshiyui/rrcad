@@ -55,7 +55,14 @@ operations used most in practice.
       fallback (and sign flip) for the faces OCCT cannot offset whole, such as
       an all-circular annulus.
       Tests: `tests/phase11_profile_offset.rs` (18).
-- [ ] Sketch-level linear and polar patterns.
+- [x] **Sketch-level linear and polar patterns** — `linear_pattern`,
+      `polar_pattern`, and `grid_pattern` inside `sketch do … end` replicate
+      the finished profile into one compound profile, so a single `extrude`,
+      `pad`, or `pocket` covers every copy. Polar patterns turn about a sketch
+      point, an `[x, y]` pair, or the origin, over a partial or full sweep.
+      The builder methods shadow the top-level functions of the same name and
+      delegate to them when passed a Shape, so both forms work in a block.
+      Tests: `tests/phase11_sketch_patterns.rs` (23).
 - [ ] Spline segments in sketch profiles.
 
 ### Track B — Assembly intelligence

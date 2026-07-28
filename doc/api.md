@@ -724,11 +724,22 @@ directly.
 | `chamfer(point, distance)` | Bevel a corner, setting back `distance` along both adjacent segments |
 | `trim(a, b, by:\|to:, at: :end)` | Shorten a segment: one endpoint slides along it `by:` a distance or `to:` the intersection with another segment's infinite line. `at:` (`:end`, `:start`, or an endpoint) picks which end moves. The segment may be given as two points or as the array `line` returns |
 | `extend(a, b, by:\|to:, at: :end)` | Lengthen a segment; same arguments as `trim` |
-| `offset(distance)` | Grow (positive) or shrink (negative) the finished profile in its own plane. One non-zero offset per sketch; applied last, after corner modifiers and segment edits |
+| `offset(distance)` | Grow (positive) or shrink (negative) the finished profile in its own plane. One non-zero offset per sketch; applied after corner modifiers and segment edits |
+| `linear_pattern(count:, dx:, dy:)` | Repeat the finished profile along a row; copy *i* at *i* × (`dx`, `dy`). Needs a non-zero `dx:` or `dy:` |
+| `polar_pattern(count:, center: nil, angle: 360)` | Repeat it around `center:` (a sketch point, an `[x, y]` pair, or the origin); copy *i* at *i* × (`angle` / `count`) |
+| `grid_pattern(nx:, ny:, dx:, dy:)` | Repeat it across a 2-D grid |
 | `diagnostics` | Structured solve report (components, estimated DOF, redundant constraints) from the builder, before the profile is built |
 
-Corner modifiers, segment edits, and the offset are all validated before any
-geometry is built — oversized or overlapping modifiers, collapsed segments,
+Patterning is the last step, after the offset, so every copy carries the
+sketch's shaping; the result is one compound profile, so a single `extrude`,
+`pad`, or `pocket` applies to all copies. A sketch takes one pattern, and a
+`count:` of 1 is a no-op rather than an error. The three pattern names shadow
+the top-level functions of the same name; passing a Shape as the first
+argument delegates to those, so `polar_pattern(shape, n, angle)` still works
+inside a sketch block.
+
+Corner modifiers, segment edits, the offset, and the pattern are all validated
+before any geometry is built — oversized or overlapping modifiers, collapsed segments,
 parallel `to:` references, wrong-direction intersections, and offsets that
 consume the whole profile each raise with the offending point named.
 

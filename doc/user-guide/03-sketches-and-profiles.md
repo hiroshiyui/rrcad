@@ -80,6 +80,9 @@ through the same entry point.
 | `trim(a, b, by:)` / `trim(a, b, to:)` | Shorten a segment, by a distance or up to an intersection ([below](#trimming-and-extending-segments)) |
 | `extend(a, b, by:)` / `extend(a, b, to:)` | Lengthen a segment; same arguments as `trim` |
 | `offset(distance)` | Grow or shrink the finished profile in its own plane ([below](#offsetting-the-profile)) |
+| `linear_pattern(count:, dx:, dy:)` | Repeat the finished profile along a row ([below](#patterning-the-profile)) |
+| `polar_pattern(count:, center:, angle:)` | Repeat it around a centre point |
+| `grid_pattern(nx:, ny:, dx:, dy:)` | Repeat it across a 2-D grid |
 
 **Typical use** — a constrained rectangle with implicit corners:
 
@@ -275,6 +278,62 @@ than the profile raises rather than returning an empty shape.
 `Shape#offset_2d(distance)` is the same operation on an already-built profile,
 including profiles with holes; see
 [Features and Modifiers](04-features-and-modifiers.md).
+
+### Patterning the profile
+
+`linear_pattern`, `polar_pattern`, and `grid_pattern` repeat the finished
+profile. The result is a single profile holding every copy, so one `extrude`,
+`pad`, or `pocket` applies to all of them — six bolt holes become one pocket
+rather than six:
+
+```ruby
+plate = box(60.mm, 60.mm, 10.mm).translate(-30.mm, -30.mm, 0)
+
+plate = plate.pocket(:top, depth: 3.mm) do
+  sketch do
+    c = point(:c, 20.mm, 0)
+    circle_at c, 3.mm
+    polar_pattern count: 6           # 6 holes on a 40 mm bolt circle
+  end
+end
+```
+
+| Pattern | Arguments |
+|---------|-----------|
+| `linear_pattern` | `count:` and at least one non-zero `dx:` / `dy:`; copy *i* sits at *i* × (`dx`, `dy`) |
+| `polar_pattern` | `count:`, optional `center:` (a sketch point, an `[x, y]` pair, or the origin) and `angle:` (default `360`); copy *i* sits at *i* × (`angle` / `count`) |
+| `grid_pattern` | `nx:`, `ny:`, `dx:`, `dy:` — the two axes combined |
+
+Patterning is the last step of building the profile, after corner modifiers,
+`trim` / `extend`, and `offset`, so every copy carries that shaping. A
+`center:` that names a corner the sketch moved uses the corner's final
+position.
+
+```ruby
+rail = sketch do
+  a = point(:a, 0, 0)
+  b = point(:b, 8.mm, 0)
+  c = point(:c, 8.mm, 8.mm)
+  d = point(:d, 0, 8.mm)
+  line a, b
+  line b, c
+  line c, d
+  line d, a
+
+  fillet a, 2.mm                     # every copy is filleted
+  linear_pattern count: 5, dx: 20.mm
+end.extrude(3.mm)
+```
+
+A sketch takes one pattern, `count:` must be a positive Integer, and a count
+of 1 is a no-op so a parametric script can drive it down to a single copy. A
+linear or grid pattern with no spacing along an axis it repeats on is
+rejected, since every copy would land on the original.
+
+These three names also exist as top-level functions taking a shape —
+`polar_pattern(circle(3).translate(20, 0, 0), 6, 360)`. That form still works
+inside a sketch block, so a block can build compound geometry itself and
+return it directly.
 
 ### Diagnostics
 

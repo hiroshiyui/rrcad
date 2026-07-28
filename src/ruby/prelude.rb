@@ -423,7 +423,8 @@ class SketchPoint
 end
 
 class SketchBuilder
-  attr_accessor :points, :lines, :constraints, :named, :profile, :corner_mods, :edits, :offset_by
+  attr_accessor :points, :lines, :constraints, :named, :profile, :corner_mods, :edits, :offset_by,
+                :pattern
 
   def initialize
     @points = []
@@ -439,6 +440,9 @@ class SketchBuilder
     # Distance the finished profile is grown (+) or shrunk (-) by, or nil.
     # Named apart from the `offset` DSL method so both can coexist.
     @offset_by = nil
+    # [:linear, count, dx, dy] | [:polar, count, center, angle] |
+    # [:grid, nx, ny, dx, dy] — replicates the finished profile, or nil.
+    @pattern = nil
   end
 
   def point(x_or_name = nil, y = nil, maybe_y = nil)
@@ -666,6 +670,72 @@ class SketchBuilder
     nil
   end
 
+  # Repeat the finished profile in a row, a ring, or a grid.
+  #
+  #   linear_pattern count: 4, dx: 10.mm
+  #   polar_pattern  count: 6, center: hub, angle: 360
+  #   grid_pattern   nx: 3, ny: 2, dx: 10.mm, dy: 8.mm
+  #
+  # The result is one profile holding every copy, so a single `extrude`,
+  # `pad`, or `pocket` applies to all of them — six bolt holes become one
+  # pocket rather than six.
+  #
+  # Each of these also exists as a top-level function taking a shape
+  # (`linear_pattern(shape, n, [dx, dy, dz])`). That form still works inside a
+  # sketch block: a Shape as the first argument delegates to it, so a block
+  # can go on building compound geometry directly and return it.
+  def linear_pattern(*args)
+    return super(*args) if args[0].is_a?(Shape)
+
+    opts = pattern_opts(args, "linear_pattern", [:count, :dx, :dy])
+    count = pattern_count(opts[:count], "linear_pattern count:")
+    dx = RRCADUnits.scalar(opts[:dx] || 0.0)
+    dy = RRCADUnits.scalar(opts[:dy] || 0.0)
+
+    if count > 1 && dx.abs < 1.0e-12 && dy.abs < 1.0e-12
+      raise ArgumentError,
+            "linear_pattern needs a non-zero dx: or dy:, or every copy lands on the original"
+    end
+
+    set_pattern([:linear, count, dx, dy])
+  end
+
+  # +center:+ takes a sketch point, an [x, y] pair, or nil for the origin.
+  # +angle:+ is the total sweep in degrees and defaults to a full circle;
+  # copy i sits at i * (angle / count).
+  def polar_pattern(*args)
+    return super(*args) if args[0].is_a?(Shape)
+
+    opts = pattern_opts(args, "polar_pattern", [:count, :center, :angle])
+    count = pattern_count(opts[:count], "polar_pattern count:")
+    angle = opts.key?(:angle) ? RRCADUnits.scalar(opts[:angle]) : 360.0
+
+    if angle.abs < 1.0e-12
+      raise ArgumentError, "polar_pattern angle: must be non-zero"
+    end
+
+    set_pattern([:polar, count, opts[:center], angle])
+  end
+
+  def grid_pattern(*args)
+    return super(*args) if args[0].is_a?(Shape)
+
+    opts = pattern_opts(args, "grid_pattern", [:nx, :ny, :dx, :dy])
+    nx = pattern_count(opts[:nx], "grid_pattern nx:")
+    ny = pattern_count(opts[:ny], "grid_pattern ny:")
+    dx = RRCADUnits.scalar(opts[:dx] || 0.0)
+    dy = RRCADUnits.scalar(opts[:dy] || 0.0)
+
+    if nx > 1 && dx.abs < 1.0e-12
+      raise ArgumentError, "grid_pattern needs a non-zero dx: to space its #{nx} columns"
+    end
+    if ny > 1 && dy.abs < 1.0e-12
+      raise ArgumentError, "grid_pattern needs a non-zero dy: to space its #{ny} rows"
+    end
+
+    set_pattern([:grid, nx, ny, dx, dy])
+  end
+
   def fixed(point, x = point.x, y = point.y)
     require_point!(point, "fixed")
     @constraints << [:fixed, point, x, y]
@@ -778,7 +848,7 @@ class SketchBuilder
 
     if @profile
       solve_constraints
-      shape = apply_profile_offset(profile_shape)
+      shape = finish_profile(profile_shape)
       shape.sketch_diagnostics = diagnostics_payload if diagnostics_payload
       return shape
     end
@@ -813,16 +883,96 @@ class SketchBuilder
     end
 
     pts = apply_corner_mods(pts, corner_points)
-    shape = apply_profile_offset(polygon(pts))
+    shape = finish_profile(polygon(pts), coords)
     shape.sketch_diagnostics = diagnostics_payload if diagnostics_payload
     shape
   end
 
-  # Grow or shrink the finished profile, if the sketch asked for it.
-  def apply_profile_offset(shape)
-    return shape if @offset_by.nil?
+  # Last steps of building a profile: grow or shrink it, then replicate it.
+  # +coords+ carries any trim/extend results so a pattern centred on an edited
+  # point uses its final position.
+  def finish_profile(shape, coords = {})
+    shape = shape.offset_2d(RRCADUnits.scalar(@offset_by)) unless @offset_by.nil?
+    shape = apply_pattern(shape, coords) unless @pattern.nil?
+    shape
+  end
 
-    shape.offset_2d(RRCADUnits.scalar(@offset_by))
+  # The sketch pattern methods take keyword arguments only; the Kernel forms
+  # they shadow are reached by delegation, not by this path.
+  def pattern_opts(args, name, allowed)
+    unless args.length == 1 && args[0].is_a?(Hash)
+      raise ArgumentError,
+            "#{name} in a sketch takes keyword arguments (#{allowed.map(&:to_s).join(', ')})"
+    end
+
+    args[0].each_key do |key|
+      unless allowed.include?(key)
+        raise ArgumentError,
+              "#{name}: unknown option #{key.inspect}; expected " \
+              "#{allowed.map(&:to_s).join(', ')}"
+      end
+    end
+
+    args[0]
+  end
+
+  def pattern_count(value, name)
+    unless value.is_a?(Integer) && value >= 1
+      raise ArgumentError, "#{name} must be an Integer >= 1"
+    end
+
+    value
+  end
+
+  def set_pattern(entry)
+    unless @pattern.nil?
+      raise ArgumentError, "a sketch takes only one pattern"
+    end
+
+    @pattern = entry
+    nil
+  end
+
+  # Replicate the profile.  A count of 1 is a no-op rather than an error, so a
+  # parametric script can drive the count down to a single copy.
+  def apply_pattern(shape, coords)
+    case @pattern[0]
+    when :linear
+      _kind, count, dx, dy = @pattern
+      return shape if count < 2
+
+      linear_pattern(shape, count, [dx, dy, 0.0])
+    when :polar
+      _kind, count, center, angle = @pattern
+      return shape if count < 2
+
+      cx, cy = pattern_center(center, coords)
+      if cx.abs < 1.0e-12 && cy.abs < 1.0e-12
+        polar_pattern(shape, count, angle)
+      else
+        # The native pattern turns about the Z axis, so move the ring's centre
+        # to the origin, rotate there, and put it back.
+        polar_pattern(shape.translate(-cx, -cy, 0.0), count, angle).translate(cx, cy, 0.0)
+      end
+    else
+      _kind, nx, ny, dx, dy = @pattern
+      return shape if nx * ny < 2
+
+      grid_pattern(shape, nx, ny, dx, dy)
+    end
+  end
+
+  # A polar centre: a sketch point, an [x, y] pair, or nil for the origin.
+  def pattern_center(center, coords)
+    return [0.0, 0.0] if center.nil?
+    return point_xy(coords, center) if center.is_a?(SketchPoint)
+
+    if center.is_a?(Array) && center.length == 2 &&
+       center.all? { |value| value.is_a?(Numeric) }
+      return [RRCADUnits.scalar(center[0]), RRCADUnits.scalar(center[1])]
+    end
+
+    raise ArgumentError, "polar_pattern center: must be a sketch point, an [x, y] pair, or nil"
   end
 
   def analyze_diagnostics
@@ -930,6 +1080,13 @@ class SketchBuilder
     end
 
     clone.offset_by = @offset_by
+    unless @pattern.nil?
+      clone.pattern = @pattern.dup
+      # A polar centre may be one of this builder's points; point it at the copy.
+      if clone.pattern[0] == :polar && clone.pattern[2].is_a?(SketchPoint)
+        clone.pattern[2] = point_map.fetch(clone.pattern[2])
+      end
+    end
     clone.profile = remap_profile(@profile, point_map) if @profile
     clone
   end
