@@ -2097,6 +2097,10 @@ class Shape
 
   # Offset a 2D Wire or Face inward (negative) or outward (positive) in its
   # own plane.  Uses BRepOffsetAPI_MakeOffset.  Phase 7 Tier 1.
+  #
+  # A Face gives a Face back, so an offset profile can still be extruded,
+  # padded, or pocketed; `offset` inside `sketch do ... end` is the
+  # sketch-level spelling of the same operation.
   def offset_2d(_distance)
     raise NotImplementedError, "Shape#offset_2d is not yet implemented (Phase 7 Tier 1)"
   end

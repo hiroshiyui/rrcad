@@ -93,6 +93,11 @@ impl Shape {
     }
 
     /// Offset a 2D Wire or Face inward (negative) or outward (positive) in its own plane.
+    ///
+    /// A Face returns a Face — the offset wires are rebuilt into a planar
+    /// profile, so the result still extrudes, pads, and pockets. Profiles with
+    /// holes are supported; growing the material shrinks the holes. Errors if an
+    /// inward offset consumes the whole profile.
     pub fn offset_2d(&self, distance: f64) -> Result<Shape, String> {
         ffi::shape_offset_2d(&self.inner, distance)
             .map(|p| {
