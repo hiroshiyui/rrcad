@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Detail views on 2-D drawings** (`src/occt/bridge.cpp`, `src/ruby/glue.c`):
+  `part.export("part.svg", view: :top, detail: { at: [68, 38], radius: 8,
+  scale: 4 })` clips a circular region out of the projection, magnifies it, and
+  draws it beside the parent view inside a border circle captioned
+  `DETAIL A (4:1)`; the parent gains a thin circle marking what was blown up.
+  The region is stated in model units on the view's own drawing plane (`:top` →
+  X/Y, `:front` → X/Z, `:side` → Y/Z), so the numbers match the ones used to
+  model the part and do not shift with the drawing `scale:`. Edges crossing the
+  region are cut analytically on the boundary rather than at the nearest
+  tessellation vertex, and a polyline that leaves and re-enters is split rather
+  than bridged by an edge the part does not have. Hidden lines, section
+  outlines, and hatching inside the region are magnified along with the visible
+  edges. SVG emits a `detail` group; DXF puts the marker, border, label, and
+  caption on a dedicated `DETAIL` layer. The close-up carries no dimensions and
+  no centre marks or callouts of its own — both would be placed against the
+  parent's geometry at the wrong scale. An empty region is an error rather than
+  a blank bubble, and `view: :sheet` is refused since it has no single parent
+  view to magnify.
+
 - **Flat cut-file export** (`src/occt/bridge.cpp`, `src/ruby/prelude.rb`):
   `face.export_outline("plate.dxf")` writes the closed loops of one planar
   face at 1:1 with nothing else in the file. This is a different deliverable

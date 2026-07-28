@@ -149,6 +149,72 @@ misses the part reports the part's extent along that axis, a non-solid input
 is rejected (there is no material to cut), and an unknown plane name is
 caught before any geometry work.
 
+## Detail views
+
+Some features are too small to dimension at the drawing's scale. `detail:`
+magnifies one circular region and draws it beside the parent view, with a thin
+circle on the parent marking what was blown up.
+
+```ruby
+bracket = box(80, 50, 6).fillet(4, :vertical)
+[[12, 12], [68, 12], [12, 38], [68, 38]].each do |x, y|
+  bracket = bracket.cut(cylinder(2.6, 12).translate(x, y, -1))
+end
+
+bracket.export("bracket.svg", view: :top, dimensions: true,
+               detail: { at: [68, 38], radius: 8, scale: 4, label: "A" })
+```
+
+That marks an 8 mm circle around the corner hole and draws it again at 4:1,
+captioned `DETAIL A (4:1)`. The canvas grows to hold both views — 194 mm wide
+here, against 118 mm for the same drawing without the detail.
+
+**`at:` is stated on the view's own drawing plane**, in model units:
+
+| view | `at:` means |
+|---|---|
+| `:top` (default) | `[X, Y]` |
+| `:front` | `[X, Z]` |
+| `:side` | `[Y, Z]` |
+
+So you use the same numbers you modelled with, and `scale:` on the export does
+not change them. `radius:` is likewise in model units — it sizes the region on
+the part, not the bubble on the page.
+
+Options:
+
+- **`at:`** — `[x, y]` centre of the region. Required.
+- **`radius:`** (or `r:`) — region radius, in model units. Required.
+- **`scale:`** — magnification relative to the parent view. Default `2`.
+  Whole numbers caption as `4:1`, others as `2.5:1`.
+- **`label:`** — the letter on the bubble. Default `"A"`.
+
+Geometry is cut exactly on the region boundary rather than at the nearest
+tessellation vertex, so an edge crossing the circle stops on it cleanly. Hidden
+lines, section outlines, and hatching inside the region are all magnified along
+with the visible edges.
+
+Output details:
+
+- **SVG** — a `detail` group holding the marker circle, the border circle, the
+  label, and the caption.
+- **DXF** — all of that on a dedicated `DETAIL` layer, so a shop can turn the
+  annotation off without losing geometry.
+
+Two limits worth knowing:
+
+- The close-up carries **no dimensions of its own** — `dimensions: true`
+  annotates the parent view only. Overall width and height labels on a
+  magnified fragment would repeat the parent's extents at the wrong scale.
+- Centre marks and diameter callouts are **not** carried into the detail. They
+  are positioned against the parent's geometry, and re-deriving them for the
+  clipped region is not implemented.
+
+A region containing no geometry is an error rather than a blank bubble — most
+often it means the centre was given in the wrong pair of axes. Detail views
+need a single view; `view: :sheet` is refused, since there is no one parent to
+magnify. Export the detail separately.
+
 ## GLB / glTF / OBJ tessellation quality
 
 Mesh formats require a tessellation step. The `linear_deflection` option

@@ -129,7 +129,14 @@ sheets.
       omitted `offset:` cuts the part's mid-plane. SVG emits `hatch` and
       `section` groups; DXF uses a dedicated `HATCH` layer.
       Tests: 7 co-located in `src/occt/drawing_ops.rs` and `src/ruby/native_io.rs`.
-- [ ] Detail views (scaled close-ups of a region).
+- [x] **Detail views** — `detail: { at:, radius:, scale:, label: }` clips a
+      circular region out of the projection, magnifies it, and draws it beside
+      the parent view inside a captioned border circle; the parent gains a
+      marker circle. The region is stated in model units on the view's own
+      drawing plane, and edges are cut analytically on the boundary rather than
+      at the nearest tessellation vertex. SVG uses a `detail` group, DXF a
+      `DETAIL` layer. Refused on `view: :sheet`, which has no single parent.
+      Tests: 21 in `tests/detail_views.rs`.
 - [ ] Auto-dimensioning of principal features.
 - [ ] BOM tables with balloon callouts on assembly sheets.
       Blocked on: `Assembly#export` accepts no options today (see
@@ -175,6 +182,12 @@ Cross-cutting work that does not belong to a phase.
 - [ ] `Assembly#export(path)` takes no options, so `view:`, `section:`, and
       every other drawing option is silently dropped for assemblies. Blocks
       BOM-on-sheet work in Track C.
+- [ ] The drawing export carries a flat parameter list — 29 scalars through
+      `glue.c` → `native_io.rs` → `drawing_ops.rs` → `bridge.cpp`, four layers
+      that must stay in lockstep. Detail views bundled their six values into a
+      `DetailView` struct on the Rust side; the rest should follow, ideally as
+      a `cxx` shared struct so both sides of the C++ boundary are generated
+      from one declaration. Each new drawing option makes this worse.
 - [ ] Feature-tree browsing and editing in the browser preview. The data model
       (`shape.feature_graph`, `shape.rebuild`) landed in Phase 10; only the UI
       is missing.

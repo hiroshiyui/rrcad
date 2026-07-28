@@ -468,6 +468,14 @@ void export_obj(const OcctShape& shape, rust::Str path, double linear_deflection
 // layer). An empty `section_plane` disables sectioning entirely.
 // Throws if the shape is not a solid, if the plane misses it, or if the
 // resulting cross-section has zero area.
+//
+// Detail views: when `detail_active` is true, the circular region centred on
+// (`detail_x`, `detail_y`) with radius `detail_radius` — all in *model* units on
+// the view's own drawing plane — is clipped out of the projection, magnified by
+// `detail_scale`, and drawn beside the parent view inside a border circle
+// captioned "DETAIL <label> (<n>:1)". The parent view gains a thin circle
+// marking the region. Only single views support this; asking for a detail on
+// the three-view "sheet" throws, since there is no one parent to magnify.
 void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double scale, bool hidden,
                 bool center_marks, bool dimensions, bool title_block, bool callouts,
                 rust::Str datum, bool datum_anchor_valid, double datum_anchor_x,
@@ -475,7 +483,8 @@ void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double s
                 bool feature_control_anchor_valid, double feature_control_anchor_x,
                 double feature_control_anchor_y, double feature_control_anchor_z,
                 double tolerance_plus, double tolerance_minus, rust::Str section_plane,
-                double section_offset);
+                double section_offset, bool detail_active, double detail_x, double detail_y,
+                double detail_radius, double detail_scale, rust::Str detail_label);
 void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double scale, bool hidden,
                 bool center_marks, bool dimensions, bool title_block, bool callouts,
                 rust::Str datum, bool datum_anchor_valid, double datum_anchor_x,
@@ -483,7 +492,8 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
                 bool feature_control_anchor_valid, double feature_control_anchor_x,
                 double feature_control_anchor_y, double feature_control_anchor_z,
                 double tolerance_plus, double tolerance_minus, rust::Str section_plane,
-                double section_offset);
+                double section_offset, bool detail_active, double detail_x, double detail_y,
+                double detail_radius, double detail_scale, rust::Str detail_label);
 
 // Flat cut-file export: the closed loops of one planar face at 1:1.
 // Unlike export_svg/export_dxf (HLR drawings of a 3-D shape), this emits only

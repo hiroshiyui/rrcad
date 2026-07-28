@@ -298,6 +298,12 @@ mod ffi {
             tolerance_minus: f64,
             section_plane: &str,
             section_offset: f64,
+            detail_active: bool,
+            detail_x: f64,
+            detail_y: f64,
+            detail_radius: f64,
+            detail_scale: f64,
+            detail_label: &str,
         ) -> Result<()>;
         fn export_dxf(
             shape: &OcctShape,
@@ -323,6 +329,12 @@ mod ffi {
             tolerance_minus: f64,
             section_plane: &str,
             section_offset: f64,
+            detail_active: bool,
+            detail_x: f64,
+            detail_y: f64,
+            detail_radius: f64,
+            detail_scale: f64,
+            detail_label: &str,
         ) -> Result<()>;
 
         // Flat cut-file export: the closed loops of one planar face at 1:1.
@@ -380,6 +392,7 @@ mod construction_ops;
 mod construction_splines;
 mod construction_surface_ops;
 mod drawing_ops;
+pub(crate) use self::drawing_ops::DetailView;
 mod feature_node_rebuild;
 mod file_ops;
 mod primitive_boolean_ops;

@@ -1,5 +1,34 @@
-use super::{Shape, ffi};
+use super::{ffi, Shape};
 use crate::occt::shape_core::summarize;
+
+/// A requested detail view: a magnified close-up of one circular region of a
+/// drawing.
+///
+/// `x` / `y` / `radius` are in model units on the view's own drawing plane
+/// (top → X/Y, front → X/Z, side → Y/Z), so a caller states the region with the
+/// same numbers they modelled with, independent of the drawing scale. `scale`
+/// is the magnification relative to the parent view — the "4:1" of a detail
+/// bubble. Bundled into a struct because the six values travel together through
+/// every layer; the surrounding drawing parameters stay flat to match the C++
+/// FFI signature they mirror.
+#[derive(Debug, Clone)]
+pub struct DetailView {
+    pub x: f64,
+    pub y: f64,
+    pub radius: f64,
+    pub scale: f64,
+    pub label: String,
+}
+
+/// Unpack an optional detail request into the flat values the FFI takes.
+/// The inactive case must still supply well-formed placeholders, so it is
+/// written once here rather than at each call site.
+fn detail_ffi_args(detail: Option<&DetailView>) -> (bool, f64, f64, f64, f64, &str) {
+    match detail {
+        Some(d) => (true, d.x, d.y, d.radius, d.scale, d.label.as_str()),
+        None => (false, 0.0, 0.0, 0.0, 1.0, ""),
+    }
+}
 
 impl Shape {
     /// Export to SVG using hidden-line removal (HLRBRep_PolyAlgo).
@@ -52,6 +81,7 @@ impl Shape {
             tolerance_minus,
             "",
             0.0,
+            None,
         )
     }
 
@@ -80,6 +110,7 @@ impl Shape {
         tolerance_minus: f64,
         section_plane: &str,
         section_offset: f64,
+        detail: Option<&DetailView>,
     ) -> Result<(), String> {
         let (
             datum,
@@ -100,6 +131,8 @@ impl Shape {
             feature_control_anchor_y,
             feature_control_anchor_z,
         );
+        let (detail_active, detail_x, detail_y, detail_radius, detail_scale, detail_label) =
+            detail_ffi_args(detail);
         ffi::export_svg(
             &self.inner,
             path,
@@ -124,6 +157,12 @@ impl Shape {
             tolerance_minus,
             section_plane,
             section_offset,
+            detail_active,
+            detail_x,
+            detail_y,
+            detail_radius,
+            detail_scale,
+            detail_label,
         )
         .map_err(|e| {
             self.fail_with_debug(
@@ -187,6 +226,7 @@ impl Shape {
             tolerance_minus,
             "",
             0.0,
+            None,
         )
     }
 
@@ -215,6 +255,7 @@ impl Shape {
         tolerance_minus: f64,
         section_plane: &str,
         section_offset: f64,
+        detail: Option<&DetailView>,
     ) -> Result<(), String> {
         let (
             datum,
@@ -235,6 +276,8 @@ impl Shape {
             feature_control_anchor_y,
             feature_control_anchor_z,
         );
+        let (detail_active, detail_x, detail_y, detail_radius, detail_scale, detail_label) =
+            detail_ffi_args(detail);
         ffi::export_dxf(
             &self.inner,
             path,
@@ -259,6 +302,12 @@ impl Shape {
             tolerance_minus,
             section_plane,
             section_offset,
+            detail_active,
+            detail_x,
+            detail_y,
+            detail_radius,
+            detail_scale,
+            detail_label,
         )
         .map_err(|e| {
             self.fail_with_debug(
@@ -272,7 +321,6 @@ impl Shape {
         })
     }
 }
-
 
 impl Shape {
     /// Export the closed loops of one planar face as a 1:1 cut file.
@@ -296,9 +344,8 @@ impl Shape {
         format: &str,
         deflection: f64,
     ) -> Result<(), String> {
-        ffi::export_face_outline(&self.inner, path, format, deflection).map_err(|e| {
-            format!("export_outline({path:?}) failed: {e} [{}]", summarize(self))
-        })
+        ffi::export_face_outline(&self.inner, path, format, deflection)
+            .map_err(|e| format!("export_outline({path:?}) failed: {e} [{}]", summarize(self)))
     }
 }
 
@@ -316,7 +363,7 @@ mod tests {
         let path = path.to_string_lossy().into_owned();
         shape.export_svg_with_anchor(
             &path, "top", 1.0, false, false, false, false, false, "", false, 0.0, 0.0, 0.0, "",
-            false, 0.0, 0.0, 0.0, 0.0, 0.0, plane, offset,
+            false, 0.0, 0.0, 0.0, 0.0, 0.0, plane, offset, None,
         )?;
         Ok(fs::read_to_string(&path).expect("read section SVG"))
     }

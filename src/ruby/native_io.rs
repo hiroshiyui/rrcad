@@ -5,7 +5,7 @@ use std::ffi::{c_char, c_void};
 use super::native_helpers::{
     DEFAULT_LINEAR_DEFLECTION, cstr_arg, resolve_path, set_err, shape_result_to_ptr, split_csv_list,
 };
-use crate::occt::{GdtDatumSpec, GdtFeatureControlSpec, GdtRenderSpec, GdtStandard, Shape};
+use crate::occt::{DetailView, GdtDatumSpec, GdtFeatureControlSpec, GdtRenderSpec, GdtStandard, Shape};
 
 // ---------------------------------------------------------------------------
 // Single-file import / export
@@ -238,6 +238,8 @@ struct DrawingExportOpts {
     section_plane: String,
     /// Offset of the section plane along its own normal.
     section_offset: f64,
+    /// Requested detail view; `None` when the caller passed no `detail:`.
+    detail: Option<DetailView>,
 }
 
 impl DrawingExportOpts {
@@ -272,6 +274,7 @@ impl DrawingExportOpts {
             self.tolerance_minus,
             &self.section_plane,
             self.section_offset,
+            self.detail.as_ref(),
         )
     }
 }
@@ -308,6 +311,12 @@ unsafe fn parse_drawing_export_opts(
     tolerance_minus: f64,
     section_plane: *const c_char,
     section_offset: f64,
+    detail_active: i32,
+    detail_x: f64,
+    detail_y: f64,
+    detail_radius: f64,
+    detail_scale: f64,
+    detail_label: *const c_char,
     error_out: *mut *const c_char,
 ) -> Option<DrawingExportOpts> {
     let safe = unsafe { resolve_path(path, error_out) }?;
@@ -333,6 +342,29 @@ unsafe fn parse_drawing_export_opts(
             .unwrap_or("")
             .to_owned()
     };
+    // A detail view is either fully requested or absent; the label falls back
+    // to "A", matching a drawing that carries only one detail bubble.
+    let detail = (detail_active != 0).then(|| {
+        let label = if detail_label.is_null() {
+            String::new()
+        } else {
+            unsafe { std::ffi::CStr::from_ptr(detail_label) }
+                .to_str()
+                .unwrap_or("")
+                .to_owned()
+        };
+        DetailView {
+            x: detail_x,
+            y: detail_y,
+            radius: detail_radius,
+            scale: detail_scale,
+            label: if label.is_empty() {
+                "A".to_owned()
+            } else {
+                label
+            },
+        }
+    });
     Some(DrawingExportOpts {
         path,
         view,
@@ -356,6 +388,7 @@ unsafe fn parse_drawing_export_opts(
         tolerance_minus,
         section_plane,
         section_offset,
+        detail,
     })
 }
 
@@ -384,6 +417,12 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
     tolerance_minus: f64,
     section_plane: *const c_char,
     section_offset: f64,
+    detail_active: i32,
+    detail_x: f64,
+    detail_y: f64,
+    detail_radius: f64,
+    detail_scale: f64,
+    detail_label: *const c_char,
     error_out: *mut *const c_char,
 ) {
     unsafe { *error_out = std::ptr::null() };
@@ -412,6 +451,12 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
             tolerance_minus,
             section_plane,
             section_offset,
+            detail_active,
+            detail_x,
+            detail_y,
+            detail_radius,
+            detail_scale,
+            detail_label,
             error_out,
         )
     }) else {
@@ -447,6 +492,12 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
     tolerance_minus: f64,
     section_plane: *const c_char,
     section_offset: f64,
+    detail_active: i32,
+    detail_x: f64,
+    detail_y: f64,
+    detail_radius: f64,
+    detail_scale: f64,
+    detail_label: *const c_char,
     error_out: *mut *const c_char,
 ) {
     unsafe { *error_out = std::ptr::null() };
@@ -475,6 +526,12 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
             tolerance_minus,
             section_plane,
             section_offset,
+            detail_active,
+            detail_x,
+            detail_y,
+            detail_radius,
+            detail_scale,
+            detail_label,
             error_out,
         )
     }) else {
@@ -634,6 +691,13 @@ mod tests {
                     0.0,
                     cstr("").as_ptr(),
                     0.0,
+                    // No detail view: inactive, with a valid placeholder scale.
+                    0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    cstr("").as_ptr(),
                     &mut err,
                 );
             }
@@ -673,6 +737,13 @@ mod tests {
                     0.0,
                     cstr("").as_ptr(),
                     0.0,
+                    // No detail view: inactive, with a valid placeholder scale.
+                    0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    cstr("").as_ptr(),
                     &mut err,
                 );
             }
@@ -733,6 +804,13 @@ mod tests {
                 0.0,
                 cstr(plane).as_ptr(),
                 offset,
+                // No detail view: inactive, with a valid placeholder scale.
+                0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                cstr("").as_ptr(),
                 &mut svg_err,
             );
         }
@@ -764,6 +842,13 @@ mod tests {
                 0.0,
                 cstr(plane).as_ptr(),
                 offset,
+                // No detail view: inactive, with a valid placeholder scale.
+                0,
+                0.0,
+                0.0,
+                0.0,
+                1.0,
+                cstr("").as_ptr(),
                 &mut dxf_err,
             );
         }

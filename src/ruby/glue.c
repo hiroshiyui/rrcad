@@ -185,26 +185,24 @@ extern void rrcad_shape_export_glb(void* ptr, const char* path, const char** err
 extern void rrcad_shape_export_obj(void* ptr, const char* path, const char** error_out);
 
 /* Phase 8 Tier 4 — SVG / DXF 2-D drawing output */
-extern void rrcad_shape_export_svg(void* ptr, const char* path, const char* view, double scale,
-                                   int hidden, int center_marks, int dimensions, int title_block,
-                                   int callouts, const char* datum, int datum_anchor_valid,
-                                   double datum_anchor_x, double datum_anchor_y,
-                                   double datum_anchor_z, const char* feature_control,
-                                   int feature_control_anchor_valid,
-                                   double feature_control_anchor_x, double feature_control_anchor_y,
-                                   double feature_control_anchor_z, double tolerance_plus,
-                                   double tolerance_minus, const char* section_plane,
-                                   double section_offset, const char** error_out);
-extern void rrcad_shape_export_dxf(void* ptr, const char* path, const char* view, double scale,
-                                   int hidden, int center_marks, int dimensions, int title_block,
-                                   int callouts, const char* datum, int datum_anchor_valid,
-                                   double datum_anchor_x, double datum_anchor_y,
-                                   double datum_anchor_z, const char* feature_control,
-                                   int feature_control_anchor_valid,
-                                   double feature_control_anchor_x, double feature_control_anchor_y,
-                                   double feature_control_anchor_z, double tolerance_plus,
-                                   double tolerance_minus, const char* section_plane,
-                                   double section_offset, const char** error_out);
+extern void rrcad_shape_export_svg(
+    void* ptr, const char* path, const char* view, double scale, int hidden, int center_marks,
+    int dimensions, int title_block, int callouts, const char* datum, int datum_anchor_valid,
+    double datum_anchor_x, double datum_anchor_y, double datum_anchor_z,
+    const char* feature_control, int feature_control_anchor_valid, double feature_control_anchor_x,
+    double feature_control_anchor_y, double feature_control_anchor_z, double tolerance_plus,
+    double tolerance_minus, const char* section_plane, double section_offset, int detail_active,
+    double detail_x, double detail_y, double detail_radius, double detail_scale,
+    const char* detail_label, const char** error_out);
+extern void rrcad_shape_export_dxf(
+    void* ptr, const char* path, const char* view, double scale, int hidden, int center_marks,
+    int dimensions, int title_block, int callouts, const char* datum, int datum_anchor_valid,
+    double datum_anchor_x, double datum_anchor_y, double datum_anchor_z,
+    const char* feature_control, int feature_control_anchor_valid, double feature_control_anchor_x,
+    double feature_control_anchor_y, double feature_control_anchor_z, double tolerance_plus,
+    double tolerance_minus, const char* section_plane, double section_offset, int detail_active,
+    double detail_x, double detail_y, double detail_radius, double detail_scale,
+    const char* detail_label, const char** error_out);
 extern void rrcad_shape_export_outline(void* ptr, const char* path, const char* format,
                                        double deflection, const char** error_out);
 
@@ -648,6 +646,15 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     /* NAN = "cut through the middle" (the exporter resolves it against the
      * shape's bounding box); an explicit offset: overrides it. */
     double section_offset = (double)NAN;
+    /* Detail view: a magnified close-up of one circular region of the drawing.
+     * Inactive unless the caller passed detail:. */
+    int detail_active = 0;
+    double detail_x = 0.0;
+    double detail_y = 0.0;
+    double detail_radius = 0.0;
+    double detail_scale = 2.0;
+    const char* detail_label = "A";
+    mrb_value detail_label_buf = mrb_nil_value();
     if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
         mrb_value vv = opt_fetch(mrb, opts, "view", mrb_nil_value());
         if (mrb_symbol_p(vv)) {
@@ -773,6 +780,39 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
             section_plane_buf = mrb_str_new_cstr(mrb, plane);
             section_plane = mrb_string_value_cstr(mrb, &section_plane_buf);
         }
+        /* detail: { at: [x, y], radius: 6, scale: 4, label: "A" }
+         * `at:` is stated on the view's own drawing plane — top uses [X, Y],
+         * front [X, Z], side [Y, Z] — so it reads in model units regardless of
+         * the drawing scale.  Only .svg and .dxf use this. */
+        mrb_value detail_v = opt_fetch(mrb, opts, "detail", mrb_nil_value());
+        if (!mrb_nil_p(detail_v)) {
+            if (!mrb_hash_p(detail_v))
+                mrb_raise(mrb, E_TYPE_ERROR,
+                          "detail expects a Hash with at:/radius: (and optional scale:/label:)");
+            mrb_value at_v = opt_fetch(mrb, detail_v, "at", mrb_nil_value());
+            if (!mrb_array_p(at_v) || RARRAY_LEN(at_v) != 2)
+                mrb_raise(mrb, E_ARGUMENT_ERROR,
+                          "detail at: expects a 2-element [x, y] point on the view's plane");
+            detail_x = value_to_double(mrb, mrb_ary_ref(mrb, at_v, 0));
+            detail_y = value_to_double(mrb, mrb_ary_ref(mrb, at_v, 1));
+            mrb_value radius_v = opt_fetch(mrb, detail_v, "radius", mrb_nil_value());
+            if (mrb_nil_p(radius_v))
+                radius_v = opt_fetch(mrb, detail_v, "r", mrb_nil_value());
+            if (mrb_nil_p(radius_v))
+                mrb_raise(mrb, E_ARGUMENT_ERROR, "detail needs a radius: (or r:)");
+            detail_radius = value_to_double(mrb, radius_v);
+            detail_scale = opt_double(mrb, detail_v, "scale", 2.0);
+            mrb_value dl_v = opt_fetch(mrb, detail_v, "label", mrb_nil_value());
+            if (!mrb_nil_p(dl_v)) {
+                const char* label = shape_name_from_value(mrb, dl_v);
+                if (!label)
+                    mrb_raise(mrb, E_TYPE_ERROR, "detail label: expects a Symbol or String");
+                /* Copied for the same reason as `view` above. */
+                detail_label_buf = mrb_str_new_cstr(mrb, label);
+                detail_label = mrb_string_value_cstr(mrb, &detail_label_buf);
+            }
+            detail_active = 1;
+        }
     }
 
     /* Find the last '.' to determine the extension. */
@@ -793,14 +833,16 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
                                datum_anchor[1], datum_anchor[2], feature_control,
                                feature_control_anchor_valid, feature_control_anchor[0],
                                feature_control_anchor[1], feature_control_anchor[2], tolerance_plus,
-                               tolerance_minus, section_plane, section_offset, &err);
+                               tolerance_minus, section_plane, section_offset, detail_active,
+                               detail_x, detail_y, detail_radius, detail_scale, detail_label, &err);
     } else if (dot && (strcasecmp(dot, ".dxf") == 0)) {
         rrcad_shape_export_dxf(ptr, path, view, scale, hidden, center_marks, dimensions,
                                title_block, callouts, datum, datum_anchor_valid, datum_anchor[0],
                                datum_anchor[1], datum_anchor[2], feature_control,
                                feature_control_anchor_valid, feature_control_anchor[0],
                                feature_control_anchor[1], feature_control_anchor[2], tolerance_plus,
-                               tolerance_minus, section_plane, section_offset, &err);
+                               tolerance_minus, section_plane, section_offset, detail_active,
+                               detail_x, detail_y, detail_radius, detail_scale, detail_label, &err);
     } else {
         /* Default: STEP (.step, .stp, or unknown extension) */
         rrcad_shape_export_step(ptr, path, &err);

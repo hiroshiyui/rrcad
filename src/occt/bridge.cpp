@@ -3409,6 +3409,27 @@ struct SectionSpec {
 // drawings use an evenly-spaced 45° pattern; 2.5 mm reads well at 1:1.
 static const double SECTION_HATCH_SPACING = 2.5;
 
+// A requested detail view: a magnified close-up of one circular region of the
+// parent projection.  `x` / `y` / `radius` are in *model* units on the view's
+// own drawing plane (top → X/Y, front → X/Z, side → Y/Z), so the caller states
+// the region using the same numbers they modelled with, independent of the
+// drawing `scale`.  `scale` is the magnification relative to the parent view,
+// i.e. the conventional "4:1" of a detail bubble.  `active` is false when the
+// caller passed no `detail:` option at all.
+struct DetailSpec {
+    bool active = false;
+    double x = 0.0;
+    double y = 0.0;
+    double radius = 0.0;
+    double scale = 2.0;
+    std::string label = "A";
+};
+
+// Gap between the parent view and the detail view placed beside it, and the
+// clearance left under a view for its caption, both in drawing units.
+static const double DETAIL_VIEW_GAP = 12.0;
+static const double DETAIL_CAPTION_GAP = 7.0;
+
 struct DrawingViewData {
     std::string name;
     DrawingPolylines visible;
@@ -3429,6 +3450,19 @@ struct DrawingViewData {
     double ymax = 0.0;
     double width = 0.0;
     double height = 0.0;
+    // Detail-view annotation.  On a parent view this is the thin circle marking
+    // the region that was magnified; on the detail view itself it is the border
+    // circle enclosing the magnified geometry.  Coordinates are in this view's
+    // own (already scaled) drawing space, like every other member here.
+    bool detail_marker = false;
+    double detail_x = 0.0;
+    double detail_y = 0.0;
+    double detail_r = 0.0;
+    // Short label drawn beside the marker circle ("A"); empty on the detail
+    // view, which carries the full text in `caption` instead.
+    std::string detail_label;
+    // Caption centred under the view ("DETAIL A (4:1)"); empty when unused.
+    std::string caption;
 };
 
 struct DrawingCanvasBounds {
@@ -3909,6 +3943,170 @@ static DrawingViewData build_drawing_view(const OcctShape& shape, const std::str
     return view_data;
 }
 
+// Parametric interval of the segment P0→P1 that lies inside the circle.
+//
+// Solving |P0 + t·d − C|² = r² for t gives the two boundary crossings; clamping
+// the root interval to [0, 1] yields the part of *this* segment that is inside.
+// Returns false when the segment misses the circle entirely.  Working
+// analytically rather than by testing endpoints means an edge that crosses the
+// boundary is cut exactly at the boundary, so a detail view's geometry stops on
+// its border circle instead of overshooting to the next vertex.
+static bool circle_clip_interval(double x0, double y0, double x1, double y1, double cx, double cy,
+                                 double r, double& t0, double& t1) {
+    const double dx = x1 - x0, dy = y1 - y0;
+    const double fx = x0 - cx, fy = y0 - cy;
+    const double a = dx * dx + dy * dy;
+    const double c = fx * fx + fy * fy - r * r;
+    if (a <= 1e-18) {
+        // Degenerate (zero-length) segment: it is either in or out as a point.
+        if (c > 0.0)
+            return false;
+        t0 = 0.0;
+        t1 = 1.0;
+        return true;
+    }
+    const double b = 2.0 * (fx * dx + fy * dy);
+    const double disc = b * b - 4.0 * a * c;
+    if (disc < 0.0)
+        return false; // the infinite line misses the circle
+    const double sq = std::sqrt(disc);
+    t0 = std::max(0.0, (-b - sq) / (2.0 * a));
+    t1 = std::min(1.0, (-b + sq) / (2.0 * a));
+    return t1 > t0;
+}
+
+// Clip every polyline to the interior of a circle, splitting one that leaves
+// and re-enters into separate pieces so the gap is not bridged by a false edge.
+static DrawingPolylines clip_polylines_to_circle(const DrawingPolylines& src, double cx, double cy,
+                                                 double r) {
+    DrawingPolylines out;
+    for (const auto& pl : src) {
+        if (pl.size() < 2)
+            continue;
+        DrawingPolyline run;
+        auto flush = [&]() {
+            if (run.size() >= 2)
+                out.push_back(run);
+            run.clear();
+        };
+        for (std::size_t i = 0; i + 1 < pl.size(); ++i) {
+            const auto [x0, y0] = pl[i];
+            const auto [x1, y1] = pl[i + 1];
+            double t0 = 0.0, t1 = 0.0;
+            if (!circle_clip_interval(x0, y0, x1, y1, cx, cy, r, t0, t1)) {
+                flush();
+                continue;
+            }
+            const double ax = x0 + (x1 - x0) * t0, ay = y0 + (y1 - y0) * t0;
+            const double bx = x0 + (x1 - x0) * t1, by = y0 + (y1 - y0) * t1;
+            // Continue the current run only when this piece starts where the
+            // last one ended; otherwise the polyline left the circle in between.
+            const bool joins = !run.empty() && std::abs(run.back().first - ax) < 1e-9 &&
+                               std::abs(run.back().second - ay) < 1e-9;
+            if (!joins) {
+                flush();
+                run.emplace_back(ax, ay);
+            }
+            run.emplace_back(bx, by);
+        }
+        flush();
+    }
+    return out;
+}
+
+// Render a magnification ratio the way a drawing states it: "4:1" when the
+// factor is a whole number, "2.5:1" otherwise.
+static std::string format_detail_ratio(double scale) {
+    std::ostringstream oss;
+    if (std::abs(scale - std::round(scale)) < 1e-9)
+        oss << static_cast<long long>(std::llround(scale));
+    else
+        oss << format_measurement(scale);
+    oss << ":1";
+    return oss.str();
+}
+
+// Mark on the parent view the region a detail view magnifies, growing the
+// view's bounds so the circle and its label are not clipped by the canvas.
+static void attach_detail_marker(DrawingViewData& view, const DetailSpec& spec, double scale) {
+    view.detail_marker = true;
+    view.detail_x = spec.x * scale;
+    view.detail_y = spec.y * scale;
+    view.detail_r = spec.radius * scale;
+    view.detail_label = spec.label;
+    // The label sits up and to the right of the circle; allow for both.
+    view.xmin = std::min(view.xmin, view.detail_x - view.detail_r);
+    view.xmax = std::max(view.xmax, view.detail_x + view.detail_r + 4.0);
+    view.ymin = std::min(view.ymin, view.detail_y - view.detail_r);
+    view.ymax = std::max(view.ymax, view.detail_y + view.detail_r + 4.0);
+}
+
+// Build the magnified close-up itself.
+//
+// A detail view is just another DrawingViewData: the parent's already-projected
+// polylines clipped to the region, recentred on the origin and multiplied by the
+// magnification.  Reusing the type means the existing SVG and DXF writers render
+// it with no special cases, and hidden lines, section outlines and hatching all
+// come along for free.
+//
+// Centre marks and diameter callouts are deliberately *not* carried over: they
+// are placed relative to the parent's geometry and would need re-deriving from
+// the clipped region to land correctly, which is not worth doing until someone
+// asks for it.
+static DrawingViewData build_detail_view(const DrawingViewData& parent, const DetailSpec& spec,
+                                         double scale) {
+    const double cx = spec.x * scale;
+    const double cy = spec.y * scale;
+    const double r = spec.radius * scale;
+    const double m = spec.scale;
+
+    // Clip in the parent's coordinates, then recentre and magnify.
+    auto transform = [&](DrawingPolylines polylines) {
+        for (auto& pl : polylines)
+            for (auto& [x, y] : pl) {
+                x = (x - cx) * m;
+                y = (y - cy) * m;
+            }
+        return polylines;
+    };
+
+    DrawingViewData detail;
+    detail.name = parent.name + "-detail";
+    detail.visible = transform(clip_polylines_to_circle(parent.visible, cx, cy, r));
+    detail.hidden = transform(clip_polylines_to_circle(parent.hidden, cx, cy, r));
+    detail.section_outline = transform(clip_polylines_to_circle(parent.section_outline, cx, cy, r));
+    detail.hatch = transform(clip_polylines_to_circle(parent.hatch, cx, cy, r));
+
+    if (detail.visible.empty() && detail.section_outline.empty()) {
+        std::ostringstream oss;
+        oss << "export_svg/dxf: detail region at (" << format_measurement(spec.x) << ", "
+            << format_measurement(spec.y) << ") radius " << format_measurement(spec.radius)
+            << " contains no drawing geometry — check the centre is stated in the " << parent.name
+            << " view's own axes";
+        throw std::runtime_error(oss.str());
+    }
+
+    // The border circle bounds the view exactly: everything inside was clipped
+    // to it, so there is no need to walk the points to find the extents.
+    const double br = r * m;
+    detail.detail_marker = true;
+    detail.detail_x = 0.0;
+    detail.detail_y = 0.0;
+    detail.detail_r = br;
+    detail.caption = "DETAIL " + spec.label + " (" + format_detail_ratio(m) + ")";
+    detail.geom_xmin = -br;
+    detail.geom_xmax = br;
+    detail.geom_ymin = -br;
+    detail.geom_ymax = br;
+    detail.xmin = -br;
+    detail.xmax = br;
+    detail.ymin = -br - DETAIL_CAPTION_GAP;
+    detail.ymax = br;
+    detail.width = 2.0 * br;
+    detail.height = 2.0 * br;
+    return detail;
+}
+
 static void include_placed_bounds(double& xmin, double& xmax, double& ymin, double& ymax,
                                   const DrawingViewData& view, double offset_x, double offset_y) {
     xmin = std::min(xmin, view.xmin + offset_x);
@@ -4123,6 +4321,32 @@ static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double
         }
         f << "  </g>\n";
     }
+    // Detail bubble: the region marker on a parent view, or the border circle
+    // and caption on the magnified view itself.
+    if (view.detail_marker) {
+        const double x = view.detail_x + offset_x;
+        const double y = view.detail_y + offset_y;
+        f << "  <g class=\"";
+        if (sheet_mode)
+            f << "view view-" << view.name << " ";
+        f << "detail\" stroke=\"#1d4ed8\" stroke-width=\"0.25\" fill=\"none\"";
+        f << " font-family=\"monospace\" font-size=\"3.0\">\n";
+        f << "    <circle cx=\"" << x << "\" cy=\"" << (-y) << "\" r=\"" << view.detail_r
+          << "\"/>\n";
+        if (!view.detail_label.empty()) {
+            // Up and to the right of the circle, clear of the geometry inside.
+            const double lx = x + view.detail_r * 0.71 + 1.5;
+            const double ly = y + view.detail_r * 0.71 + 1.5;
+            f << "    <text x=\"" << lx << "\" y=\"" << (-ly) << "\" fill=\"#1d4ed8\">"
+              << view.detail_label << "</text>\n";
+        }
+        if (!view.caption.empty()) {
+            f << "    <text x=\"" << x << "\" y=\""
+              << (-(y - view.detail_r - DETAIL_CAPTION_GAP + 2.0))
+              << "\" text-anchor=\"middle\" fill=\"#1d4ed8\">" << view.caption << "</text>\n";
+        }
+        f << "  </g>\n";
+    }
 }
 
 static void write_dxf_view(std::ofstream& f, const DrawingViewData& view, double offset_x,
@@ -4252,6 +4476,33 @@ static void write_dxf_view(std::ofstream& f, const DrawingViewData& view, double
             f << " 31\n0.0\n";
             write_text(lx + 2.0, ly, callout.text);
         }
+    }
+    // Detail bubble on its own layer, so a shop can turn the annotation off
+    // without losing geometry — the same treatment HIDDEN and HATCH get.
+    if (view.detail_marker) {
+        const double x = view.detail_x + offset_x;
+        const double y = view.detail_y + offset_y;
+        f << "  0\nCIRCLE\n";
+        f << "  8\nDETAIL\n";
+        f << " 10\n" << x << "\n";
+        f << " 20\n" << y << "\n";
+        f << " 30\n0.0\n";
+        f << " 40\n" << view.detail_r << "\n";
+        auto write_detail_text = [&](double tx, double ty, const std::string& text) {
+            f << "  0\nTEXT\n";
+            f << "  8\nDETAIL\n";
+            f << " 10\n" << tx << "\n";
+            f << " 20\n" << ty << "\n";
+            f << " 30\n0.0\n";
+            f << " 40\n3.0\n";
+            f << "  1\n" << text << "\n";
+        };
+        if (!view.detail_label.empty())
+            write_detail_text(x + view.detail_r * 0.71 + 1.5, y + view.detail_r * 0.71 + 1.5,
+                              view.detail_label);
+        if (!view.caption.empty())
+            write_detail_text(x - view.detail_r, y - view.detail_r - DETAIL_CAPTION_GAP,
+                              view.caption);
     }
 }
 
@@ -4502,6 +4753,8 @@ struct DrawingExportSetup {
     bool sheet_mode = false;
     // Requested section plane; inactive when the caller passed no section.
     SectionSpec section;
+    // Requested detail view; inactive when the caller passed no detail.
+    DetailSpec detail;
     // Datum anchor projected into 2-D view space (unscaled).
     std::pair<double, double> anchor_2d{0.0, 0.0};
     // Feature-control anchor already scaled into canvas coordinates.
@@ -4512,11 +4765,14 @@ struct DrawingExportSetup {
 // Common front matter for export_svg / export_dxf: copy the rust::Str inputs
 // into owned strings, validate the scale, and project both GD&T anchors into
 // the drawing plane of the requested view.
-static DrawingExportSetup prepare_drawing_export(
-    const char* fn_name, rust::Str path, rust::Str view, double scale, rust::Str datum,
-    rust::Str feature_control, double datum_anchor_x, double datum_anchor_y, double datum_anchor_z,
-    double feature_control_anchor_x, double feature_control_anchor_y,
-    double feature_control_anchor_z, rust::Str section_plane, double section_offset) {
+static DrawingExportSetup
+prepare_drawing_export(const char* fn_name, rust::Str path, rust::Str view, double scale,
+                       rust::Str datum, rust::Str feature_control, double datum_anchor_x,
+                       double datum_anchor_y, double datum_anchor_z,
+                       double feature_control_anchor_x, double feature_control_anchor_y,
+                       double feature_control_anchor_z, rust::Str section_plane,
+                       double section_offset, bool detail_active, double detail_x, double detail_y,
+                       double detail_radius, double detail_scale, rust::Str detail_label) {
     DrawingExportSetup s;
     s.path = std::string(path.data(), path.size());
     s.view = std::string(view.data(), view.size());
@@ -4546,6 +4802,31 @@ static DrawingExportSetup prepare_drawing_export(
         s.section.active = true;
         s.section.plane = section_plane_name;
         s.section.offset = section_offset;
+    }
+    if (detail_active) {
+        // A detail view magnifies one region of one projection.  On a three-view
+        // sheet there is no single parent to magnify, and silently picking one
+        // would put the bubble on a view the caller did not name — so refuse.
+        if (s.sheet_mode)
+            throw std::runtime_error(std::string(fn_name) +
+                                     ": detail views need a single view (top/front/side), not the "
+                                     "three-view sheet — export the detail separately");
+        if (!std::isfinite(detail_x) || !std::isfinite(detail_y))
+            throw std::runtime_error(std::string(fn_name) + ": detail centre must be finite");
+        if (!(detail_radius > 0.0) || !std::isfinite(detail_radius))
+            throw std::runtime_error(std::string(fn_name) +
+                                     ": detail radius must be positive and finite");
+        if (!(detail_scale > 0.0) || !std::isfinite(detail_scale))
+            throw std::runtime_error(std::string(fn_name) +
+                                     ": detail scale must be positive and finite");
+        s.detail.active = true;
+        s.detail.x = detail_x;
+        s.detail.y = detail_y;
+        s.detail.radius = detail_radius;
+        s.detail.scale = detail_scale;
+        s.detail.label = std::string(detail_label.data(), detail_label.size());
+        if (s.detail.label.empty())
+            s.detail.label = "A";
     }
     return s;
 }
@@ -4584,6 +4865,21 @@ static SheetLayout compute_sheet_layout(const DrawingViewData& top_view,
     return l;
 }
 
+// Offset that places a detail view beside its parent: to the right, with the
+// two vertical centres aligned, which is how a drawing normally reads.
+struct DetailPlacement {
+    double dx = 0.0;
+    double dy = 0.0;
+};
+
+static DetailPlacement place_detail_view(const DrawingViewData& parent,
+                                         const DrawingViewData& detail) {
+    DetailPlacement p;
+    p.dx = parent.xmax + DETAIL_VIEW_GAP - detail.xmin;
+    p.dy = (parent.ymin + parent.ymax) * 0.5 - (detail.ymin + detail.ymax) * 0.5;
+    return p;
+}
+
 // ---------------------------------------------------------------------------
 // SVG export
 // ---------------------------------------------------------------------------
@@ -4594,12 +4890,14 @@ void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double s
                 bool feature_control_anchor_valid, double feature_control_anchor_x,
                 double feature_control_anchor_y, double feature_control_anchor_z,
                 double tolerance_plus, double tolerance_minus, rust::Str section_plane,
-                double section_offset) {
+                double section_offset, bool detail_active, double detail_x, double detail_y,
+                double detail_radius, double detail_scale, rust::Str detail_label) {
     try {
         const DrawingExportSetup setup = prepare_drawing_export(
             "export_svg", path, view, scale, datum, feature_control, datum_anchor_x, datum_anchor_y,
             datum_anchor_z, feature_control_anchor_x, feature_control_anchor_y,
-            feature_control_anchor_z, section_plane, section_offset);
+            feature_control_anchor_z, section_plane, section_offset, detail_active, detail_x,
+            detail_y, detail_radius, detail_scale, detail_label);
         bool has_anchor = datum_anchor_valid;
         double anchor_canvas_x = 0.0;
         double anchor_canvas_y = 0.0;
@@ -4660,12 +4958,27 @@ void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double s
 
         auto single_view = build_drawing_view(shape, setup.view, scale, hidden, center_marks,
                                               dimensions, callouts, setup.section);
-        const double w = (single_view.xmax - single_view.xmin) + 2.0 * margin;
-        const double h = (single_view.ymax - single_view.ymin) + 2.0 * margin;
-        const double vb_x = single_view.xmin - margin;
-        const double vb_y = -(single_view.ymax + margin);
-        const DrawingCanvasBounds canvas{single_view.xmin, single_view.xmax, single_view.ymin,
-                                         single_view.ymax};
+        // Build the close-up from the parent's projected geometry, then mark the
+        // region on the parent — in that order, since marking grows its bounds.
+        DrawingViewData detail_view;
+        DetailPlacement detail_at;
+        if (setup.detail.active) {
+            detail_view = build_detail_view(single_view, setup.detail, scale);
+            attach_detail_marker(single_view, setup.detail, scale);
+            detail_at = place_detail_view(single_view, detail_view);
+        }
+
+        double cx_min = single_view.xmin, cx_max = single_view.xmax;
+        double cy_min = single_view.ymin, cy_max = single_view.ymax;
+        if (setup.detail.active)
+            include_placed_bounds(cx_min, cx_max, cy_min, cy_max, detail_view, detail_at.dx,
+                                  detail_at.dy);
+
+        const double w = (cx_max - cx_min) + 2.0 * margin;
+        const double h = (cy_max - cy_min) + 2.0 * margin;
+        const double vb_x = cx_min - margin;
+        const double vb_y = -(cy_max + margin);
+        const DrawingCanvasBounds canvas{cx_min, cx_max, cy_min, cy_max};
 
         std::ofstream f(setup.path);
         if (!f.is_open())
@@ -4683,6 +4996,12 @@ void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double s
         }
         write_svg_view(f, single_view, 0.0, 0.0, hidden, center_marks, dimensions, callouts, false,
                        nullptr, nullptr, tolerance_plus, tolerance_minus);
+        if (setup.detail.active) {
+            // The close-up carries no dimensions of its own: they would repeat
+            // the parent's overall extents at the wrong scale.
+            write_svg_view(f, detail_view, detail_at.dx, detail_at.dy, hidden, false, false, false,
+                           false);
+        }
         write_svg_gdt_frame(f, canvas, setup.datum, setup.feature_control, has_anchor,
                             anchor_canvas_x, anchor_canvas_y, feature_control_anchor_valid,
                             setup.feature_anchor_canvas_x, setup.feature_anchor_canvas_y);
@@ -4714,12 +5033,14 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
                 bool feature_control_anchor_valid, double feature_control_anchor_x,
                 double feature_control_anchor_y, double feature_control_anchor_z,
                 double tolerance_plus, double tolerance_minus, rust::Str section_plane,
-                double section_offset) {
+                double section_offset, bool detail_active, double detail_x, double detail_y,
+                double detail_radius, double detail_scale, rust::Str detail_label) {
     try {
         const DrawingExportSetup setup = prepare_drawing_export(
             "export_dxf", path, view, scale, datum, feature_control, datum_anchor_x, datum_anchor_y,
             datum_anchor_z, feature_control_anchor_x, feature_control_anchor_y,
-            feature_control_anchor_z, section_plane, section_offset);
+            feature_control_anchor_z, section_plane, section_offset, detail_active, detail_x,
+            detail_y, detail_radius, detail_scale, detail_label);
         bool has_anchor = datum_anchor_valid;
         double anchor_canvas_x = 0.0;
         double anchor_canvas_y = 0.0;
@@ -4775,8 +5096,21 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
 
         auto single_view = build_drawing_view(shape, setup.view, scale, hidden, center_marks,
                                               dimensions, callouts, setup.section);
-        const DrawingCanvasBounds canvas{single_view.geom_xmin, single_view.geom_xmax,
-                                         single_view.geom_ymin, single_view.geom_ymax};
+        // Same order as the SVG path: magnify first, then mark the parent.
+        DrawingViewData detail_view;
+        DetailPlacement detail_at;
+        if (setup.detail.active) {
+            detail_view = build_detail_view(single_view, setup.detail, scale);
+            attach_detail_marker(single_view, setup.detail, scale);
+            detail_at = place_detail_view(single_view, detail_view);
+        }
+
+        double cx_min = single_view.geom_xmin, cx_max = single_view.geom_xmax;
+        double cy_min = single_view.geom_ymin, cy_max = single_view.geom_ymax;
+        if (setup.detail.active)
+            include_placed_bounds(cx_min, cx_max, cy_min, cy_max, detail_view, detail_at.dx,
+                                  detail_at.dy);
+        const DrawingCanvasBounds canvas{cx_min, cx_max, cy_min, cy_max};
 
         std::ofstream f(setup.path);
         if (!f.is_open())
@@ -4794,6 +5128,11 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
 
         write_dxf_view(f, single_view, 0.0, 0.0, hidden, center_marks, dimensions, callouts, false,
                        nullptr, nullptr, tolerance_plus, tolerance_minus);
+        if (setup.detail.active) {
+            // No dimensions on the close-up — see the SVG path for why.
+            write_dxf_view(f, detail_view, detail_at.dx, detail_at.dy, hidden, false, false, false,
+                           false);
+        }
         if (has_anchor) {
             anchor_canvas_x = setup.anchor_2d.first * scale;
             anchor_canvas_y = setup.anchor_2d.second * scale;
