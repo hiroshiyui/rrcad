@@ -2,7 +2,7 @@
 
 # rrcad
 
-A 3D CAD language expressed in Ruby. Write `.rb` scripts to describe solid geometry; the engine evaluates them through an embedded mRuby VM, builds exact BRep models with OpenCASCADE (OCCT), and exports to STEP, STL, or glTF.
+A 3D CAD language expressed in Ruby. Write `.rb` scripts to describe solid geometry; the engine evaluates them through an embedded mRuby VM, builds exact BRep models with OpenCASCADE (OCCT), and exports to STEP, STL, glTF/GLB, OBJ, and 2-D SVG/DXF drawings.
 
 ```ruby
 # Outer cylinder — radius 30 mm, height 80 mm
@@ -50,7 +50,8 @@ Rust binding layer
 OCCT geometry kernel
   • BRep modeling & boolean ops
   • Tessellation (BRepMesh_IncrementalMesh)
-  • STEP / STL / glTF export
+  • Hidden-line removal for 2-D drawings (HLRBRep_PolyAlgo)
+  • STEP / STL / glTF / GLB / OBJ / SVG / DXF export
 ```
 
 The OCCT Rust layer is intentionally split across small modules under

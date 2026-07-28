@@ -43,7 +43,8 @@ Rust binding layer          (src/ruby/)
 OCCT geometry kernel        (src/occt/)
   • BRep modeling, splines, tessellation
   • Shape logic split across focused Rust modules under src/occt/
-  • STEP / STL / glTF (text) / GLB (binary) export
+  • STEP / STL / glTF (text) / GLB (binary) / OBJ export
+  • SVG / DXF 2-D drawings via HLR, incl. sheets, GD&T frames, section views
       │
 Live preview               (src/preview/)
   • export_glb → <temp-dir>/rrcad_preview_<uuid>.glb (CLI --preview)
