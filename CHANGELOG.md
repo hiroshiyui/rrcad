@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Sketch corner fillets and chamfers** (Phase 11 Track A,
+  `src/ruby/prelude.rb`): `fillet(point, radius)` and
+  `chamfer(point, distance)` inside `sketch do ... end` round or bevel an
+  individual corner while the 2-D profile is built, so the shaping is part of
+  the profile rather than a 3-D fillet applied afterwards. Both accept unit
+  values, and oversized modifiers, overlapping setbacks, duplicate modifiers
+  on one corner, collinear corners, and modifiers targeting a point outside
+  the closed loop are all rejected up front with the offending corner named.
+
 ### Changed
 
 - **FFI boilerplate consolidated** (`src/ruby/`): the repetitive Ruby-to-native

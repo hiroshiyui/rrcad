@@ -132,6 +132,46 @@ end
 For a diagonal example that uses the generalized `slot_between()` path, see
 [`samples/10_sketch_slot.rb`](../../samples/10_sketch_slot.rb).
 
+### Corner fillets and chamfers
+
+`fillet` and `chamfer` round or bevel an individual corner of a line-based
+sketch. They shape the 2-D profile itself, so the rounding exists before the
+profile is extruded — unlike `Shape#fillet`, which rounds edges of a solid
+that already exists.
+
+```ruby
+bracket = sketch do
+  a = point(:a, 0, 0)
+  b = point(:b, 40.mm, 0)
+  c = point(:c, 40.mm, 20.mm)
+  d = point(:d, 0, 20.mm)
+  line a, b
+  line b, c
+  line c, d
+  line d, a
+
+  fillet a, 5.mm      # rounded corner
+  chamfer c, 3.mm     # 45° bevel, 3 mm back along each edge
+end.extrude(6.mm)
+```
+
+`fillet` takes a radius; `chamfer` takes the setback distance along each
+adjacent segment. Both accept unit values (`5.mm`) and both take the corner
+point itself, so a named point can be modified from anywhere in the sketch.
+
+Use the sketch-level version when the rounding is part of the profile's
+definition — a filleted plate outline stays filleted through every later pad,
+pocket, or boolean. Use `Shape#fillet` when you want to soften edges of the
+finished solid, including edges that no sketch created.
+
+Errors are reported before any geometry is built:
+
+- A modifier larger than its adjacent segments (`corner modifier at :a is too
+  large: it needs 30.0 but the segment is 20.0`).
+- Two modifiers whose setbacks overlap on a shared segment.
+- More than one modifier on the same corner.
+- A modifier on a point that is not a corner of the closed loop.
+
 ### Diagnostics
 
 When a sketch fails to solve, the error names the constraint type, the

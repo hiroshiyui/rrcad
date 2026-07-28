@@ -294,6 +294,44 @@ overlap the previous layer.
 
 ---
 
+## Phase 11 — Professional CAD Depth
+
+Phases 0–10 brought `rrcad` to parity with scripted CAD tools. Phase 11
+targets the gap between "scripted geometry engine" and "tool a mechanical
+engineer would choose": the operations people reach for constantly in a
+professional workflow, and the deliverables a design is expected to produce.
+
+**Track A — Sketcher depth.** The constraint solver and profile types exist,
+but the sketcher cannot do the three things used most in practice. Adds
+per-corner `fillet` and `chamfer` inside `sketch do ... end` (today a rounded
+corner must become a 3-D fillet afterwards, which is often not what the part
+means), `trim` / `extend` on sketch segments, profile `offset`, sketch-level
+linear/polar patterns, and spline segments in sketch profiles.
+
+**Track B — Assembly intelligence.** The assembly layer has a real constraint
+solver but produces none of the deliverables an assembly exists for. Adds
+interference / clash detection between parts (pairwise `common` volume, with
+clearance reporting via `distance_to`), bill-of-materials generation with
+quantity rollup, and assembly-level mass, volume, and centre-of-mass rollup
+built on the existing `mass_estimate`.
+
+**Track C — Drawing completeness.** SVG/DXF output already has hidden lines,
+GD&T frames, title blocks, and 3-view sheets. Adds section views with
+standard 45° hatching (built on `Shape#slice` / `BRepAlgoAPI_Section`), detail
+views (scaled close-ups of a region), auto-dimensioning of principal
+features, and BOM tables with balloon callouts on assembly sheets.
+
+**Track D — Sheet metal.** A new modelling domain, largely independent of the
+other tracks: base flanges, edge flanges with bend radius and angle, bend
+relief, K-factor bend allowance, and unfolded flat-pattern generation
+exportable to DXF for laser cutting.
+
+**Opportunistic additions** folded in where they fit: 3MF export (carries
+units, colour, and multi-body properly, unlike STL), pattern-along-path,
+and `thicken` / `knit` surfacing operations.
+
+---
+
 ## Project Improvements
 
 - [x] Add CI coverage for MCP security invariants, including `create_mcp_vm()` and the file/process constant removal checks.

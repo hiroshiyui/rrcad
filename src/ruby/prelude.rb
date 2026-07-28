@@ -369,7 +369,7 @@ class SketchPoint
 end
 
 class SketchBuilder
-  attr_accessor :points, :lines, :constraints, :named, :profile
+  attr_accessor :points, :lines, :constraints, :named, :profile, :corner_mods
 
   def initialize
     @points = []
@@ -377,6 +377,8 @@ class SketchBuilder
     @constraints = []
     @named = {}
     @profile = nil
+    # [point, :fillet|:chamfer, size] entries applied when the profile is built.
+    @corner_mods = []
   end
 
   def point(x_or_name = nil, y = nil, maybe_y = nil)
@@ -535,6 +537,26 @@ class SketchBuilder
     [bottom_left, bottom_right, top_right, top_left]
   end
 
+  # Round the corner at +point+ with the given radius.
+  #
+  # The corner is replaced by a tangent arc when the profile is built, so the
+  # rounding is part of the 2-D profile itself rather than a 3-D fillet applied
+  # afterwards.  The radius must be small enough that the tangent points stay
+  # inside both adjacent segments.
+  def fillet(point, radius)
+    require_point!(point, "fillet")
+    require_positive_number!(radius, "fillet radius")
+    add_corner_mod(point, :fillet, radius)
+  end
+
+  # Bevel the corner at +point+, setting back +distance+ along both adjacent
+  # segments and joining the two resulting points with a straight edge.
+  def chamfer(point, distance)
+    require_point!(point, "chamfer")
+    require_positive_number!(distance, "chamfer distance")
+    add_corner_mod(point, :chamfer, distance)
+  end
+
   def fixed(point, x = point.x, y = point.y)
     require_point!(point, "fixed")
     @constraints << [:fixed, point, x, y]
@@ -656,6 +678,7 @@ class SketchBuilder
     solve_constraints
 
     pts = []
+    corner_points = []
     @lines.each_with_index do |(a, b), i|
       unless a.resolved? && b.resolved?
         point = a.resolved? ? b : a
@@ -667,12 +690,14 @@ class SketchBuilder
       end
 
       pts << a.to_a
+      corner_points << a
     end
 
     unless same_point?(@lines[-1][1], @lines[0][0])
       raise RuntimeError, "sketch lines must form one closed loop"
     end
 
+    pts = apply_corner_mods(pts, corner_points)
     shape = polygon(pts)
     shape.sketch_diagnostics = diagnostics_payload if diagnostics_payload
     shape
@@ -764,6 +789,10 @@ class SketchBuilder
 
     @constraints.each do |constraint|
       clone.constraints << remap_constraint(constraint, point_map)
+    end
+
+    @corner_mods.each do |point, kind, size|
+      clone.corner_mods << [point_map.fetch(point), kind, size]
     end
 
     clone.profile = remap_profile(@profile, point_map) if @profile
@@ -992,6 +1021,187 @@ class SketchBuilder
     polygon(pts)
       .rotate(0, 0, 1, Math.atan2(dy, dx) * 180.0 / Math::PI)
       .translate(a.x, a.y, 0)
+  end
+
+  # Register a corner modifier, rejecting a second one on the same corner.
+  def add_corner_mod(point, kind, size)
+    existing = @corner_mods.find { |entry| entry[0].equal?(point) }
+    if existing
+      raise ArgumentError,
+            "#{point_label(point)} already has a #{existing[1]}; use one corner modifier per point"
+    end
+
+    @corner_mods << [point, kind, size]
+    point
+  end
+
+  # Replace every modified corner in +pts+ with its rounded or bevelled
+  # geometry.  +corner_points+ holds the SketchPoint behind each entry of
+  # +pts+ so modifiers can be matched back to their corner by identity.
+  def apply_corner_mods(pts, corner_points)
+    return pts if @corner_mods.empty?
+
+    count = pts.length
+    setbacks = []
+    mods = []
+    i = 0
+    while i < count
+      setbacks << 0.0
+      mods << nil
+      i += 1
+    end
+
+    @corner_mods.each do |point, kind, size|
+      index = corner_index(corner_points, point, kind)
+      prev_pt = pts[(index - 1) % count]
+      corner = pts[index]
+      next_pt = pts[(index + 1) % count]
+
+      setback = corner_setback(kind, size, prev_pt, corner, next_pt, point)
+      setbacks[index] = setback
+      mods[index] = [kind, RRCADUnits.scalar(size), setback]
+    end
+
+    validate_setbacks(pts, setbacks, corner_points)
+
+    result = []
+    i = 0
+    while i < count
+      if mods[i].nil?
+        result << pts[i]
+      else
+        kind, size, setback = mods[i]
+        result.concat(
+          corner_geometry(kind, size, setback, pts[(i - 1) % count], pts[i], pts[(i + 1) % count])
+        )
+      end
+      i += 1
+    end
+    result
+  end
+
+  # Locate a modifier's corner in the resolved profile.
+  def corner_index(corner_points, point, kind)
+    index = nil
+    corner_points.each_with_index do |candidate, i|
+      index = i if index.nil? && candidate.equal?(point)
+    end
+
+    if index.nil?
+      raise ArgumentError, "#{kind} target #{point_label(point)} is not a corner of this sketch"
+    end
+
+    index
+  end
+
+  # Distance from the corner to the tangent/bevel point along each adjacent
+  # segment.  For a chamfer that is the requested distance; for a fillet it is
+  # r / tan(theta/2), where theta is the interior angle at the corner.
+  def corner_setback(kind, size, prev_pt, corner, next_pt, point)
+    value = RRCADUnits.scalar(size)
+    ux, uy = unit_vector_2d(corner, prev_pt)
+    vx, vy = unit_vector_2d(corner, next_pt)
+    theta = corner_angle(ux, uy, vx, vy)
+
+    if theta < 1.0e-6 || (Math::PI - theta).abs < 1.0e-6
+      raise ArgumentError,
+            "cannot #{kind} #{point_label(point)}: its adjacent segments are collinear"
+    end
+
+    return value if kind == :chamfer
+
+    value / Math.tan(theta / 2.0)
+  end
+
+  # Interior angle between the two segments leaving a corner, in radians.
+  def corner_angle(ux, uy, vx, vy)
+    cos_theta = (ux * vx) + (uy * vy)
+    cos_theta = 1.0 if cos_theta > 1.0
+    cos_theta = -1.0 if cos_theta < -1.0
+    Math.acos(cos_theta)
+  end
+
+  # Reject modifiers that would consume more of a segment than it has, which
+  # covers both an oversized single modifier and two that overlap each other.
+  def validate_setbacks(pts, setbacks, corner_points)
+    count = pts.length
+    i = 0
+    while i < count
+      j = (i + 1) % count
+      needed = setbacks[i] + setbacks[j]
+      length = segment_length_2d(pts[i], pts[j])
+
+      if needed > length - 1.0e-9
+        raise ArgumentError, setback_overflow_message(corner_points, setbacks, i, j, needed, length)
+      end
+
+      i += 1
+    end
+  end
+
+  def setback_overflow_message(corner_points, setbacks, i, j, needed, length)
+    span = "segment is #{RRCADUnits.format_num(length)}"
+    if setbacks[i] > 0.0 && setbacks[j] > 0.0
+      "corner modifiers at #{point_label(corner_points[i])} and #{point_label(corner_points[j])} " \
+        "overlap: together they need #{RRCADUnits.format_num(needed)} but the #{span}"
+    else
+      corner = setbacks[i] > 0.0 ? corner_points[i] : corner_points[j]
+      "corner modifier at #{point_label(corner)} is too large: it needs " \
+        "#{RRCADUnits.format_num(needed)} but the #{span}"
+    end
+  end
+
+  # Points replacing a modified corner: two bevel points for a chamfer, or a
+  # tangent arc for a fillet.
+  def corner_geometry(kind, size, setback, prev_pt, corner, next_pt)
+    ux, uy = unit_vector_2d(corner, prev_pt)
+    vx, vy = unit_vector_2d(corner, next_pt)
+    tangent_in = [corner[0] + (ux * setback), corner[1] + (uy * setback)]
+    tangent_out = [corner[0] + (vx * setback), corner[1] + (vy * setback)]
+
+    return [tangent_in, tangent_out] if kind == :chamfer
+
+    # The arc centre sits along the angle bisector at r / sin(theta/2).
+    theta = corner_angle(ux, uy, vx, vy)
+    bisector_x = ux + vx
+    bisector_y = uy + vy
+    bisector_len = Math.sqrt((bisector_x * bisector_x) + (bisector_y * bisector_y))
+    bisector_x /= bisector_len
+    bisector_y /= bisector_len
+    reach = size / Math.sin(theta / 2.0)
+    cx = corner[0] + (bisector_x * reach)
+    cy = corner[1] + (bisector_y * reach)
+
+    start_deg = Math.atan2(tangent_in[1] - cy, tangent_in[0] - cx) * 180.0 / Math::PI
+    end_deg = Math.atan2(tangent_out[1] - cy, tangent_out[0] - cx) * 180.0 / Math::PI
+    sweep = shortest_sweep_deg(end_deg - start_deg)
+
+    segments = (sweep.abs / 9.0).ceil
+    segments = 4 if segments < 4
+    arc_points(cx, cy, size, start_deg, start_deg + sweep, segments)
+  end
+
+  # Normalise a signed angle difference into (-180, 180] so the fillet arc
+  # always takes the short way around its centre.
+  def shortest_sweep_deg(delta)
+    delta += 360.0 while delta <= -180.0
+    delta -= 360.0 while delta > 180.0
+    delta
+  end
+
+  def unit_vector_2d(from, to)
+    dx = to[0] - from[0]
+    dy = to[1] - from[1]
+    len = Math.sqrt((dx * dx) + (dy * dy))
+    raise ArgumentError, "sketch segment has zero length" if len < 1.0e-12
+
+    [dx / len, dy / len]
+  end
+
+  def segment_length_2d(a, b)
+    dx = b[0] - a[0]
+    dy = b[1] - a[1]
+    Math.sqrt((dx * dx) + (dy * dy))
   end
 
   def arc_points(cx, cy, radius, start_deg, end_deg, segments)
