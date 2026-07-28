@@ -242,6 +242,10 @@ struct DrawingExportOpts {
     detail: Option<DetailView>,
     /// Ordinate dimensions for the located feature centres.
     ordinate: bool,
+    /// Parts list, as tab/newline-delimited records; empty when not requested.
+    bom_rows: String,
+    /// Balloon callouts, as `label\tx\ty` records; empty when not requested.
+    balloons: String,
 }
 
 impl DrawingExportOpts {
@@ -278,6 +282,8 @@ impl DrawingExportOpts {
             self.section_offset,
             self.detail.as_ref(),
             self.ordinate,
+            &self.bom_rows,
+            &self.balloons,
         )
     }
 }
@@ -321,6 +327,8 @@ unsafe fn parse_drawing_export_opts(
     detail_scale: f64,
     detail_label: *const c_char,
     ordinate: i32,
+    bom_rows: *const c_char,
+    balloons: *const c_char,
     error_out: *mut *const c_char,
 ) -> Option<DrawingExportOpts> {
     let safe = unsafe { resolve_path(path, error_out) }?;
@@ -394,7 +402,24 @@ unsafe fn parse_drawing_export_opts(
         section_offset,
         detail,
         ordinate: ordinate != 0,
+        bom_rows: unsafe { owned_or_empty(bom_rows) },
+        balloons: unsafe { owned_or_empty(balloons) },
     })
+}
+
+/// Copy a possibly-null C string into an owned `String`, treating null and
+/// invalid UTF-8 alike as "not supplied".
+///
+/// # Safety
+/// `ptr` must be null or a valid NUL-terminated string.
+unsafe fn owned_or_empty(ptr: *const c_char) -> String {
+    if ptr.is_null() {
+        return String::new();
+    }
+    unsafe { std::ffi::CStr::from_ptr(ptr) }
+        .to_str()
+        .unwrap_or("")
+        .to_owned()
 }
 
 #[unsafe(no_mangle)]
@@ -429,6 +454,8 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
     detail_scale: f64,
     detail_label: *const c_char,
     ordinate: i32,
+    bom_rows: *const c_char,
+    balloons: *const c_char,
     error_out: *mut *const c_char,
 ) {
     unsafe { *error_out = std::ptr::null() };
@@ -464,6 +491,8 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
             detail_scale,
             detail_label,
             ordinate,
+            bom_rows,
+            balloons,
             error_out,
         )
     }) else {
@@ -506,6 +535,8 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
     detail_scale: f64,
     detail_label: *const c_char,
     ordinate: i32,
+    bom_rows: *const c_char,
+    balloons: *const c_char,
     error_out: *mut *const c_char,
 ) {
     unsafe { *error_out = std::ptr::null() };
@@ -541,6 +572,8 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
             detail_scale,
             detail_label,
             ordinate,
+            bom_rows,
+            balloons,
             error_out,
         )
     }) else {
@@ -708,6 +741,8 @@ mod tests {
                     1.0,
                     cstr("").as_ptr(),
                     0,
+                    std::ptr::null(),
+                    std::ptr::null(),
                     &mut err,
                 );
             }
@@ -755,6 +790,8 @@ mod tests {
                     1.0,
                     cstr("").as_ptr(),
                     0,
+                    std::ptr::null(),
+                    std::ptr::null(),
                     &mut err,
                 );
             }
@@ -823,6 +860,8 @@ mod tests {
                 1.0,
                 cstr("").as_ptr(),
                 0,
+                std::ptr::null(),
+                std::ptr::null(),
                 &mut svg_err,
             );
         }
@@ -862,6 +901,8 @@ mod tests {
                 1.0,
                 cstr("").as_ptr(),
                 0,
+                std::ptr::null(),
+                std::ptr::null(),
                 &mut dxf_err,
             );
         }

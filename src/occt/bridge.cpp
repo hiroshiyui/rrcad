@@ -3416,6 +3416,87 @@ struct DrawingOrdinate {
 static const double ORDINATE_BASELINE = 20.0;
 static const double ORDINATE_LABEL_ROOM = 12.0;
 
+// One balloon callout: a numbered circle keyed to a parts-list row, with a
+// leader pointing at the component it identifies.
+struct DrawingBalloon {
+    std::string label; // the item number, matching the table's first column
+    double x, y;       // leader anchor: the component's centroid, in drawing coords
+    double bx, by;     // balloon centre, placed clear of the geometry
+};
+
+// Balloon geometry, in final drawing units.  The ring keeps the circles clear
+// of the part; the leaders fan out from it to each component.
+static const double BALLOON_RADIUS = 4.0;
+static const double BALLOON_RING_GAP = 14.0;
+
+// Parts-list table geometry.  A monospace glyph at font size 3 is a little
+// under 1.8 units wide, which is what sizes the columns.
+static const double BOM_ROW_HEIGHT = 5.0;
+static const double BOM_FONT_SIZE = 3.0;
+static const double BOM_CHAR_WIDTH = 1.8;
+static const double BOM_CELL_PAD = 3.0;
+static const double BOM_TABLE_GAP = 10.0;
+
+// Split on a single delimiter, keeping empty fields — the table's cells are
+// positional, so an empty material must not shift the columns after it.
+static std::vector<std::string> split_on(const std::string& text, char delim) {
+    std::vector<std::string> out;
+    std::string current;
+    for (char c : text) {
+        if (c == delim) {
+            out.push_back(current);
+            current.clear();
+        } else {
+            current.push_back(c);
+        }
+    }
+    out.push_back(current);
+    return out;
+}
+
+// Parse the tab/newline-delimited parts list.  Per-component data cannot travel
+// as scalars — the row count is not known until the assembly is walked — so it
+// arrives as one delimited string, with the first record as the header.
+static std::vector<std::vector<std::string>> parse_bom_rows(const std::string& text) {
+    std::vector<std::vector<std::string>> rows;
+    if (text.empty())
+        return rows;
+    for (const auto& line : split_on(text, '\n')) {
+        if (line.empty())
+            continue;
+        rows.push_back(split_on(line, '\t'));
+    }
+    return rows;
+}
+
+// Parse balloon records ("label\tx\ty"), with x/y in model units on the view's
+// drawing plane; `scale` lifts them into drawing coordinates.
+static std::vector<DrawingBalloon> parse_balloons(const std::string& text, double scale) {
+    std::vector<DrawingBalloon> balloons;
+    if (text.empty())
+        return balloons;
+    for (const auto& line : split_on(text, '\n')) {
+        if (line.empty())
+            continue;
+        auto fields = split_on(line, '\t');
+        if (fields.size() < 3)
+            throw std::runtime_error("export_svg/dxf: malformed balloon record \"" + line + "\"");
+        DrawingBalloon b;
+        b.label = fields[0];
+        try {
+            b.x = std::stod(fields[1]) * scale;
+            b.y = std::stod(fields[2]) * scale;
+        } catch (const std::exception&) {
+            throw std::runtime_error("export_svg/dxf: balloon \"" + fields[0] +
+                                     "\" has a non-numeric anchor");
+        }
+        b.bx = b.x;
+        b.by = b.y;
+        balloons.push_back(b);
+    }
+    return balloons;
+}
+
 // A requested section (cutting) plane for a drawing view.
 // `active` is false when the caller passed no `section:` option, in which case
 // the drawing is a plain projection and no cutting is performed at all.
@@ -4176,6 +4257,83 @@ static DrawingViewData build_detail_view(const DrawingViewData& parent, const De
     return detail;
 }
 
+// Radius of the ring the balloons sit on, measured from the view's geometry
+// centre.  Shared by placement and by the canvas-bounds calculation so the two
+// cannot disagree and clip a balloon off the page.
+static double balloon_ring_radius(const DrawingViewData& view) {
+    const double half_w = (view.geom_xmax - view.geom_xmin) * 0.5;
+    const double half_h = (view.geom_ymax - view.geom_ymin) * 0.5;
+    return std::sqrt(half_w * half_w + half_h * half_h) + BALLOON_RING_GAP + BALLOON_RADIUS;
+}
+
+// Arrange balloons on a ring around the view's geometry.
+//
+// Slots are assigned in order of each anchor's bearing from the centre, so the
+// leaders fan out in the same rotational order as the parts they point at and
+// therefore do not cross.  Spacing the slots evenly rather than leaving each
+// balloon on its own bearing is what stops two components in the same corner
+// from landing on top of each other.
+static void place_balloons(std::vector<DrawingBalloon>& balloons, const DrawingViewData& view) {
+    if (balloons.empty())
+        return;
+    const double cx = (view.geom_xmin + view.geom_xmax) * 0.5;
+    const double cy = (view.geom_ymin + view.geom_ymax) * 0.5;
+    const double ring = balloon_ring_radius(view);
+
+    auto angle_of = [&](std::size_t i) {
+        return std::atan2(balloons[i].y - cy, balloons[i].x - cx);
+    };
+    std::vector<std::size_t> order(balloons.size());
+    for (std::size_t i = 0; i < order.size(); ++i)
+        order[i] = i;
+    std::stable_sort(order.begin(), order.end(),
+                     [&](std::size_t a, std::size_t b) { return angle_of(a) < angle_of(b); });
+
+    const double start = angle_of(order[0]);
+    const double step = 2.0 * M_PI / static_cast<double>(balloons.size());
+    for (std::size_t slot = 0; slot < order.size(); ++slot) {
+        DrawingBalloon& b = balloons[order[slot]];
+        const double theta = start + step * static_cast<double>(slot);
+        b.bx = cx + ring * std::cos(theta);
+        b.by = cy + ring * std::sin(theta);
+    }
+}
+
+// Where the leader meets the balloon: on the circle's edge, facing the anchor.
+// Starting at the centre would draw a line through the number.
+static std::pair<double, double> balloon_leader_start(const DrawingBalloon& b) {
+    const double dx = b.x - b.bx;
+    const double dy = b.y - b.by;
+    const double len = std::sqrt(dx * dx + dy * dy);
+    if (len < 1e-9)
+        return {b.bx, b.by};
+    return {b.bx + BALLOON_RADIUS * dx / len, b.by + BALLOON_RADIUS * dy / len};
+}
+
+// Column widths for the parts list, from the longest cell in each column.
+static std::vector<double> bom_column_widths(const std::vector<std::vector<std::string>>& rows) {
+    std::size_t columns = 0;
+    for (const auto& row : rows)
+        columns = std::max(columns, row.size());
+    std::vector<double> widths(columns, 0.0);
+    for (const auto& row : rows)
+        for (std::size_t c = 0; c < row.size(); ++c)
+            widths[c] = std::max(widths[c], static_cast<double>(row[c].size()) * BOM_CHAR_WIDTH +
+                                                BOM_CELL_PAD);
+    return widths;
+}
+
+static double bom_table_width(const std::vector<std::vector<std::string>>& rows) {
+    double total = 0.0;
+    for (double w : bom_column_widths(rows))
+        total += w;
+    return total;
+}
+
+static double bom_table_height(const std::vector<std::vector<std::string>>& rows) {
+    return static_cast<double>(rows.size()) * BOM_ROW_HEIGHT;
+}
+
 static void include_placed_bounds(double& xmin, double& xmax, double& ymin, double& ymax,
                                   const DrawingViewData& view, double offset_x, double offset_y) {
     xmin = std::min(xmin, view.xmin + offset_x);
@@ -4230,6 +4388,33 @@ static std::string compose_dim_label(const char* axis, double value, const std::
     if (axis)
         label = std::string(axis) + " " + label;
     return label;
+}
+
+// Escape text destined for an SVG text node.
+//
+// Parts-list cells carry user-chosen component names and materials, so an
+// ampersand or angle bracket would otherwise produce a document no parser will
+// open.  (The older annotation paths — datum labels, feature-control frames,
+// diameter callouts — still emit raw text; see Project Improvements.)
+static std::string svg_text(const std::string& raw) {
+    std::string out;
+    out.reserve(raw.size());
+    for (char c : raw) {
+        switch (c) {
+        case '&':
+            out += "&amp;";
+            break;
+        case '<':
+            out += "&lt;";
+            break;
+        case '>':
+            out += "&gt;";
+            break;
+        default:
+            out.push_back(c);
+        }
+    }
+    return out;
 }
 
 static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double offset_x,
@@ -4445,12 +4630,13 @@ static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double
             const double lx = x + view.detail_r * 0.71 + 1.5;
             const double ly = y + view.detail_r * 0.71 + 1.5;
             f << "    <text x=\"" << lx << "\" y=\"" << (-ly) << "\" fill=\"#1d4ed8\">"
-              << view.detail_label << "</text>\n";
+              << svg_text(view.detail_label) << "</text>\n";
         }
         if (!view.caption.empty()) {
             f << "    <text x=\"" << x << "\" y=\""
               << (-(y - view.detail_r - DETAIL_CAPTION_GAP + 2.0))
-              << "\" text-anchor=\"middle\" fill=\"#1d4ed8\">" << view.caption << "</text>\n";
+              << "\" text-anchor=\"middle\" fill=\"#1d4ed8\">" << svg_text(view.caption)
+              << "</text>\n";
         }
         f << "  </g>\n";
     }
@@ -4659,6 +4845,124 @@ static void write_dxf_view(std::ofstream& f, const DrawingViewData& view, double
         if (!view.caption.empty())
             write_detail_text(x - view.detail_r, y - view.detail_r - DETAIL_CAPTION_GAP,
                               view.caption);
+    }
+}
+
+// Numbered balloons keyed to the parts list, each with a leader ending in a dot
+// on the component it identifies.
+static void write_svg_balloons(std::ofstream& f, const std::vector<DrawingBalloon>& balloons,
+                               double offset_x, double offset_y) {
+    if (balloons.empty())
+        return;
+    f << "  <g class=\"balloons\" stroke=\"#7c2d12\" stroke-width=\"0.25\" fill=\"none\"";
+    f << " font-family=\"monospace\" font-size=\"3.0\">\n";
+    for (const auto& b : balloons) {
+        const double bx = b.bx + offset_x;
+        const double by = b.by + offset_y;
+        const double ax = b.x + offset_x;
+        const double ay = b.y + offset_y;
+        auto [lx, ly] = balloon_leader_start(b);
+        lx += offset_x;
+        ly += offset_y;
+        f << "    <line x1=\"" << lx << "\" y1=\"" << (-ly) << "\" x2=\"" << ax << "\" y2=\""
+          << (-ay) << "\"/>\n";
+        f << "    <circle cx=\"" << bx << "\" cy=\"" << (-by) << "\" r=\"" << BALLOON_RADIUS
+          << "\"/>\n";
+        f << "    <circle cx=\"" << ax << "\" cy=\"" << (-ay)
+          << "\" r=\"0.6\" fill=\"#7c2d12\" stroke=\"none\"/>\n";
+        f << "    <text x=\"" << bx << "\" y=\"" << (-(by - 1.1))
+          << "\" text-anchor=\"middle\" fill=\"#7c2d12\" stroke=\"none\">" << svg_text(b.label)
+          << "</text>\n";
+    }
+    f << "  </g>\n";
+}
+
+// The parts list itself, ruled under the header and closed at the bottom, sat
+// below the drawing and left-aligned with it.
+static void write_svg_bom_table(std::ofstream& f, const DrawingCanvasBounds& canvas,
+                                const std::vector<std::vector<std::string>>& rows) {
+    if (rows.empty())
+        return;
+    const auto widths = bom_column_widths(rows);
+    const double total = bom_table_width(rows);
+    const double top = canvas.ymin - BOM_TABLE_GAP;
+    const double x0 = canvas.xmin;
+
+    f << "  <g class=\"bom\" stroke=\"#334155\" stroke-width=\"0.2\" fill=\"none\"";
+    f << " font-family=\"monospace\" font-size=\"" << BOM_FONT_SIZE << "\">\n";
+    auto rule = [&](double y) {
+        f << "    <line x1=\"" << x0 << "\" y1=\"" << (-y) << "\" x2=\"" << (x0 + total)
+          << "\" y2=\"" << (-y) << "\"/>\n";
+    };
+    rule(top);
+    rule(top - BOM_ROW_HEIGHT); // under the header
+    rule(top - bom_table_height(rows));
+    for (std::size_t r = 0; r < rows.size(); ++r) {
+        double x = x0;
+        const double text_y = top - static_cast<double>(r) * BOM_ROW_HEIGHT - BOM_ROW_HEIGHT * 0.68;
+        for (std::size_t c = 0; c < rows[r].size(); ++c) {
+            f << "    <text x=\"" << (x + BOM_CELL_PAD * 0.5) << "\" y=\"" << (-text_y)
+              << "\" fill=\"#334155\" stroke=\"none\">" << svg_text(rows[r][c]) << "</text>\n";
+            x += widths[c];
+        }
+    }
+    f << "  </g>\n";
+}
+
+// DXF equivalents: balloons on a BALLOON layer, the parts list on a BOM layer,
+// so a shop can turn either off without touching geometry.
+static void write_dxf_balloons(std::ofstream& f, const std::vector<DrawingBalloon>& balloons,
+                               double offset_x, double offset_y) {
+    for (const auto& b : balloons) {
+        const double bx = b.bx + offset_x;
+        const double by = b.by + offset_y;
+        const double ax = b.x + offset_x;
+        const double ay = b.y + offset_y;
+        auto [lx, ly] = balloon_leader_start(b);
+        lx += offset_x;
+        ly += offset_y;
+        f << "  0\nLINE\n  8\nBALLOON\n";
+        f << " 10\n" << lx << "\n 20\n" << ly << "\n 30\n0.0\n";
+        f << " 11\n" << ax << "\n 21\n" << ay << "\n 31\n0.0\n";
+        f << "  0\nCIRCLE\n  8\nBALLOON\n";
+        f << " 10\n" << bx << "\n 20\n" << by << "\n 30\n0.0\n";
+        f << " 40\n" << BALLOON_RADIUS << "\n";
+        // Centred text (group code 72 = 1) needs the 11/21 alignment point.
+        f << "  0\nTEXT\n  8\nBALLOON\n";
+        f << " 10\n" << bx << "\n 20\n" << (by - 1.1) << "\n 30\n0.0\n";
+        f << " 40\n3.0\n 72\n1\n";
+        f << " 11\n" << bx << "\n 21\n" << (by - 1.1) << "\n 31\n0.0\n";
+        f << "  1\n" << b.label << "\n";
+    }
+}
+
+static void write_dxf_bom_table(std::ofstream& f, const DrawingCanvasBounds& canvas,
+                                const std::vector<std::vector<std::string>>& rows) {
+    if (rows.empty())
+        return;
+    const auto widths = bom_column_widths(rows);
+    const double total = bom_table_width(rows);
+    const double top = canvas.ymin - BOM_TABLE_GAP;
+    const double x0 = canvas.xmin;
+
+    auto rule = [&](double y) {
+        f << "  0\nLINE\n  8\nBOM\n";
+        f << " 10\n" << x0 << "\n 20\n" << y << "\n 30\n0.0\n";
+        f << " 11\n" << (x0 + total) << "\n 21\n" << y << "\n 31\n0.0\n";
+    };
+    rule(top);
+    rule(top - BOM_ROW_HEIGHT);
+    rule(top - bom_table_height(rows));
+    for (std::size_t r = 0; r < rows.size(); ++r) {
+        double x = x0;
+        const double text_y = top - static_cast<double>(r) * BOM_ROW_HEIGHT - BOM_ROW_HEIGHT * 0.68;
+        for (std::size_t c = 0; c < rows[r].size(); ++c) {
+            f << "  0\nTEXT\n  8\nBOM\n";
+            f << " 10\n" << (x + BOM_CELL_PAD * 0.5) << "\n 20\n" << text_y << "\n 30\n0.0\n";
+            f << " 40\n" << BOM_FONT_SIZE << "\n";
+            f << "  1\n" << rows[r][c] << "\n";
+            x += widths[c];
+        }
     }
 }
 
@@ -4911,6 +5215,10 @@ struct DrawingExportSetup {
     SectionSpec section;
     // Requested detail view; inactive when the caller passed no detail.
     DetailSpec detail;
+    // Parts list and balloon callouts, supplied by the assembly layer as
+    // delimited records because their row count is not known up front.
+    std::vector<std::vector<std::string>> bom_rows;
+    std::vector<DrawingBalloon> balloons;
     // Datum anchor projected into 2-D view space (unscaled).
     std::pair<double, double> anchor_2d{0.0, 0.0};
     // Feature-control anchor already scaled into canvas coordinates.
@@ -4921,14 +5229,13 @@ struct DrawingExportSetup {
 // Common front matter for export_svg / export_dxf: copy the rust::Str inputs
 // into owned strings, validate the scale, and project both GD&T anchors into
 // the drawing plane of the requested view.
-static DrawingExportSetup
-prepare_drawing_export(const char* fn_name, rust::Str path, rust::Str view, double scale,
-                       rust::Str datum, rust::Str feature_control, double datum_anchor_x,
-                       double datum_anchor_y, double datum_anchor_z,
-                       double feature_control_anchor_x, double feature_control_anchor_y,
-                       double feature_control_anchor_z, rust::Str section_plane,
-                       double section_offset, bool detail_active, double detail_x, double detail_y,
-                       double detail_radius, double detail_scale, rust::Str detail_label) {
+static DrawingExportSetup prepare_drawing_export(
+    const char* fn_name, rust::Str path, rust::Str view, double scale, rust::Str datum,
+    rust::Str feature_control, double datum_anchor_x, double datum_anchor_y, double datum_anchor_z,
+    double feature_control_anchor_x, double feature_control_anchor_y,
+    double feature_control_anchor_z, rust::Str section_plane, double section_offset,
+    bool detail_active, double detail_x, double detail_y, double detail_radius, double detail_scale,
+    rust::Str detail_label, rust::Str bom_rows, rust::Str balloons) {
     DrawingExportSetup s;
     s.path = std::string(path.data(), path.size());
     s.view = std::string(view.data(), view.size());
@@ -4984,6 +5291,8 @@ prepare_drawing_export(const char* fn_name, rust::Str path, rust::Str view, doub
         if (s.detail.label.empty())
             s.detail.label = "A";
     }
+    s.bom_rows = parse_bom_rows(std::string(bom_rows.data(), bom_rows.size()));
+    s.balloons = parse_balloons(std::string(balloons.data(), balloons.size()), scale);
     return s;
 }
 
@@ -5036,6 +5345,34 @@ static DetailPlacement place_detail_view(const DrawingViewData& parent,
     return p;
 }
 
+// Grow the page so the balloons and the parts list are not clipped off it.
+//
+// Only the viewBox uses the result: the title block, the GD&T frame, and the
+// table itself stay anchored to the *drawing's* bounds, so adding a parts list
+// does not push the title block down with it.
+static DrawingCanvasBounds
+extend_page_for_annotations(DrawingCanvasBounds page, const std::vector<DrawingBalloon>& balloons,
+                            double offset_x, double offset_y,
+                            const std::vector<std::vector<std::string>>& bom_rows) {
+    // The table hangs off the *drawing's* bounds, so measure its extent before
+    // the balloons move them — otherwise a balloon below the part would push
+    // the page down by the table's height a second time.
+    const double table_bottom =
+        bom_rows.empty() ? page.ymin : page.ymin - BOM_TABLE_GAP - bom_table_height(bom_rows);
+    const double table_right =
+        bom_rows.empty() ? page.xmax : std::max(page.xmax, page.xmin + bom_table_width(bom_rows));
+
+    for (const auto& b : balloons) {
+        page.xmin = std::min(page.xmin, b.bx + offset_x - BALLOON_RADIUS);
+        page.xmax = std::max(page.xmax, b.bx + offset_x + BALLOON_RADIUS);
+        page.ymin = std::min(page.ymin, b.by + offset_y - BALLOON_RADIUS);
+        page.ymax = std::max(page.ymax, b.by + offset_y + BALLOON_RADIUS);
+    }
+    page.ymin = std::min(page.ymin, table_bottom);
+    page.xmax = std::max(page.xmax, table_right);
+    return page;
+}
+
 // ---------------------------------------------------------------------------
 // SVG export
 // ---------------------------------------------------------------------------
@@ -5047,13 +5384,14 @@ void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double s
                 double feature_control_anchor_y, double feature_control_anchor_z,
                 double tolerance_plus, double tolerance_minus, rust::Str section_plane,
                 double section_offset, bool detail_active, double detail_x, double detail_y,
-                double detail_radius, double detail_scale, rust::Str detail_label, bool ordinate) {
+                double detail_radius, double detail_scale, rust::Str detail_label, bool ordinate,
+                rust::Str bom_rows, rust::Str balloons) {
     try {
         const DrawingExportSetup setup = prepare_drawing_export(
             "export_svg", path, view, scale, datum, feature_control, datum_anchor_x, datum_anchor_y,
             datum_anchor_z, feature_control_anchor_x, feature_control_anchor_y,
             feature_control_anchor_z, section_plane, section_offset, detail_active, detail_x,
-            detail_y, detail_radius, detail_scale, detail_label);
+            detail_y, detail_radius, detail_scale, detail_label, bom_rows, balloons);
         bool has_anchor = datum_anchor_valid;
         double anchor_canvas_x = 0.0;
         double anchor_canvas_y = 0.0;
@@ -5074,10 +5412,17 @@ void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double s
                                      front_view.geom_ymax - top_view.geom_ymin + sheet_gap);
             const DrawingCanvasBounds& canvas = layout.canvas;
 
-            const double w = (canvas.xmax - canvas.xmin) + 2.0 * margin;
-            const double h = (canvas.ymax - canvas.ymin) + 2.0 * margin;
-            const double vb_x = canvas.xmin - margin;
-            const double vb_y = -(canvas.ymax + margin);
+            // Balloons ring the top view: on a three-view sheet that is the one
+            // plan every component appears somewhere on.
+            auto balloon_list = setup.balloons;
+            place_balloons(balloon_list, top_view);
+            const DrawingCanvasBounds page = extend_page_for_annotations(
+                canvas, balloon_list, layout.top_dx, layout.top_dy, setup.bom_rows);
+
+            const double w = (page.xmax - page.xmin) + 2.0 * margin;
+            const double h = (page.ymax - page.ymin) + 2.0 * margin;
+            const double vb_x = page.xmin - margin;
+            const double vb_y = -(page.ymax + margin);
 
             std::ofstream f(setup.path);
             if (!f.is_open())
@@ -5103,6 +5448,8 @@ void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double s
                                 anchor_canvas_x, anchor_canvas_y, feature_control_anchor_valid,
                                 setup.feature_anchor_canvas_x + layout.top_dx,
                                 setup.feature_anchor_canvas_y + layout.top_dy);
+            write_svg_balloons(f, balloon_list, layout.top_dx, layout.top_dy);
+            write_svg_bom_table(f, canvas, setup.bom_rows);
             if (title_block)
                 write_svg_title_block(f, canvas, "sheet", setup.view, true, scale, tolerance_plus,
                                       tolerance_minus);
@@ -5130,11 +5477,16 @@ void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double s
             include_placed_bounds(cx_min, cx_max, cy_min, cy_max, detail_view, detail_at.dx,
                                   detail_at.dy);
 
-        const double w = (cx_max - cx_min) + 2.0 * margin;
-        const double h = (cy_max - cy_min) + 2.0 * margin;
-        const double vb_x = cx_min - margin;
-        const double vb_y = -(cy_max + margin);
         const DrawingCanvasBounds canvas{cx_min, cx_max, cy_min, cy_max};
+        auto balloon_list = setup.balloons;
+        place_balloons(balloon_list, single_view);
+        const DrawingCanvasBounds page =
+            extend_page_for_annotations(canvas, balloon_list, 0.0, 0.0, setup.bom_rows);
+
+        const double w = (page.xmax - page.xmin) + 2.0 * margin;
+        const double h = (page.ymax - page.ymin) + 2.0 * margin;
+        const double vb_x = page.xmin - margin;
+        const double vb_y = -(page.ymax + margin);
 
         std::ofstream f(setup.path);
         if (!f.is_open())
@@ -5161,6 +5513,8 @@ void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double s
         write_svg_gdt_frame(f, canvas, setup.datum, setup.feature_control, has_anchor,
                             anchor_canvas_x, anchor_canvas_y, feature_control_anchor_valid,
                             setup.feature_anchor_canvas_x, setup.feature_anchor_canvas_y);
+        write_svg_balloons(f, balloon_list, 0.0, 0.0);
+        write_svg_bom_table(f, canvas, setup.bom_rows);
         if (title_block)
             write_svg_title_block(f, canvas, "sheet", setup.view, false, scale, tolerance_plus,
                                   tolerance_minus);
@@ -5190,13 +5544,14 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
                 double feature_control_anchor_y, double feature_control_anchor_z,
                 double tolerance_plus, double tolerance_minus, rust::Str section_plane,
                 double section_offset, bool detail_active, double detail_x, double detail_y,
-                double detail_radius, double detail_scale, rust::Str detail_label, bool ordinate) {
+                double detail_radius, double detail_scale, rust::Str detail_label, bool ordinate,
+                rust::Str bom_rows, rust::Str balloons) {
     try {
         const DrawingExportSetup setup = prepare_drawing_export(
             "export_dxf", path, view, scale, datum, feature_control, datum_anchor_x, datum_anchor_y,
             datum_anchor_z, feature_control_anchor_x, feature_control_anchor_y,
             feature_control_anchor_z, section_plane, section_offset, detail_active, detail_x,
-            detail_y, detail_radius, detail_scale, detail_label);
+            detail_y, detail_radius, detail_scale, detail_label, bom_rows, balloons);
         bool has_anchor = datum_anchor_valid;
         double anchor_canvas_x = 0.0;
         double anchor_canvas_y = 0.0;
@@ -5215,6 +5570,11 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
                 compute_sheet_layout(top_view, front_view, side_view, sheet_gap,
                                      front_view.geom_ymax - front_view.geom_ymin + sheet_gap);
             const DrawingCanvasBounds& canvas = layout.canvas;
+
+            // As in the SVG path: balloons ring the top view.  DXF has no page
+            // box to extend, so nothing else follows from their placement.
+            auto balloon_list = setup.balloons;
+            place_balloons(balloon_list, top_view);
 
             std::ofstream f(setup.path);
             if (!f.is_open())
@@ -5240,6 +5600,8 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
                                 anchor_canvas_x, anchor_canvas_y, feature_control_anchor_valid,
                                 setup.feature_anchor_canvas_x + layout.top_dx,
                                 setup.feature_anchor_canvas_y + layout.top_dy);
+            write_dxf_balloons(f, balloon_list, layout.top_dx, layout.top_dy);
+            write_dxf_bom_table(f, canvas, setup.bom_rows);
             if (title_block)
                 write_dxf_title_block(f, canvas, "sheet", setup.view, true, scale, tolerance_plus,
                                       tolerance_minus);
@@ -5267,6 +5629,8 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
             include_placed_bounds(cx_min, cx_max, cy_min, cy_max, detail_view, detail_at.dx,
                                   detail_at.dy);
         const DrawingCanvasBounds canvas{cx_min, cx_max, cy_min, cy_max};
+        auto balloon_list = setup.balloons;
+        place_balloons(balloon_list, single_view);
 
         std::ofstream f(setup.path);
         if (!f.is_open())
@@ -5296,6 +5660,8 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
         write_dxf_gdt_frame(f, canvas, setup.datum, setup.feature_control, has_anchor,
                             anchor_canvas_x, anchor_canvas_y, feature_control_anchor_valid,
                             setup.feature_anchor_canvas_x, setup.feature_anchor_canvas_y);
+        write_dxf_balloons(f, balloon_list, 0.0, 0.0);
+        write_dxf_bom_table(f, canvas, setup.bom_rows);
         if (title_block)
             write_dxf_title_block(f, canvas, "sheet", setup.view, false, scale, tolerance_plus,
                                   tolerance_minus);

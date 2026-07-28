@@ -120,8 +120,8 @@ Follow-ons, driven by working through a quadcopter as a test case:
 
 ### Track C — Drawing completeness
 
-SVG/DXF output already has hidden lines, GD&T frames, title blocks, and 3-view
-sheets.
+SVG/DXF output already had hidden lines, GD&T frames, title blocks, and 3-view
+sheets. **Complete.**
 
 - [x] **Section views** with standard 45° hatching, built on `BRepAlgoAPI_Cut`
       against a half-space (the same axis-aligned planes `Shape#slice`
@@ -144,10 +144,15 @@ sheets.
       and features sharing a coordinate collapse to one ordinate. SVG uses an
       `ordinates` group, DXF an `ORDINATE` layer with right-aligned text.
       Tests: 16 in `tests/auto_dimensioning.rs`.
-- [ ] BOM tables with balloon callouts on assembly sheets. No longer blocked:
-      `Assembly#export` now forwards drawing options. What remains is a channel
-      for per-component data (item numbers, quantities, leader anchors) to reach
-      the exporter, which the current flat scalar FFI cannot carry.
+- [x] **BOM tables with balloon callouts** — `asm.export(path, bom: true,
+      balloons: true)` draws the bill of materials below the drawing and marks
+      each component with a numbered balloon whose leader lands on it, keyed to
+      the table's item numbers. Per-component data crosses the FFI as delimited
+      records, since the row count is not known until the assembly is walked.
+      Balloons ring the geometry ordered by each part's bearing, so leaders do
+      not cross; on a three-view sheet they attach to the top view.
+      SVG uses `bom` / `balloons` groups, DXF `BOM` / `BALLOON` layers.
+      Tests: 15 in `tests/bom_sheets.rs`.
 
 ### Flat cut-file export
 
@@ -187,6 +192,11 @@ Cross-cutting work that does not belong to a phase.
 ### Open
 
 
+- [ ] SVG text escaping is applied only to the newer annotations (parts-list
+      cells, balloon numbers, detail captions). The older paths — datum labels,
+      feature-control frames, diameter callouts, title-block fields — still emit
+      user text raw, so an `&` or `<` in one produces a document no parser will
+      open. `svg_text()` in `bridge.cpp` is the helper to route them through.
 - [ ] The drawing export carries a flat parameter list — 29 scalars through
       `glue.c` → `native_io.rs` → `drawing_ops.rs` → `bridge.cpp`, four layers
       that must stay in lockstep. Detail views bundled their six values into a

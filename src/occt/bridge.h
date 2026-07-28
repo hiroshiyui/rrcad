@@ -481,6 +481,14 @@ void export_obj(const OcctShape& shape, rust::Str path, double linear_deflection
 // view, labelled with that feature's distance from the datum corner (the
 // lower-left of the projected geometry). Features sharing a coordinate collapse
 // to a single ordinate. SVG emits an `ordinates` group; DXF an `ORDINATE` layer.
+// `bom_rows` and `balloons` carry per-component data from the assembly layer,
+// which cannot travel as scalars because the row count is not known until the
+// assembly is walked. Both are delimited records: `bom_rows` is tab-separated
+// cells, newline-separated rows, the first row being the header; `balloons` is
+// "label\tx\ty" per line, with x/y in model units on the view's drawing plane.
+// The parts list is drawn below the drawing; balloons ring the geometry (the
+// top view on a three-view sheet) with leaders to each anchor. Empty strings
+// disable them.
 void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double scale, bool hidden,
                 bool center_marks, bool dimensions, bool title_block, bool callouts,
                 rust::Str datum, bool datum_anchor_valid, double datum_anchor_x,
@@ -489,7 +497,8 @@ void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double s
                 double feature_control_anchor_y, double feature_control_anchor_z,
                 double tolerance_plus, double tolerance_minus, rust::Str section_plane,
                 double section_offset, bool detail_active, double detail_x, double detail_y,
-                double detail_radius, double detail_scale, rust::Str detail_label, bool ordinate);
+                double detail_radius, double detail_scale, rust::Str detail_label, bool ordinate,
+                rust::Str bom_rows, rust::Str balloons);
 void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double scale, bool hidden,
                 bool center_marks, bool dimensions, bool title_block, bool callouts,
                 rust::Str datum, bool datum_anchor_valid, double datum_anchor_x,
@@ -498,7 +507,8 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
                 double feature_control_anchor_y, double feature_control_anchor_z,
                 double tolerance_plus, double tolerance_minus, rust::Str section_plane,
                 double section_offset, bool detail_active, double detail_x, double detail_y,
-                double detail_radius, double detail_scale, rust::Str detail_label, bool ordinate);
+                double detail_radius, double detail_scale, rust::Str detail_label, bool ordinate,
+                rust::Str bom_rows, rust::Str balloons);
 
 // Flat cut-file export: the closed loops of one planar face at 1:1.
 // Unlike export_svg/export_dxf (HLR drawings of a 3-D shape), this emits only

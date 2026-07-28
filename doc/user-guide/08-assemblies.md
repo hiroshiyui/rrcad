@@ -297,9 +297,46 @@ Everything in [chapter 10](10-import-export.md#2-d-drawings-svg--dxf) —
 `hidden:`, `title_block:` — is forwarded untouched.
 
 The export is of the **fused** geometry, so it is a picture of the assembled
-product, not a parts list. For per-component figures use
-[`bom_text`](#bill-of-materials) and [`mass_properties`](#mass-rollup)
-alongside it.
+product. Two extra options put the component data back on the page.
+
+### Parts lists and balloons
+
+```ruby
+asm.export("panel.svg", view: :sheet, bom: true, balloons: true,
+                        title_block: true)
+```
+
+`bom: true` draws the bill of materials as a table below the drawing:
+
+```
+Item  Component  Qty  Material   Mass (g)
+1     m6_screw   4    stainless  10.86
+2     plate      1    aluminium  155.52
+3     post       1    steel      80.38
+```
+
+`balloons: true` adds a numbered circle for each row, with a leader landing on
+that component — **balloon 3 and table row 3 name the same part**. There is one
+balloon per *component*, not per part: the four screws share one balloon,
+because the table already says there are four.
+
+Balloons ring the geometry so they never sit on top of it, and are ordered by
+where their part actually is, so the leaders fan out without crossing. On a
+three-view sheet they attach to the top view, which is the one plan every part
+appears somewhere on.
+
+The table's item numbers, quantities, and masses come from
+[`bom`](#bill-of-materials), so a component key that groups parts of different
+volume raises there rather than producing a misleading drawing.
+
+Both options are drawing-only — `asm.export("panel.step", bom: true)` simply
+ignores them.
+
+Output details:
+
+- **SVG** — a `bom` group for the table, a `balloons` group for the callouts.
+- **DXF** — `BOM` and `BALLOON` layers, so either can be switched off without
+  touching geometry.
 
 ## Worked example: coloured assembly
 

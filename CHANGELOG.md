@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Parts lists and balloon callouts on assembly drawings** (Phase 11 Track C,
+  `src/occt/bridge.cpp`, `src/ruby/prelude.rb`): `asm.export("panel.svg",
+  view: :sheet, bom: true, balloons: true)` draws the bill of materials as a
+  table below the drawing and marks each component with a numbered balloon
+  whose leader lands on that part, keyed to the table's item numbers. One
+  balloon per *component* rather than per part — the table already states the
+  quantity. Balloons ring the geometry, ordered by each part's bearing from the
+  centre so the leaders fan out without crossing, and attach to the top view on
+  a three-view sheet. Per-component data cannot travel as scalar export options
+  (the row count is not known until the assembly is walked), so it crosses the
+  FFI as tab- and newline-delimited records; a delimiter inside a component
+  name is replaced rather than silently shifting every column after it. Cells
+  are XML-escaped, so a component named `M6 <A&B>` no longer produces an SVG
+  that fails to parse. SVG emits `bom` and `balloons` groups; DXF uses `BOM`
+  and `BALLOON` layers. Both options are drawing-only and ignored by the solid
+  formats. This completes Phase 11 Track C.
+
 - **`Assembly#export` accepts drawing options** (`src/ruby/prelude.rb`): it
   took only a path, so `view:`, `section:`, `dimensions:`, and every other
   option was silently dropped — an assembly could produce a STEP file but not a

@@ -3544,6 +3544,72 @@ class Assembly
   # Format +value+ with exactly +digits+ decimal places, so a column of
   # numbers lines up on the decimal point. Hand-rolled because this mRuby
   # build has no sprintf.
+  # Turn the assembly-level `bom:` / `balloons:` flags into the delimited
+  # records the exporter reads.
+  #
+  # Per-component data cannot travel as scalar export options — the row count
+  # is not known until the assembly is walked — so each feature goes across as
+  # one string of tab-separated cells and newline-separated records.
+  def drawing_annotations(opts)
+    return opts if opts.nil?
+    want_bom = opts[:bom] == true
+    want_balloons = opts[:balloons] == true
+    return opts unless want_bom || want_balloons
+
+    rows = bom
+    out = {}
+    opts.each { |key, value| out[key] = value unless key == :bom || key == :balloons }
+    out[:bom_rows] = bom_records(rows) if want_bom
+    out[:balloons] = balloon_records(rows, opts[:view]) if want_balloons
+    out
+  end
+
+  # The parts list, header first. Item numbers match #bom's own ordering, so a
+  # balloon numbered 3 and the table's row 3 name the same component.
+  def bom_records(rows)
+    lines = [["Item", "Component", "Qty", "Material", "Mass (g)"].join("\t")]
+    rows.each_with_index do |row, index|
+      lines << [(index + 1).to_s,
+                clean_cell(row[:component].to_s),
+                row[:quantity].to_s,
+                clean_cell(row[:material].to_s),
+                fixed_decimals(row[:mass], 2)].join("\t")
+    end
+    lines.join("\n")
+  end
+
+  # One balloon per parts-list row, anchored on the first part carrying that
+  # component key. A second instance of the same component does not get its own
+  # balloon — the table already says there are four of them.
+  def balloon_records(rows, view)
+    parts = components
+    lines = []
+    rows.each_with_index do |row, index|
+      part = parts.find { |candidate| candidate[:component] == row[:component] }
+      next if part.nil?
+      x, y = project_to_view(part[:shape].centroid, view)
+      lines << [(index + 1).to_s, x.to_s, y.to_s].join("\t")
+    end
+    lines.join("\n")
+  end
+
+  # Drop a 3-D point onto the drawing plane of the named view. A three-view
+  # sheet balloons its top view, which is the one plan every part appears on.
+  def project_to_view(point, view)
+    case (view.nil? ? "top" : view.to_s)
+    when "front" then [point[0], point[2]]
+    when "side" then [point[1], point[2]]
+    else [point[0], point[1]]
+    end
+  end
+
+  # Tabs and newlines separate the records, so one inside a component name
+  # would shift every column after it. Replace rather than raise: the name is
+  # the user's, and a drawing is no place to fail over stray whitespace.
+  def clean_cell(text)
+    text.gsub("\t", " ").gsub("\n", " ")
+  end
+
   def fixed_decimals(value, digits)
     scale = 10**digits
     units = (value.abs * scale).round
@@ -3714,7 +3780,8 @@ class Assembly
   private :validate_axis_pair!, :vec_sub, :vec_normalize, :vec_dot, :vec_scale, :vec_length,
           :apply_axis_rotation, :record_shape, :build_meta, :resolve_density, :resolve_mass,
           :resolve_inertia_reference, :inertia_rollup,
-          :normalize_material, :fixed_decimals, :normalize_part_name, :normalize_face_ref!,
+          :normalize_material, :fixed_decimals, :drawing_annotations, :bom_records,
+          :balloon_records, :project_to_view, :clean_cell, :normalize_part_name, :normalize_face_ref!,
           :normalize_local_selector!, :validate_numeric!, :validate_positive_numeric!,
           :validate_point!, :mark_solver_dirty!, :resolve_face_ref,
           :solve_part_candidate, :constraint_target_resolved?, :verify_part_constraints!,
@@ -3737,8 +3804,14 @@ class Assembly
   #   asm.export("layout.step")
   #   asm.export("layout.svg", view: :sheet, title_block: true)
   #   asm.export("section.svg", view: :front, section: :xz)
+  # `bom: true` adds a parts-list table below the drawing; `balloons: true`
+  # adds numbered callouts on the view, keyed to the table's item numbers.
+  # Both are drawing-only and are ignored by the solid formats.
+  #
+  #   asm.export("sheet.svg", view: :sheet, bom: true, balloons: true)
   def export(path, opts = nil)
     shape = to_shape
+    opts = drawing_annotations(opts)
     # Shape#export takes the options as an optional trailing Hash; passing an
     # explicit nil would fail its argument spec, so drop the argument instead.
     return shape.export(path) if opts.nil? || opts.empty?

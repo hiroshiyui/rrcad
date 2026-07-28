@@ -193,7 +193,8 @@ extern void rrcad_shape_export_svg(
     double feature_control_anchor_y, double feature_control_anchor_z, double tolerance_plus,
     double tolerance_minus, const char* section_plane, double section_offset, int detail_active,
     double detail_x, double detail_y, double detail_radius, double detail_scale,
-    const char* detail_label, int ordinate, const char** error_out);
+    const char* detail_label, int ordinate, const char* bom_rows, const char* balloons,
+    const char** error_out);
 extern void rrcad_shape_export_dxf(
     void* ptr, const char* path, const char* view, double scale, int hidden, int center_marks,
     int dimensions, int title_block, int callouts, const char* datum, int datum_anchor_valid,
@@ -202,7 +203,8 @@ extern void rrcad_shape_export_dxf(
     double feature_control_anchor_y, double feature_control_anchor_z, double tolerance_plus,
     double tolerance_minus, const char* section_plane, double section_offset, int detail_active,
     double detail_x, double detail_y, double detail_radius, double detail_scale,
-    const char* detail_label, int ordinate, const char** error_out);
+    const char* detail_label, int ordinate, const char* bom_rows, const char* balloons,
+    const char** error_out);
 extern void rrcad_shape_export_outline(void* ptr, const char* path, const char* format,
                                        double deflection, const char** error_out);
 
@@ -657,6 +659,13 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     mrb_value detail_label_buf = mrb_nil_value();
     /* Ordinate dimensions for the part's located features. */
     int ordinate = 0;
+    /* Parts list and balloon callouts.  These carry per-component data, so the
+     * assembly layer builds them; a bare Shape has nothing to put in them.
+     * Both are delimited records — see bridge.h for the format. */
+    const char* bom_rows = "";
+    mrb_value bom_rows_buf = mrb_nil_value();
+    const char* balloons = "";
+    mrb_value balloons_buf = mrb_nil_value();
     if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
         mrb_value vv = opt_fetch(mrb, opts, "view", mrb_nil_value());
         if (mrb_symbol_p(vv)) {
@@ -673,6 +682,20 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
         title_block = opt_flag(mrb, opts, "title_block");
         callouts = opt_flag(mrb, opts, "callouts");
         ordinate = opt_flag(mrb, opts, "ordinate");
+        mrb_value bom_v = opt_fetch(mrb, opts, "bom_rows", mrb_nil_value());
+        if (!mrb_nil_p(bom_v)) {
+            if (!mrb_string_p(bom_v))
+                mrb_raise(mrb, E_TYPE_ERROR, "bom_rows expects a String of delimited records");
+            bom_rows_buf = bom_v;
+            bom_rows = mrb_string_value_cstr(mrb, &bom_rows_buf);
+        }
+        mrb_value balloons_v = opt_fetch(mrb, opts, "balloons", mrb_nil_value());
+        if (!mrb_nil_p(balloons_v)) {
+            if (!mrb_string_p(balloons_v))
+                mrb_raise(mrb, E_TYPE_ERROR, "balloons expects a String of delimited records");
+            balloons_buf = balloons_v;
+            balloons = mrb_string_value_cstr(mrb, &balloons_buf);
+        }
         mrb_value datum_v = opt_fetch(mrb, opts, "datum", mrb_nil_value());
         if (!mrb_nil_p(datum_v)) {
             if (mrb_hash_p(datum_v)) {
@@ -837,7 +860,7 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
             feature_control_anchor_valid, feature_control_anchor[0], feature_control_anchor[1],
             feature_control_anchor[2], tolerance_plus, tolerance_minus, section_plane,
             section_offset, detail_active, detail_x, detail_y, detail_radius, detail_scale,
-            detail_label, ordinate, &err);
+            detail_label, ordinate, bom_rows, balloons, &err);
     } else if (dot && (strcasecmp(dot, ".dxf") == 0)) {
         rrcad_shape_export_dxf(
             ptr, path, view, scale, hidden, center_marks, dimensions, title_block, callouts, datum,
@@ -845,7 +868,7 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
             feature_control_anchor_valid, feature_control_anchor[0], feature_control_anchor[1],
             feature_control_anchor[2], tolerance_plus, tolerance_minus, section_plane,
             section_offset, detail_active, detail_x, detail_y, detail_radius, detail_scale,
-            detail_label, ordinate, &err);
+            detail_label, ordinate, bom_rows, balloons, &err);
     } else {
         /* Default: STEP (.step, .stp, or unknown extension) */
         rrcad_shape_export_step(ptr, path, &err);
