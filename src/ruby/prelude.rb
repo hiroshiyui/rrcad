@@ -2801,6 +2801,37 @@ end
 class Assembly
   SOLVER_TOLERANCE = 1.0e-6
 
+  # Smallest common-volume (mm³) that counts as a real interference rather
+  # than boolean round-off along a flush mate.
+  INTERFERENCE_TOLERANCE = 1.0e-6
+
+  # Density used when a component names no material and the caller supplies
+  # no default — PLA, matching Kernel#mass_estimate.
+  DEFAULT_DENSITY = 1.24
+
+  # Rough densities in g/cm³, keyed by a normalized material name (see
+  # +normalize_material+). Used so `material: "aluminium"` alone yields a
+  # believable mass. An explicit `density:` always wins, and an unrecognised
+  # material silently falls back to the caller's default — material names are
+  # free text ("6061-T6", "PLA, 20% infill"), so an unknown one is not an
+  # error. Every mass report echoes the density it actually used.
+  MATERIAL_DENSITIES = {
+    "steel" => 7.85, "mildsteel" => 7.85, "carbonsteel" => 7.85,
+    "stainless" => 8.00, "stainlesssteel" => 8.00,
+    "aluminium" => 2.70, "aluminum" => 2.70,
+    "brass" => 8.50, "bronze" => 8.80, "copper" => 8.96,
+    "titanium" => 4.51, "zinc" => 7.14, "lead" => 11.34,
+    "abs" => 1.04, "pla" => 1.24, "petg" => 1.27, "nylon" => 1.14,
+    "resin" => 1.10, "tpu" => 1.21,
+    "delrin" => 1.41, "pom" => 1.41, "acetal" => 1.41,
+    "acrylic" => 1.18, "pmma" => 1.18,
+    "polycarbonate" => 1.20, "pc" => 1.20,
+    "pvc" => 1.38, "ptfe" => 2.20, "teflon" => 2.20,
+    "hdpe" => 0.95, "ldpe" => 0.92, "polypropylene" => 0.90, "pp" => 0.90,
+    "wood" => 0.50, "pine" => 0.50, "oak" => 0.75, "plywood" => 0.68,
+    "glass" => 2.50, "rubber" => 1.20,
+  }
+
   class FaceRef
     attr_reader :part_name, :selector
 
@@ -2858,20 +2889,26 @@ class Assembly
   def initialize(name)
     @name = name
     @shapes = []
+    # Component metadata for @shapes, index-aligned. Kept alongside rather
+    # than inside the Shape so a Shape stays a pure geometry handle.
+    @shape_meta = []
     @solver_parts = []
     @solver_parts_by_name = {}
     @solver_cache = nil
     @solver_dirty = true
   end
 
-  def place(shape)
-    @shapes << shape
-    shape
+  # place(shape, name:, material:, density:, component:) — add a shape to the
+  # assembly verbatim. All keywords are optional and feed the reporting
+  # methods (#bom, #mass_properties, #interferences); geometry ignores them.
+  def place(shape, name: nil, material: nil, density: nil, component: nil)
+    record_shape(shape, name, material, density, component)
   end
 
   # Declare a named rigid part to be solved lazily from constraints.
   # The first declared part is fixed by default unless fixed: false is given.
-  def part(name, shape, fixed: nil, &block)
+  # material:/density:/component: are reporting metadata — see #place.
+  def part(name, shape, fixed: nil, material: nil, density: nil, component: nil, &block)
     unless shape.is_a?(Shape)
       raise ArgumentError, "part shape must be a Shape"
     end
@@ -2880,7 +2917,8 @@ class Assembly
       raise ArgumentError, "duplicate assembly part #{name.inspect}"
     end
     fixed = @solver_parts.empty? if fixed.nil?
-    part = { name: name, shape: shape, fixed: fixed, constraints: [] }
+    part = { name: name, shape: shape, fixed: fixed, constraints: [],
+             meta: build_meta(name, material, density, component) }
     @solver_parts << part
     @solver_parts_by_name[name] = part
     mark_solver_dirty!
@@ -2896,8 +2934,9 @@ class Assembly
     shape
   end
 
-  def ground(name, shape, &block)
-    part(name, shape, fixed: true, &block)
+  def ground(name, shape, material: nil, density: nil, component: nil, &block)
+    part(name, shape, fixed: true, material: material, density: density,
+                      component: component, &block)
   end
 
   def face(part_name, selector)
@@ -2914,22 +2953,22 @@ class Assembly
   #     a.mate post2, from: post2.faces(:bottom).first,
   #                   to:   base.faces(:top).first, offset: 5.0
   #   end
-  def mate(shape, from:, to:, offset: 0.0)
+  def mate(shape, from:, to:, offset: 0.0, name: nil, material: nil, density: nil,
+           component: nil)
     positioned = shape.mate(from, to, offset)
-    @shapes << positioned
-    positioned
+    record_shape(positioned, name, material, density, component)
   end
 
   # distance_mate(shape, from:, to:, distance:) — same as mate, but expresses
   # the gap explicitly. `distance:` must be positive (a gap, not contact);
   # use the plain `mate(... offset: 0)` for flush contact.
-  def distance_mate(shape, from:, to:, distance:)
+  def distance_mate(shape, from:, to:, distance:, name: nil, material: nil, density: nil,
+                    component: nil)
     unless distance.is_a?(Numeric) && distance > 0
       raise ArgumentError, "distance_mate distance must be > 0 (use mate for flush contact)"
     end
     positioned = shape.mate(from, to, distance)
-    @shapes << positioned
-    positioned
+    record_shape(positioned, name, material, density, component)
   end
 
   # axis_align(shape, from: [p1, p2], to: [q1, q2]) — rotate and translate
@@ -2938,7 +2977,7 @@ class Assembly
   # coincident with q1, and direction (p2−p1) is rotated to (q2−q1). Useful
   # for concentric / coaxial alignment of cylindrical features when you can
   # name two points on each axis.
-  def axis_align(shape, from:, to:)
+  def axis_align(shape, from:, to:, name: nil, material: nil, density: nil, component: nil)
     p1, p2 = validate_axis_pair!(from, "axis_align from:")
     q1, q2 = validate_axis_pair!(to, "axis_align to:")
 
@@ -2950,8 +2989,7 @@ class Assembly
     intermediate = shape.translate(-p1[0], -p1[1], -p1[2])
     intermediate = apply_axis_rotation(intermediate, u, v)
     positioned = intermediate.translate(q1[0], q1[1], q1[2])
-    @shapes << positioned
-    positioned
+    record_shape(positioned, name, material, density, component)
   end
 
   # angle_mate(shape, from:, to:, angle:, pivot:, axis_dir:, offset: 0)
@@ -2960,14 +2998,14 @@ class Assembly
   # +pivot+ in direction +axis_dir+ (both 3-element world-space vectors).
   # Useful for locking the rotational degree of freedom left over after a
   # planar mate.
-  def angle_mate(shape, from:, to:, angle:, pivot:, axis_dir:, offset: 0.0)
+  def angle_mate(shape, from:, to:, angle:, pivot:, axis_dir:, offset: 0.0, name: nil,
+                 material: nil, density: nil, component: nil)
     unless angle.is_a?(Numeric)
       raise ArgumentError, "angle_mate angle must be a number"
     end
     mated = shape.mate(from, to, offset)
     positioned = mated.rotate_about(pivot, axis_dir, angle)
-    @shapes << positioned
-    positioned
+    record_shape(positioned, name, material, density, component)
   end
 
   # Solve the declarative assembly graph and return a Hash of part name →
@@ -3008,6 +3046,222 @@ class Assembly
     @solver_cache = resolved
     @solver_dirty = false
     resolved
+  end
+
+  # --- Component enumeration -----------------------------------------------
+
+  # Every component in the assembly, in declaration order: ad-hoc placements
+  # first, then solver parts in their solved positions. Each entry is
+  #
+  #   {name:, component:, material:, density:, shape:}
+  #
+  # +name+ is unique within the assembly (auto-assigned :part_1, :part_2, …
+  # for unnamed placements); +component+ is the BOM grouping key, which
+  # several parts may share. Solving happens here, so the shapes are in their
+  # final world positions.
+  def components
+    list = []
+    @shapes.each_with_index do |shape, index|
+      meta = @shape_meta[index] || build_meta(nil, nil, nil, nil)
+      name = meta[:name] || :"part_#{index + 1}"
+      list << meta.merge(name: name,
+                         component: meta[:component] || name,
+                         shape: shape)
+    end
+    unless @solver_parts.empty?
+      solved = solve
+      @solver_parts.each do |part|
+        meta = part[:meta]
+        list << meta.merge(component: meta[:component] || part[:name],
+                           shape: solved[part[:name]])
+      end
+    end
+    list
+  end
+
+  # --- Interference / clash detection --------------------------------------
+
+  # Check every unordered pair of components for solid overlap, and
+  # optionally for insufficient clearance. Returns an Array of Hashes:
+  #
+  #   {a:, b:, type: :interference, volume:, centroid:}   # solids overlap
+  #   {a:, b:, type: :clearance, distance:, minimum:}     # gap below clearance:
+  #
+  # Flush mates are *not* interferences: two boxes sharing a face overlap in
+  # zero volume. Pass `clearance:` to also demand an air gap between every
+  # pair — useful for checking fit tolerances, or room for a tool or a hand.
+  #
+  #   asm.interferences                    # => [] when nothing collides
+  #   asm.interferences(clearance: 0.5)    # also flag pairs closer than 0.5 mm
+  #
+  # Parts in contact (gap 0) are skipped by the clearance check, since a mate
+  # puts faces together on purpose and every mated pair would otherwise be
+  # reported. Pass `ignore_contact: false` to flag them too, when nothing in
+  # the assembly is meant to touch.
+  #
+  # Results are sorted worst-first: interferences by descending overlap
+  # volume, then clearance violations by ascending gap.
+  #
+  # Cost is O(n²) boolean intersections, so this is a check to run
+  # deliberately, not on every rebuild.
+  def interferences(clearance: 0.0, ignore_contact: true, tolerance: INTERFERENCE_TOLERANCE)
+    unless clearance.is_a?(Numeric) && clearance >= 0
+      raise ArgumentError, "interferences clearance must be >= 0"
+    end
+    clearance = RRCADUnits.scalar(clearance)
+    parts = components
+    clashes = []
+    gaps = []
+
+    parts.each_with_index do |a, i|
+      parts.each_with_index do |b, j|
+        next unless j > i
+        overlap = a[:shape].common(b[:shape])
+        volume = overlap.volume
+        if volume > tolerance
+          clashes << { a: a[:name], b: b[:name], type: :interference,
+                       volume: volume, centroid: overlap.centroid }
+          next # already the worse finding; no need to measure a gap of 0
+        end
+        next if clearance <= 0.0
+        distance = a[:shape].distance_to(b[:shape])
+        next if ignore_contact && distance <= tolerance
+        if distance < clearance
+          gaps << { a: a[:name], b: b[:name], type: :clearance,
+                    distance: distance, minimum: clearance }
+        end
+      end
+    end
+
+    clashes.sort_by! { |c| -c[:volume] }
+    gaps.sort_by! { |g| g[:distance] }
+    clashes + gaps
+  end
+
+  # True when any two components overlap in solid volume.
+  def clash?
+    !interferences.empty?
+  end
+
+  # --- Bill of materials ----------------------------------------------------
+
+  # Roll components up by their +component+ key and return one row each:
+  #
+  #   {component:, quantity:, material:, density:,
+  #    unit_volume:, volume:, unit_mass:, mass:, parts: [names]}
+  #
+  # Volumes are mm³ and masses grams. `density:` supplies the fallback for
+  # components that name neither a density nor a known material. Rows are
+  # sorted by descending quantity, then by component name, so the parts you
+  # need most of come first.
+  #
+  # Parts sharing a component key are assumed interchangeable; the unit
+  # figures come from the first one seen, and a mismatch in volume between
+  # them raises rather than silently averaging.
+  def bom(density: DEFAULT_DENSITY)
+    validate_positive_numeric!(density, "bom density") unless density.nil?
+    rows = {}
+    components.each do |part|
+      key = part[:component]
+      volume = part[:shape].volume
+      row = rows[key]
+      if row.nil?
+        rho = resolve_density(part, density)
+        rows[key] = { component: key, quantity: 1, material: part[:material],
+                      density: rho, unit_volume: volume, volume: volume,
+                      unit_mass: volume * rho / 1000.0,
+                      mass: volume * rho / 1000.0, parts: [part[:name]] }
+      else
+        unless (row[:unit_volume] - volume).abs <= 1.0e-6 * [row[:unit_volume].abs, 1.0].max
+          raise RuntimeError,
+                "assembly '#{@name}' component #{key.inspect} groups parts of different volume " \
+                "(#{format_num(row[:unit_volume])} vs #{format_num(volume)} mm³); " \
+                "give the differing part its own component:"
+        end
+        row[:quantity] += 1
+        row[:volume] += volume
+        row[:mass] += row[:unit_mass]
+        row[:parts] << part[:name]
+      end
+    end
+    rows.values.sort_by { |row| [-row[:quantity], row[:component].to_s] }
+  end
+
+  # Render #bom as a fixed-width text table, ready to `puts`. Columns size
+  # themselves to their contents; a TOTAL row closes the table.
+  def bom_text(density: DEFAULT_DENSITY)
+    rows = bom(density: density)
+    return "assembly '#{@name}' has no components" if rows.empty?
+
+    # ASCII only: column widths come from String#length, which counts bytes
+    # in this mRuby build, so a "mm³" header would misalign the rules.
+    header = ["Item", "Component", "Qty", "Material", "Volume (mm3)", "Mass (g)"]
+    body = rows.each_with_index.map do |row, index|
+      [(index + 1).to_s, row[:component].to_s, row[:quantity].to_s,
+       (row[:material] || "-").to_s, fixed_decimals(row[:volume], 3),
+       fixed_decimals(row[:mass], 3)]
+    end
+    totals = ["", "TOTAL", rows.map { |r| r[:quantity] }.inject(0) { |a, b| a + b }.to_s, "",
+              fixed_decimals(rows.map { |r| r[:volume] }.inject(0.0) { |a, b| a + b }, 3),
+              fixed_decimals(rows.map { |r| r[:mass] }.inject(0.0) { |a, b| a + b }, 3)]
+
+    widths = header.each_with_index.map do |cell, col|
+      ([cell] + body.map { |r| r[col] } + [totals[col]]).map { |s| s.length }.max
+    end
+    # Numeric columns (qty, volume, mass) read better right-aligned.
+    right = [false, false, true, false, true, true]
+    render = lambda do |cells|
+      cells.each_with_index.map do |cell, col|
+        right[col] ? cell.rjust(widths[col]) : cell.ljust(widths[col])
+      end.join("  ").rstrip
+    end
+
+    lines = [render.call(header), widths.map { |w| "-" * w }.join("  ")]
+    body.each { |row| lines << render.call(row) }
+    lines << widths.map { |w| "-" * w }.join("  ")
+    lines << render.call(totals)
+    lines.join("\n")
+  end
+
+  # --- Mass rollup ----------------------------------------------------------
+
+  # Aggregate volume, mass, and centre of mass over every component:
+  #
+  #   {volume:, mass:, center_of_mass: [x, y, z],
+  #    parts: [{name:, component:, material:, density:, volume:, mass:,
+  #             centroid:}]}
+  #
+  # The centre of mass is the mass-weighted mean of the per-part centroids —
+  # exact for non-overlapping parts. Where two parts interpenetrate the shared
+  # volume is counted twice, so run #interferences first if you are unsure;
+  # this method deliberately does not fuse the assembly, both because fusing
+  # is expensive and because it would hide the per-part breakdown.
+  def mass_properties(density: DEFAULT_DENSITY)
+    validate_positive_numeric!(density, "mass_properties density") unless density.nil?
+    parts = components
+    if parts.empty?
+      raise RuntimeError, "Assembly '#{@name}' contains no shapes"
+    end
+
+    rows = parts.map do |part|
+      rho = resolve_density(part, density)
+      volume = part[:shape].volume
+      { name: part[:name], component: part[:component], material: part[:material],
+        density: rho, volume: volume, mass: volume * rho / 1000.0,
+        centroid: part[:shape].centroid }
+    end
+
+    total_volume = rows.inject(0.0) { |acc, row| acc + row[:volume] }
+    total_mass = rows.inject(0.0) { |acc, row| acc + row[:mass] }
+    if total_mass <= 1.0e-12
+      raise RuntimeError, "assembly '#{@name}' has no mass: every component has zero volume"
+    end
+
+    com = [0, 1, 2].map do |axis|
+      rows.inject(0.0) { |acc, row| acc + row[:centroid][axis] * row[:mass] } / total_mass
+    end
+
+    { volume: total_volume, mass: total_mass, center_of_mass: com, parts: rows }
   end
 
   def validate_axis_pair!(pair, label)
@@ -3078,6 +3332,63 @@ class Assembly
       angle_deg = Math.atan2(sin_t, cos_t) * 180.0 / Math::PI
       shape.rotate(kx / sin_t, ky / sin_t, kz / sin_t, angle_deg)
     end
+  end
+
+  # Append a shape to the ad-hoc placement list along with its reporting
+  # metadata, and return the shape so placement helpers stay chainable.
+  def record_shape(shape, name, material, density, component)
+    unless shape.is_a?(Shape)
+      raise ArgumentError, "assembly can only hold a Shape"
+    end
+    @shapes << shape
+    @shape_meta << build_meta(name, material, density, component)
+    shape
+  end
+
+  # Normalize the reporting keywords shared by #place, #part, and the
+  # placement helpers. A nil name is filled in later by #components, which is
+  # the only place that knows the placement index.
+  def build_meta(name, material, density, component)
+    unless material.nil? || material.is_a?(String) || material.is_a?(Symbol)
+      raise ArgumentError, "material must be a String or Symbol"
+    end
+    unless density.nil?
+      validate_positive_numeric!(density, "density")
+    end
+    { name: name.nil? ? nil : normalize_part_name(name),
+      component: component.nil? ? nil : normalize_part_name(component),
+      material: material.nil? ? nil : material.to_s,
+      density: density.nil? ? nil : RRCADUnits.scalar(density) }
+  end
+
+  # Density for one component, in g/cm³: an explicit density: wins, then the
+  # material table, then the caller's fallback, then DEFAULT_DENSITY.
+  def resolve_density(part, fallback)
+    return part[:density] unless part[:density].nil?
+    unless part[:material].nil?
+      known = MATERIAL_DENSITIES[normalize_material(part[:material])]
+      return known unless known.nil?
+    end
+    fallback.nil? ? DEFAULT_DENSITY : RRCADUnits.scalar(fallback)
+  end
+
+  # Fold a free-text material name to a MATERIAL_DENSITIES key: lower-case,
+  # letters and digits only, so "Stainless Steel" and "stainless-steel" match.
+  def normalize_material(material)
+    material.to_s.downcase.split("").select do |ch|
+      (ch >= "a" && ch <= "z") || (ch >= "0" && ch <= "9")
+    end.join
+  end
+
+  # Format +value+ with exactly +digits+ decimal places, so a column of
+  # numbers lines up on the decimal point. Hand-rolled because this mRuby
+  # build has no sprintf.
+  def fixed_decimals(value, digits)
+    scale = 10**digits
+    units = (value.abs * scale).round
+    frac = (units % scale).to_s
+    frac = "0#{frac}" while frac.length < digits
+    "#{value < 0 ? '-' : ''}#{units / scale}.#{frac}"
   end
 
   def normalize_part_name(name)
@@ -3240,7 +3551,8 @@ class Assembly
   end
 
   private :validate_axis_pair!, :vec_sub, :vec_normalize, :vec_dot, :vec_scale, :vec_length,
-          :apply_axis_rotation, :normalize_part_name, :normalize_face_ref!,
+          :apply_axis_rotation, :record_shape, :build_meta, :resolve_density,
+          :normalize_material, :fixed_decimals, :normalize_part_name, :normalize_face_ref!,
           :normalize_local_selector!, :validate_numeric!, :validate_positive_numeric!,
           :validate_point!, :mark_solver_dirty!, :resolve_face_ref,
           :solve_part_candidate, :constraint_target_resolved?, :verify_part_constraints!,

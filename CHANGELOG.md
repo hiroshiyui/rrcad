@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Assembly reports** (Phase 11 Track B, `src/ruby/prelude.rb`): an assembly
+  that solves cleanly can still be wrong, and until now it produced none of
+  the deliverables an assembly exists for. Three reports close that gap.
+  `Assembly#interferences` intersects every pair of components and reports
+  real overlaps with volume and centroid, worst first; a flush `mate` is not a
+  clash, since two boxes sharing a face overlap in zero volume. Passing
+  `clearance:` also demands an air gap, skipping parts that touch on purpose
+  unless `ignore_contact: false`. `Assembly#bom` rolls components up by their
+  `component:` key with quantity, volume, and mass, and `#bom_text` renders an
+  aligned table; grouping parts of different volume raises rather than
+  quietly averaging them. `Assembly#mass_properties` returns total volume,
+  mass, and a mass-weighted centre of mass with a per-part breakdown.
+  Placement methods (`place`, `part`, `ground`, `mate`, `distance_mate`,
+  `axis_align`, `angle_mate`) now accept optional `name:`, `component:`,
+  `material:`, and `density:` metadata, and `Assembly#components` enumerates
+  ad-hoc placements and solver parts uniformly in their solved positions. A
+  built-in material→density table means `material: "aluminium"` alone yields a
+  believable mass; an explicit `density:` wins, an unknown material falls back
+  rather than failing, and every report echoes the density it used.
+
 - **Spline segments in sketch profiles** (Phase 11 Track A,
   `src/occt/bridge.cpp`, `src/ruby/prelude.rb`): `spline a, b, through: [...]`
   draws a curved segment of a constraint sketch through the given interior

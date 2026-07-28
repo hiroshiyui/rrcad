@@ -431,6 +431,7 @@ is still active.
 | `tests/phase11_profile_offset.rs` | Phase 11 Track A: sketch `offset` and `Shape#offset_2d` |
 | `tests/phase11_sketch_patterns.rs` | Phase 11 Track A: sketch `linear_pattern`, `polar_pattern`, `grid_pattern` |
 | `tests/phase11_sketch_splines.rs` | Phase 11 Track A: `spline` segments and the `make_profile_2d` builder beneath them |
+| `tests/phase11_assembly_reports.rs` | Phase 11 Track B: `Assembly#components`, `#interferences` / `#clash?`, `#bom` / `#bom_text`, `#mass_properties` |
 | `tests/export_confinement.rs` | Import/export path confinement: working-directory rule, symlink escapes, missing directories |
 | `tests/project_config_integration.rs` | `rrcad.toml` discovery, parent-directory walk-up, `[params]` and `preview_port` |
 | `tests/script_output.rs` | `puts`, `print`, `p`, `pp` formatting rules and the output sink |

@@ -844,6 +844,7 @@ rig.to_shape
 | Method | Description |
 |--------|-------------|
 | `a.place(shape)` | Add `shape` at its current position. Returns `shape`. |
+| `a.place(shape, name:, component:, material:, density:)` | Same, with reporting metadata. All four keywords are optional and are also accepted by `part`, `ground`, `mate`, `distance_mate`, `axis_align`, and `angle_mate`. Geometry ignores them. |
 | `a.ground(name, shape) { ... }` | Register a fixed part in the declarative solver. The first `part` is fixed by default; use `ground` for clarity on the root body. |
 | `a.part(name, shape, fixed: nil) { ... }` | Register a named rigid part for lazy solving. The yielded builder supports `mate`, `distance_mate`, and `angle_mate` constraints; the first part defaults to fixed when `fixed:` is omitted. |
 | `a.face(part_name, selector)` | Build a face reference for the declarative solver. Use with `a.part(...){ mate from: :bottom, to: face(:base, :top) }`. |
@@ -853,6 +854,28 @@ rig.to_shape
 | `a.axis_align(shape, from: [p1, p2], to: [q1, q2])` | Rotate and translate `shape` so the source axis (`p1 → p2` in the shape's frame) maps to the target axis (`q1 → q2` in world coordinates). Useful for coaxial / concentric / axis-alignment placement by point pairs. |
 | `a.angle_mate(shape, from:, to:, angle:, pivot:, axis_dir:, offset: 0.0)` | Mate `from:` face flush onto `to:` face (with optional `offset:` gap), then rotate the placed shape by `angle` degrees about an axis through `pivot` in direction `axis_dir`. Locks the rotational DOF left over by a planar mate. |
 | `asm.export(path)` | Fuse all shapes and export to file. When declarative parts are present, the assembly is solved lazily before fusion. |
+
+#### Assembly reports
+
+These solve the assembly first, so the shapes they measure are in their final
+world positions. None of them mutate the assembly.
+
+| Method | Description |
+|--------|-------------|
+| `asm.components` | Every component as `{name:, component:, material:, density:, shape:}` — ad-hoc placements first (auto-named `:part_1`, `:part_2`, … when no `name:` was given), then solver parts. |
+| `asm.interferences(clearance: 0, ignore_contact: true)` | Check all pairs for solid overlap and, when `clearance:` is given, for an insufficient gap. Returns `{a:, b:, type: :interference, volume:, centroid:}` and `{a:, b:, type: :clearance, distance:, minimum:}` rows, worst first. Parts in contact are skipped by the clearance check unless `ignore_contact: false`. O(n²) booleans. |
+| `asm.clash?` | `true` when any two components overlap in solid volume. |
+| `asm.bom(density: 1.24)` | Bill of materials rolled up by `component:`. Rows are `{component:, quantity:, material:, density:, unit_volume:, volume:, unit_mass:, mass:, parts:}`, sorted by descending quantity. Raises if one component key groups parts of different volume. |
+| `asm.bom_text(density: 1.24)` | `bom` rendered as an aligned text table with a TOTAL row. |
+| `asm.mass_properties(density: 1.24)` | `{volume:, mass:, center_of_mass:, parts: [...]}`. Mass-weighted centre of mass; volumes in mm³, masses in grams. Overlapping parts double-count their shared volume — run `interferences` first. |
+
+Density for each component resolves in order: explicit `density:`, then the
+built-in material table (steel 7.85, aluminium 2.70, brass 8.50, PLA 1.24,
+ABS 1.04, PETG 1.27, nylon 1.14, delrin 1.41, and others; names are matched
+case- and punctuation-insensitively), then the `density:` argument to the
+reporting call, then 1.24 g/cm³ — the same PLA default as `mass_estimate`.
+An unrecognised material name is not an error, since material strings are
+free text; every report echoes the density it actually used.
 
 `Shape#rotate_about(point, axis_dir, angle_deg)` is the underlying transform
 primitive used by `angle_mate`: rotate the shape by `angle_deg` around an

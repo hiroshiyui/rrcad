@@ -74,13 +74,26 @@ operations used most in practice. **Complete.**
 
 ### Track B — Assembly intelligence
 
-The assembly layer has a real constraint solver but produces none of the
+The assembly layer had a real constraint solver but produced none of the
 deliverables an assembly exists for. All three build on primitives that already
-exist (`common`, `distance_to`, `mass_estimate`).
+existed (`common`, `distance_to`, `mass_estimate`). **Complete.**
 
-- [ ] Interference / clash detection between parts, with clearance reporting.
-- [ ] Bill-of-materials generation with quantity rollup.
-- [ ] Assembly-level mass, volume, and centre-of-mass rollup.
+Placement methods now take optional `name:` / `component:` / `material:` /
+`density:` metadata, and `Assembly#components` enumerates placed and solved
+parts uniformly, which is what the three reports are built on.
+
+- [x] **Interference / clash detection** between parts, with clearance
+      reporting — `Assembly#interferences(clearance:, ignore_contact:)` and
+      `#clash?`. Pairwise `common` for overlap volume, `distance_to` for gaps.
+      A flush mate is not a clash, and deliberate contact is excluded from the
+      clearance check by default.
+- [x] **Bill-of-materials generation** with quantity rollup — `Assembly#bom`
+      rolls components up by their `component:` key; `#bom_text` renders an
+      aligned table. A built-in material→density table means `material:`
+      alone yields believable masses.
+- [x] **Assembly-level mass, volume, and centre-of-mass rollup** —
+      `Assembly#mass_properties`, mass-weighted, with a per-part breakdown.
+      Tests: 36 in `tests/phase11_assembly_reports.rs`.
 
 ### Track C — Drawing completeness
 
