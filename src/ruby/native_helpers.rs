@@ -81,6 +81,18 @@ pub(crate) unsafe fn set_str(out: *mut *const c_char, s: &str) {
     });
 }
 
+/// Store `s` in the thread-local string slot and return a pointer to it.
+/// The pointer is valid until the next string-returning call on this thread.
+///
+/// # Safety
+/// The returned pointer must not outlive the next `set_str` / `owned_str_ptr`
+/// call on the same thread (see the module-level safety contract).
+pub(crate) unsafe fn owned_str_ptr(s: &str) -> *const c_char {
+    let mut raw: *const c_char = std::ptr::null();
+    unsafe { set_str(&mut raw as *mut *const c_char, s) };
+    raw
+}
+
 /// Convert a `Result<Shape, String>` into a raw pointer for the C FFI return
 /// value. Callers must clear `*error_out` before calling this.
 pub(crate) unsafe fn shape_result_to_ptr(
@@ -119,6 +131,41 @@ pub(crate) unsafe fn resolve_path(
             None
         }
     }
+}
+
+/// Decode a borrowed C string argument, reporting
+/// `"<what> is not valid UTF-8"` through `*error_out` when the bytes are not
+/// UTF-8. Returns `None` in that case so the caller can bail out with its own
+/// error sentinel (null pointer, `-1`, …).
+///
+/// # Safety
+/// `ptr` must be a valid NUL-terminated string that stays alive for at least
+/// as long as the returned `&str` is used, and `error_out` must be writable.
+/// The returned lifetime is unbounded; callers only ever use it inside the
+/// single FFI call that produced it (see the module-level safety contract).
+pub(crate) unsafe fn utf8_arg<'a>(
+    ptr: *const c_char,
+    what: &str,
+    error_out: *mut *const c_char,
+) -> Option<&'a str> {
+    match unsafe { std::ffi::CStr::from_ptr(ptr) }.to_str() {
+        Ok(s) => Some(s),
+        Err(_) => {
+            unsafe { set_err(error_out, &format!("{what} is not valid UTF-8")) };
+            None
+        }
+    }
+}
+
+/// Borrow `n` `Shape`s from a C array of raw `Box<Shape>` pointers.
+///
+/// # Safety
+/// `ptrs` must point to `n` consecutive, live `Box<Shape>` pointers produced by
+/// this module (see the module-level safety contract).
+pub(crate) unsafe fn shape_refs<'a>(ptrs: *const *const c_void, n: usize) -> Vec<&'a Shape> {
+    (0..n)
+        .map(|i| unsafe { &*(*ptrs.add(i) as *const Shape) })
+        .collect()
 }
 
 pub(crate) unsafe fn cstr_arg(ptr: *const c_char) -> Result<String, String> {

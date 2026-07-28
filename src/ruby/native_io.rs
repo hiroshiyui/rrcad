@@ -7,116 +7,65 @@ use super::native_helpers::{
 };
 use crate::occt::{GdtDatumSpec, GdtFeatureControlSpec, GdtRenderSpec, GdtStandard, Shape};
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rrcad_import_step(
-    path: *const c_char,
-    error_out: *mut *const c_char,
-) -> *mut c_void {
-    unsafe { *error_out = std::ptr::null() };
-    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
-        return std::ptr::null_mut();
+// ---------------------------------------------------------------------------
+// Single-file import / export
+//
+// Every one of these entry points validates the caller's path with
+// `resolve_path` (the path-traversal guard) and then forwards to one `Shape`
+// method, so both families are generated from a one-line declaration.
+// ---------------------------------------------------------------------------
+
+/// Wrap a `Shape` associated function that loads a file from a validated path.
+macro_rules! shape_import {
+    ($name:ident => $ctor:path) => {
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn $name(
+            path: *const c_char,
+            error_out: *mut *const c_char,
+        ) -> *mut c_void {
+            unsafe { *error_out = std::ptr::null() };
+            let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
+                return std::ptr::null_mut();
+            };
+            let safe_str = safe.to_string_lossy();
+            unsafe { shape_result_to_ptr($ctor(&safe_str), error_out) }
+        }
     };
-    let safe_str = safe.to_string_lossy();
-    unsafe { shape_result_to_ptr(Shape::import_step(&safe_str), error_out) }
 }
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rrcad_import_stl(
-    path: *const c_char,
-    error_out: *mut *const c_char,
-) -> *mut c_void {
-    unsafe { *error_out = std::ptr::null() };
-    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
-        return std::ptr::null_mut();
+/// Wrap a `&Shape` method that writes the shape to a validated path.
+///
+/// The tessellating exporters (glTF / GLB / OBJ) take one extra argument, the
+/// mesh deflection, which is supplied as the optional trailing expression.
+macro_rules! shape_export {
+    ($name:ident => $method:ident $(, $extra:expr)?) => {
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn $name(
+            ptr: *mut c_void,
+            path: *const c_char,
+            error_out: *mut *const c_char,
+        ) {
+            unsafe { *error_out = std::ptr::null() };
+            let shape = unsafe { &*(ptr as *const Shape) };
+            let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
+                return;
+            };
+            let safe_str = safe.to_string_lossy();
+            if let Err(e) = shape.$method(&safe_str $(, $extra)?) {
+                unsafe { set_err(error_out, &e) };
+            }
+        }
     };
-    let safe_str = safe.to_string_lossy();
-    unsafe { shape_result_to_ptr(Shape::import_stl(&safe_str), error_out) }
 }
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rrcad_shape_export_step(
-    ptr: *mut c_void,
-    path: *const c_char,
-    error_out: *mut *const c_char,
-) {
-    unsafe { *error_out = std::ptr::null() };
-    let shape = unsafe { &*(ptr as *const Shape) };
-    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
-        return;
-    };
-    let safe_str = safe.to_string_lossy();
-    if let Err(e) = shape.export_step(&safe_str) {
-        unsafe { set_err(error_out, &e) };
-    }
-}
+shape_import!(rrcad_import_step => Shape::import_step);
+shape_import!(rrcad_import_stl => Shape::import_stl);
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rrcad_shape_export_stl(
-    ptr: *mut c_void,
-    path: *const c_char,
-    error_out: *mut *const c_char,
-) {
-    unsafe { *error_out = std::ptr::null() };
-    let shape = unsafe { &*(ptr as *const Shape) };
-    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
-        return;
-    };
-    let safe_str = safe.to_string_lossy();
-    if let Err(e) = shape.export_stl(&safe_str) {
-        unsafe { set_err(error_out, &e) };
-    }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rrcad_shape_export_gltf(
-    ptr: *mut c_void,
-    path: *const c_char,
-    error_out: *mut *const c_char,
-) {
-    unsafe { *error_out = std::ptr::null() };
-    let shape = unsafe { &*(ptr as *const Shape) };
-    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
-        return;
-    };
-    let safe_str = safe.to_string_lossy();
-    if let Err(e) = shape.export_gltf(&safe_str, DEFAULT_LINEAR_DEFLECTION) {
-        unsafe { set_err(error_out, &e) };
-    }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rrcad_shape_export_glb(
-    ptr: *mut c_void,
-    path: *const c_char,
-    error_out: *mut *const c_char,
-) {
-    unsafe { *error_out = std::ptr::null() };
-    let shape = unsafe { &*(ptr as *const Shape) };
-    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
-        return;
-    };
-    let safe_str = safe.to_string_lossy();
-    if let Err(e) = shape.export_glb(&safe_str, DEFAULT_LINEAR_DEFLECTION) {
-        unsafe { set_err(error_out, &e) };
-    }
-}
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rrcad_shape_export_obj(
-    ptr: *mut c_void,
-    path: *const c_char,
-    error_out: *mut *const c_char,
-) {
-    unsafe { *error_out = std::ptr::null() };
-    let shape = unsafe { &*(ptr as *const Shape) };
-    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
-        return;
-    };
-    let safe_str = safe.to_string_lossy();
-    if let Err(e) = shape.export_obj(&safe_str, DEFAULT_LINEAR_DEFLECTION) {
-        unsafe { set_err(error_out, &e) };
-    }
-}
+shape_export!(rrcad_shape_export_step => export_step);
+shape_export!(rrcad_shape_export_stl => export_stl);
+shape_export!(rrcad_shape_export_gltf => export_gltf, DEFAULT_LINEAR_DEFLECTION);
+shape_export!(rrcad_shape_export_glb => export_glb, DEFAULT_LINEAR_DEFLECTION);
+shape_export!(rrcad_shape_export_obj => export_obj, DEFAULT_LINEAR_DEFLECTION);
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rrcad_shape_gdt_apply(

@@ -32,6 +32,40 @@ Supported extensions: `.step`, `.stl`, `.glb`, `.gltf`, `.obj`, `.svg`, `.dxf`.
 | `.svg` | SVG (2D) | Technical drawings (uses HLR projection) |
 | `.dxf` | DXF R12 (2D) | CAD software 2D drawing exchange |
 
+## Where files may be read and written
+
+Every path a script passes to an import or export method must resolve to a
+location **inside the current working directory**. This is deliberate: a
+script — including one written by an AI assistant through the MCP server —
+should not be able to read or overwrite arbitrary files on your machine.
+
+```ruby
+part.export("out/bracket.step")   # ✓ relative to the working directory
+part.export("/tmp/bracket.step")  # ✗ rejected: outside the working directory
+part.export("../bracket.step")    # ✗ rejected: escapes via ..
+```
+
+Details worth knowing:
+
+- Paths are canonicalised before the check, so a **symlink** that lives
+  inside the working directory but points outside it is rejected too.
+- The **target directory must already exist**. rrcad never creates
+  directories on a script's behalf, so `out/bracket.step` fails until `out/`
+  exists. Create it beforehand, or export into a directory you know is
+  present.
+- The rule applies to **imports as well as exports**, and to every format.
+- The working directory is the one you launched `rrcad` from — not the
+  directory containing the script. If exports land somewhere unexpected,
+  check where you ran the command from.
+
+A rejected path raises an error naming the offending path, for example:
+`path '/tmp/bracket.step' is outside the working directory (path traversal
+rejected)`.
+
+In MCP mode the working directory is fixed to `/tmp/rrcad_mcp/`, so exported
+files always land there; see
+[13. MCP Server](13-mcp-server.md) for the full sandbox description.
+
 ## SVG / DXF view options
 
 The 2D exporters support multiple view angles, sheet layouts, hidden

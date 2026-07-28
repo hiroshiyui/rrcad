@@ -298,9 +298,9 @@ overlap the previous layer.
 
 - [x] Add CI coverage for MCP security invariants, including `create_mcp_vm()` and the file/process constant removal checks.
 - [x] Keep the Claude skill definitions in `.claude/skills` and maintain the repo-local `.codex/skills` mirror if Codex-callable copies are needed again.
-- [ ] Make CSV design-table parsing fail fast on row width mismatches instead of silently truncating with `zip()`.
-- [ ] Add explicit tests and documentation for the intentionally strict export-path confinement behavior.
-- [ ] Consider consolidating repetitive Ruby-to-native FFI wrapper patterns into shared helpers or generated bindings.
+- [x] Make CSV design-table parsing fail fast on row width mismatches instead of silently truncating with `zip()`.
+- [x] Add explicit tests and documentation for the intentionally strict export-path confinement behavior (`tests/export_confinement.rs`, `doc/user-guide/10-import-export.md`).
+- [x] Consider consolidating repetitive Ruby-to-native FFI wrapper patterns into shared helpers or generated bindings (macro layer in `src/ruby/native.rs`, static helpers in `src/ruby/glue.c`).
 - [x] Make the preview port configurable or auto-select a free port to reduce local port conflicts.
 - [x] Add support for project-local `rrcad.toml` files with `preview_port` and default `[params]`, discovered from the script directory or current working directory.
 - [x] Add a short maintainer note for the OCCT bridge and mRuby lifetime invariants so future low-level edits stay consistent.

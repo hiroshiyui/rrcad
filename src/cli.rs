@@ -545,13 +545,20 @@ fn run_script(path: &str, params: &[(String, String)]) {
 /// - Fields are trimmed of surrounding whitespace.
 /// - The first row is the header; subsequent rows are data.
 ///
-/// Returns `Err` if the file has no header row or data rows.
+/// Returns `Err` if the file has no header row or data rows, or if any data
+/// row has a different number of fields than the header.  Mismatched rows are
+/// rejected rather than silently truncated: a stray or missing delimiter would
+/// otherwise drop columns and build a subtly wrong part.
 fn parse_csv(content: &str) -> Result<(Vec<String>, Vec<Vec<String>>), String> {
+    // Keep the original 1-based file line numbers so errors point at the real
+    // line, not the index within the comment-and-blank-filtered sequence.
     let mut lines = content
         .lines()
-        .filter(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'));
+        .enumerate()
+        .map(|(i, l)| (i + 1, l))
+        .filter(|(_, l)| !l.trim().is_empty() && !l.trim_start().starts_with('#'));
 
-    let header_line = lines
+    let (_, header_line) = lines
         .next()
         .ok_or("design table is empty (no header row)")?;
 
@@ -564,7 +571,20 @@ fn parse_csv(content: &str) -> Result<(Vec<String>, Vec<Vec<String>>), String> {
         |line: &str| -> Vec<String> { line.split(delim).map(|f| f.trim().to_string()).collect() };
 
     let headers = split(header_line);
-    let rows: Vec<Vec<String>> = lines.map(split).collect();
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    for (lineno, line) in lines {
+        let row = split(line);
+        if row.len() != headers.len() {
+            return Err(format!(
+                "design table line {lineno}: expected {} field{} to match the header ({}), found {}",
+                headers.len(),
+                if headers.len() == 1 { "" } else { "s" },
+                headers.join(", "),
+                row.len()
+            ));
+        }
+        rows.push(row);
+    }
 
     if rows.is_empty() {
         return Err("design table has a header but no data rows".to_string());
@@ -849,6 +869,35 @@ mod design_table_tests {
     #[test]
     fn parse_csv_header_only_returns_error() {
         assert!(parse_csv("name,width\n").is_err());
+    }
+
+    #[test]
+    fn parse_csv_rejects_short_row() {
+        let err = parse_csv("name,width,height\nsmall,50").expect_err("short row must fail");
+        assert!(err.contains("line 2"), "error should name the line: {err}");
+        assert!(
+            err.contains("found 2"),
+            "error should report the count: {err}"
+        );
+    }
+
+    #[test]
+    fn parse_csv_rejects_wide_row() {
+        let err =
+            parse_csv("name,width\nsmall,50,20").expect_err("row with extra column must fail");
+        assert!(err.contains("line 2"), "error should name the line: {err}");
+        assert!(
+            err.contains("found 3"),
+            "error should report the count: {err}"
+        );
+    }
+
+    #[test]
+    fn parse_csv_mismatch_line_number_counts_comments_and_blanks() {
+        // Line numbers must refer to the real file, including skipped lines.
+        let src = "# comment\n\nname,width\ngood,10\nbad,10,20";
+        let err = parse_csv(src).expect_err("wide row must fail");
+        assert!(err.contains("line 5"), "expected real file line 5: {err}");
     }
 }
 

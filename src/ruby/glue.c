@@ -254,6 +254,8 @@ extern void* rrcad_shape_sweep_guide(void* ptr, void* path_ptr, void* guide_ptr,
 static const char* shape_name_from_value(mrb_state* mrb, mrb_value v);
 static void* shape_ptr(mrb_state* mrb, mrb_value v);
 static void require_native_ptr(mrb_state* mrb, void* ptr);
+static void* checked_shape_ptr(mrb_state* mrb, mrb_value v);
+static void raise_if_err(mrb_state* mrb, const char* err);
 static double value_to_double(mrb_state* mrb, mrb_value v) {
     if (!mrb_obj_is_kind_of(mrb, v, mrb_class_get(mrb, "Numeric"))) {
         mrb_raisef(mrb, E_TYPE_ERROR, "%Y cannot be converted to Float", v);
@@ -267,8 +269,7 @@ static int datum_anchor_from_shape_value(mrb_state* mrb, void* body_ptr, mrb_val
         return 0;
 
     if (mrb_data_p(value)) {
-        void* datum_ptr = shape_ptr(mrb, value);
-        require_native_ptr(mrb, datum_ptr);
+        void* datum_ptr = checked_shape_ptr(mrb, value);
         rrcad_shape_centroid(datum_ptr, out, error_out);
         return *error_out == NULL;
     }
@@ -393,6 +394,102 @@ static void require_native_ptr(mrb_state* mrb, void* ptr) {
     }
 }
 
+/* Raw pointer of the *receiver*, guaranteed to be backed by native geometry. */
+static void* self_ptr(mrb_state* mrb, mrb_value self) {
+    void* ptr = DATA_PTR(self);
+    require_native_ptr(mrb, ptr);
+    return ptr;
+}
+
+/* Raw pointer of a Shape *argument*: type-checked (TypeError when `v` is not a
+ * Shape) and guaranteed to be backed by native geometry. */
+static void* checked_shape_ptr(mrb_state* mrb, mrb_value v) {
+    void* ptr = shape_ptr(mrb, v);
+    require_native_ptr(mrb, ptr);
+    return ptr;
+}
+
+/* Turn a Rust-side error string into a Ruby RuntimeError.  Every native call
+ * below funnels its `const char* err` through this; a NULL means success.
+ * Note this never returns when `err` is set — mrb_raise longjmps. */
+static void raise_if_err(mrb_state* mrb, const char* err) {
+    if (err)
+        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+}
+
+/* hash[:key], or `dflt` when the key is absent. */
+static mrb_value opt_fetch(mrb_state* mrb, mrb_value hash, const char* key, mrb_value dflt) {
+    return mrb_hash_fetch(mrb, hash, mrb_symbol_value(mrb_intern_cstr(mrb, key)), dflt);
+}
+
+/* hash[:key] as a C boolean, defaulting to false. */
+static int opt_flag(mrb_state* mrb, mrb_value hash, const char* key) {
+    return mrb_test(opt_fetch(mrb, hash, key, mrb_false_value())) ? 1 : 0;
+}
+
+/* hash[:key] as a double, defaulting to `dflt`. */
+static double opt_double(mrb_state* mrb, mrb_value hash, const char* key, double dflt) {
+    return value_to_double(mrb, opt_fetch(mrb, hash, key, mrb_float_value(mrb, dflt)));
+}
+
+/* Build a 3-element Ruby Array from `v[0..3]`. */
+static mrb_value float_ary3(mrb_state* mrb, const double* v) {
+    mrb_value ary = mrb_ary_new_capa(mrb, 3);
+    for (int i = 0; i < 3; i++)
+        mrb_ary_push(mrb, ary, mrb_float_value(mrb, (mrb_float)v[i]));
+    return ary;
+}
+
+/* Collect a Ruby Array of Shape objects into a malloc'd C array of raw
+ * pointers, for the native entry points that take `(const void** ptrs, size_t n)`.
+ *
+ *   `min_count` / `min_err` — reject arrays that are too short.
+ *   `what`                  — method name used in the per-element TypeError.
+ *   `*n_out`                — receives the element count.
+ *
+ * Returns a buffer the caller must free().  `mrb_data_check_get_ptr` is
+ * non-raising (NULL for a wrong type or a stub shape), so the buffer is always
+ * freed before raising and can never leak. */
+static const void** collect_shape_ptrs(mrb_state* mrb, mrb_value arr, int min_count,
+                                       const char* min_err, const char* what, int* n_out) {
+    int n = (int)RARRAY_LEN(arr);
+    if (n < min_count)
+        mrb_raise(mrb, E_ARGUMENT_ERROR, min_err);
+
+    const void** ptrs = (const void**)malloc((size_t)n * sizeof(void*));
+    if (!ptrs)
+        mrb_raise(mrb, E_RUNTIME_ERROR, "out of memory");
+
+    for (int i = 0; i < n; i++) {
+        mrb_value elem = mrb_ary_ref(mrb, arr, (mrb_int)i);
+        void* p = mrb_data_check_get_ptr(mrb, elem, &shape_type);
+        if (!p) {
+            free(ptrs);
+            mrb_raisef(mrb, E_TYPE_ERROR, "%s: element %d is not a valid Shape", what, i);
+        }
+        ptrs[i] = p;
+    }
+
+    *n_out = n;
+    return ptrs;
+}
+
+/* Split a NUL-terminated, "\n"-separated report into an Array of Strings.
+ * An empty report yields an empty Array. */
+static mrb_value split_lines(mrb_state* mrb, const char* report) {
+    mrb_value ary = mrb_ary_new(mrb);
+    const char* p = report;
+    while (*p) {
+        const char* nl = strchr(p, '\n');
+        size_t len = nl ? (size_t)(nl - p) : strlen(p);
+        mrb_ary_push(mrb, ary, mrb_str_new(mrb, p, (mrb_int)len));
+        p += len;
+        if (*p == '\n')
+            p++;
+    }
+    return ary;
+}
+
 /* -------------------------------------------------------------------------
  * Top-level primitive constructors (defined on Kernel)
  * -------------------------------------------------------------------------
@@ -408,8 +505,7 @@ static mrb_value mrb_rrcad_box(mrb_state* mrb, mrb_value self) {
 
     const char* err = NULL;
     void* ptr = rrcad_make_box(dx, dy, dz, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, ptr);
 }
 
@@ -422,8 +518,7 @@ static mrb_value mrb_rrcad_cylinder(mrb_state* mrb, mrb_value self) {
 
     const char* err = NULL;
     void* ptr = rrcad_make_cylinder(r, h, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, ptr);
 }
 
@@ -435,8 +530,7 @@ static mrb_value mrb_rrcad_sphere(mrb_state* mrb, mrb_value self) {
 
     const char* err = NULL;
     void* ptr = rrcad_make_sphere(r, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, ptr);
 }
 
@@ -450,8 +544,7 @@ static mrb_value mrb_rrcad_cone(mrb_state* mrb, mrb_value self) {
 
     const char* err = NULL;
     void* ptr = rrcad_make_cone(r1, r2, h, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, ptr);
 }
 
@@ -464,8 +557,7 @@ static mrb_value mrb_rrcad_torus(mrb_state* mrb, mrb_value self) {
 
     const char* err = NULL;
     void* ptr = rrcad_make_torus(r1, r2, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, ptr);
 }
 
@@ -480,8 +572,7 @@ static mrb_value mrb_rrcad_wedge(mrb_state* mrb, mrb_value self) {
 
     const char* err = NULL;
     void* ptr = rrcad_make_wedge(dx, dy, dz, ltx, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, ptr);
 }
 
@@ -512,8 +603,7 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     mrb_value opts = mrb_nil_value();
     mrb_get_args(mrb, "z|H", &path, &opts);
 
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
 
     /* Extract optional view: keyword (default "top") and drawing scale. */
     const char* view = "top";
@@ -534,45 +624,25 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     double tolerance_plus = 0.0;
     double tolerance_minus = 0.0;
     if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
-        mrb_value vv = mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "view")),
-                                      mrb_nil_value());
+        mrb_value vv = opt_fetch(mrb, opts, "view", mrb_nil_value());
         if (mrb_symbol_p(vv))
             view = mrb_sym_name(mrb, mrb_symbol(vv));
-        mrb_value sv = mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "scale")),
-                                      mrb_float_value(mrb, 1.0));
-        scale = value_to_double(mrb, sv);
-        mrb_value hv = mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "hidden")),
-                                      mrb_false_value());
-        hidden = mrb_test(hv) ? 1 : 0;
-        mrb_value cv = mrb_hash_fetch(
-            mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "center_marks")), mrb_false_value());
-        center_marks = mrb_test(cv) ? 1 : 0;
-        mrb_value dv = mrb_hash_fetch(
-            mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "dimensions")), mrb_false_value());
-        dimensions = mrb_test(dv) ? 1 : 0;
-        mrb_value tv = mrb_hash_fetch(
-            mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "title_block")), mrb_false_value());
-        title_block = mrb_test(tv) ? 1 : 0;
-        mrb_value dv2 = mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "callouts")),
-                                       mrb_false_value());
-        callouts = mrb_test(dv2) ? 1 : 0;
-        mrb_value datum_v = mrb_hash_fetch(
-            mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "datum")), mrb_nil_value());
+        scale = opt_double(mrb, opts, "scale", 1.0);
+        hidden = opt_flag(mrb, opts, "hidden");
+        center_marks = opt_flag(mrb, opts, "center_marks");
+        dimensions = opt_flag(mrb, opts, "dimensions");
+        title_block = opt_flag(mrb, opts, "title_block");
+        callouts = opt_flag(mrb, opts, "callouts");
+        mrb_value datum_v = opt_fetch(mrb, opts, "datum", mrb_nil_value());
         if (!mrb_nil_p(datum_v)) {
             if (mrb_hash_p(datum_v)) {
-                mrb_value label_v = mrb_hash_fetch(
-                    mrb, datum_v, mrb_symbol_value(mrb_intern_lit(mrb, "label")), mrb_nil_value());
+                mrb_value label_v = opt_fetch(mrb, datum_v, "label", mrb_nil_value());
                 if (mrb_nil_p(label_v)) {
-                    label_v =
-                        mrb_hash_fetch(mrb, datum_v, mrb_symbol_value(mrb_intern_lit(mrb, "name")),
-                                       mrb_nil_value());
+                    label_v = opt_fetch(mrb, datum_v, "name", mrb_nil_value());
                 }
-                mrb_value face_v = mrb_hash_fetch(
-                    mrb, datum_v, mrb_symbol_value(mrb_intern_lit(mrb, "face")), mrb_nil_value());
+                mrb_value face_v = opt_fetch(mrb, datum_v, "face", mrb_nil_value());
                 if (mrb_nil_p(face_v)) {
-                    face_v = mrb_hash_fetch(mrb, datum_v,
-                                            mrb_symbol_value(mrb_intern_lit(mrb, "selector")),
-                                            mrb_nil_value());
+                    face_v = opt_fetch(mrb, datum_v, "selector", mrb_nil_value());
                 }
                 const char* label = shape_name_from_value(mrb, label_v);
                 if (!label)
@@ -598,19 +668,15 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
                 datum = mrb_string_value_cstr(mrb, &datum_buf);
             }
         }
-        mrb_value fc_v = mrb_hash_fetch(
-            mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "feature_control")), mrb_nil_value());
+        mrb_value fc_v = opt_fetch(mrb, opts, "feature_control", mrb_nil_value());
         if (!mrb_nil_p(fc_v)) {
             if (mrb_hash_p(fc_v)) {
-                mrb_value text_v = mrb_hash_fetch(
-                    mrb, fc_v, mrb_symbol_value(mrb_intern_lit(mrb, "text")), mrb_nil_value());
+                mrb_value text_v = opt_fetch(mrb, fc_v, "text", mrb_nil_value());
                 if (mrb_nil_p(text_v)) {
-                    text_v = mrb_hash_fetch(
-                        mrb, fc_v, mrb_symbol_value(mrb_intern_lit(mrb, "frame")), mrb_nil_value());
+                    text_v = opt_fetch(mrb, fc_v, "frame", mrb_nil_value());
                 }
                 if (mrb_nil_p(text_v)) {
-                    text_v = mrb_hash_fetch(
-                        mrb, fc_v, mrb_symbol_value(mrb_intern_lit(mrb, "value")), mrb_nil_value());
+                    text_v = opt_fetch(mrb, fc_v, "value", mrb_nil_value());
                 }
                 const char* text = shape_name_from_value(mrb, text_v);
                 if (!text)
@@ -619,21 +685,16 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
                         "feature_control hash expects text:/frame:/value: as a Symbol or String");
                 feature_control_buf = mrb_str_new_cstr(mrb, text);
                 mrb_value fc_text = feature_control_buf;
-                mrb_value datums_v = mrb_hash_fetch(
-                    mrb, fc_v, mrb_symbol_value(mrb_intern_lit(mrb, "datums")), mrb_nil_value());
+                mrb_value datums_v = opt_fetch(mrb, fc_v, "datums", mrb_nil_value());
                 if (mrb_nil_p(datums_v)) {
-                    datums_v = mrb_hash_fetch(
-                        mrb, fc_v, mrb_symbol_value(mrb_intern_lit(mrb, "datum")), mrb_nil_value());
+                    datums_v = opt_fetch(mrb, fc_v, "datum", mrb_nil_value());
                 }
                 fc_text = append_selector_list(mrb, fc_text, datums_v);
                 feature_control = mrb_string_value_cstr(mrb, &fc_text);
 
-                mrb_value face_v = mrb_hash_fetch(
-                    mrb, fc_v, mrb_symbol_value(mrb_intern_lit(mrb, "face")), mrb_nil_value());
+                mrb_value face_v = opt_fetch(mrb, fc_v, "face", mrb_nil_value());
                 if (mrb_nil_p(face_v)) {
-                    face_v =
-                        mrb_hash_fetch(mrb, fc_v, mrb_symbol_value(mrb_intern_lit(mrb, "selector")),
-                                       mrb_nil_value());
+                    face_v = opt_fetch(mrb, fc_v, "selector", mrb_nil_value());
                 }
                 if (!mrb_nil_p(face_v)) {
                     const char* anchor_err = NULL;
@@ -651,17 +712,10 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
                 feature_control = mrb_string_value_cstr(mrb, &fc_v);
             }
         }
-        mrb_value tv2 =
-            mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "tolerance")),
-                           mrb_float_value(mrb, 0.0));
+        mrb_value tv2 = opt_fetch(mrb, opts, "tolerance", mrb_float_value(mrb, 0.0));
         if (mrb_hash_p(tv2)) {
-            mrb_value plus_v = mrb_hash_fetch(
-                mrb, tv2, mrb_symbol_value(mrb_intern_lit(mrb, "plus")), mrb_float_value(mrb, 0.0));
-            mrb_value minus_v =
-                mrb_hash_fetch(mrb, tv2, mrb_symbol_value(mrb_intern_lit(mrb, "minus")),
-                               mrb_float_value(mrb, 0.0));
-            tolerance_plus = value_to_double(mrb, plus_v);
-            tolerance_minus = value_to_double(mrb, minus_v);
+            tolerance_plus = opt_double(mrb, tv2, "plus", 0.0);
+            tolerance_minus = opt_double(mrb, tv2, "minus", 0.0);
         } else if (!mrb_nil_p(tv2)) {
             double tol = value_to_double(mrb, tv2);
             tolerance_plus = tol;
@@ -697,8 +751,7 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
         /* Default: STEP (.step, .stp, or unknown extension) */
         rrcad_shape_export_step(ptr, path, &err);
     }
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return self;
 }
 
@@ -706,15 +759,12 @@ static mrb_value mrb_rrcad_shape_fuse(mrb_state* mrb, mrb_value self) {
     mrb_value other;
     mrb_get_args(mrb, "o", &other);
 
-    void* a = DATA_PTR(self);
-    require_native_ptr(mrb, a);
-    void* b = shape_ptr(mrb, other);
-    require_native_ptr(mrb, b);
+    void* a = self_ptr(mrb, self);
+    void* b = checked_shape_ptr(mrb, other);
 
     const char* err = NULL;
     void* result = rrcad_shape_fuse(a, b, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -722,15 +772,12 @@ static mrb_value mrb_rrcad_shape_cut(mrb_state* mrb, mrb_value self) {
     mrb_value other;
     mrb_get_args(mrb, "o", &other);
 
-    void* a = DATA_PTR(self);
-    require_native_ptr(mrb, a);
-    void* b = shape_ptr(mrb, other);
-    require_native_ptr(mrb, b);
+    void* a = self_ptr(mrb, self);
+    void* b = checked_shape_ptr(mrb, other);
 
     const char* err = NULL;
     void* result = rrcad_shape_cut(a, b, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -738,15 +785,12 @@ static mrb_value mrb_rrcad_shape_common(mrb_state* mrb, mrb_value self) {
     mrb_value other;
     mrb_get_args(mrb, "o", &other);
 
-    void* a = DATA_PTR(self);
-    require_native_ptr(mrb, a);
-    void* b = shape_ptr(mrb, other);
-    require_native_ptr(mrb, b);
+    void* a = self_ptr(mrb, self);
+    void* b = checked_shape_ptr(mrb, other);
 
     const char* err = NULL;
     void* result = rrcad_shape_common(a, b, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -765,8 +809,7 @@ static mrb_value mrb_rrcad_shape_mate(mrb_state* mrb, mrb_value self) {
     mrb_get_args(mrb, "oo|o", &from_val, &to_val, &offset_val);
     double offset = value_to_double(mrb, offset_val);
 
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
 
     void* from_ptr = mrb_data_p(from_val) ? DATA_PTR(from_val) : NULL;
     void* to_ptr = mrb_data_p(to_val) ? DATA_PTR(to_val) : NULL;
@@ -775,8 +818,7 @@ static mrb_value mrb_rrcad_shape_mate(mrb_state* mrb, mrb_value self) {
 
     const char* err = NULL;
     void* result = rrcad_shape_mate(ptr, from_ptr, to_ptr, offset, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -792,12 +834,10 @@ static mrb_value mrb_rrcad_shape_mate(mrb_state* mrb, mrb_value self) {
 static mrb_value mrb_rrcad_shape_color(mrb_state* mrb, mrb_value self) {
     mrb_float r, g, b;
     mrb_get_args(mrb, "fff", &r, &g, &b);
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     void* result = rrcad_shape_set_color(ptr, (double)r, (double)g, (double)b, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -819,12 +859,10 @@ static mrb_value mrb_rrcad_shape_name_face(mrb_state* mrb, mrb_value self) {
         mrb_raise(mrb, E_TYPE_ERROR,
                   "name_face expects a Symbol or String name and a Symbol or String selector");
 
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     rrcad_shape_name_face(ptr, name, selector, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return self;
 }
 
@@ -838,12 +876,10 @@ static mrb_value mrb_rrcad_shape_name_edge(mrb_state* mrb, mrb_value self) {
         mrb_raise(mrb, E_TYPE_ERROR,
                   "name_edge expects a Symbol or String name and a Symbol or String selector");
 
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     rrcad_shape_name_edge(ptr, name, selector, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return self;
 }
 
@@ -855,15 +891,12 @@ static mrb_value mrb_rrcad_shape_datum(mrb_state* mrb, mrb_value self) {
     if (!name)
         mrb_raise(mrb, E_TYPE_ERROR, "datum expects a Symbol or String name");
 
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
-    void* datum_ptr = shape_ptr(mrb, datum_val);
-    require_native_ptr(mrb, datum_ptr);
+    void* ptr = self_ptr(mrb, self);
+    void* datum_ptr = checked_shape_ptr(mrb, datum_val);
 
     const char* err = NULL;
     rrcad_shape_datum(ptr, name, datum_ptr, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return self;
 }
 
@@ -875,12 +908,10 @@ static mrb_value mrb_rrcad_shape_ref(mrb_state* mrb, mrb_value self) {
     if (!name)
         mrb_raise(mrb, E_TYPE_ERROR, "ref expects a Symbol or String name");
 
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     void* result = rrcad_shape_ref(ptr, name, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -888,7 +919,7 @@ static mrb_value mrb_rrcad_shape_ref(mrb_state* mrb, mrb_value self) {
 
 /* Fetch hash[key] (symbol key), returning nil when absent. */
 static mrb_value gdt_fetch(mrb_state* mrb, mrb_value hash, const char* key) {
-    return mrb_hash_fetch(mrb, hash, mrb_symbol_value(mrb_intern_cstr(mrb, key)), mrb_nil_value());
+    return opt_fetch(mrb, hash, key, mrb_nil_value());
 }
 
 /* Fetch hash[key], falling back to hash[alt] when key is absent.
@@ -938,8 +969,7 @@ static mrb_value mrb_rrcad_shape_gdt_apply(mrb_state* mrb, mrb_value self) {
     mrb_value spec_v;
     mrb_get_args(mrb, "H", &spec_v);
 
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
 
     mrb_value standard_v = gdt_fetch(mrb, spec_v, "standard");
     if (mrb_nil_p(standard_v))
@@ -1022,8 +1052,7 @@ static mrb_value mrb_rrcad_shape_gdt_apply(mrb_state* mrb, mrb_value self) {
         datum_anchor[1], datum_anchor[2], feature_control_text, feature_control_selector,
         feature_control_anchor_valid, feature_control_anchor[0], feature_control_anchor[1],
         feature_control_anchor[2], feature_control_datums, feature_control_modifiers, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return self;
 }
 
@@ -1038,12 +1067,10 @@ static mrb_value mrb_rrcad_shape_translate(mrb_state* mrb, mrb_value self) {
     double dx = value_to_double(mrb, dx_val);
     double dy = value_to_double(mrb, dy_val);
     double dz = value_to_double(mrb, dz_val);
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     void* result = rrcad_shape_translate(ptr, dx, dy, dz, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -1054,12 +1081,10 @@ static mrb_value mrb_rrcad_shape_rotate(mrb_state* mrb, mrb_value self) {
     double ay = value_to_double(mrb, ay_val);
     double az = value_to_double(mrb, az_val);
     double angle = value_to_double(mrb, angle_val);
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     void* result = rrcad_shape_rotate(ptr, ax, ay, az, angle, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -1074,8 +1099,7 @@ static mrb_value mrb_rrcad_shape_scale(mrb_state* mrb, mrb_value self) {
         sy = value_to_double(mrb, sy_val);
         sz = value_to_double(mrb, sz_val);
     }
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     void* result;
     if (argc == 1) {
@@ -1087,8 +1111,7 @@ static mrb_value mrb_rrcad_shape_scale(mrb_state* mrb, mrb_value self) {
         mrb_raise(mrb, E_ARGUMENT_ERROR, "scale requires 1 argument (uniform) or 3 (sx, sy, sz)");
         return mrb_nil_value(); /* unreachable */
     }
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -1104,8 +1127,7 @@ static mrb_value mrb_rrcad_shape_fillet(mrb_state* mrb, mrb_value self) {
     mrb_value sel_val = mrb_nil_value();
     mrb_get_args(mrb, "o|o", &radius_val, &sel_val);
 
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     void* result;
 
@@ -1139,8 +1161,7 @@ static mrb_value mrb_rrcad_shape_fillet(mrb_state* mrb, mrb_value self) {
         }
     }
 
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -1151,8 +1172,7 @@ static mrb_value mrb_rrcad_shape_chamfer(mrb_state* mrb, mrb_value self) {
     mrb_value sel_val = mrb_nil_value();
     mrb_get_args(mrb, "o|o", &d_val, &sel_val);
     double d = value_to_double(mrb, d_val);
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     void* result;
     if (mrb_nil_p(sel_val)) {
@@ -1164,8 +1184,7 @@ static mrb_value mrb_rrcad_shape_chamfer(mrb_state* mrb, mrb_value self) {
         const char* sel = mrb_sym_name(mrb, mrb_symbol(sel_val));
         result = rrcad_shape_chamfer_sel(ptr, (double)d, sel, &err);
     }
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -1178,8 +1197,7 @@ static mrb_value mrb_rrcad_shape_chamfer_asym(mrb_state* mrb, mrb_value self) {
     mrb_get_args(mrb, "oo|o", &d1_val, &d2_val, &sel_val);
     double d1 = value_to_double(mrb, d1_val);
     double d2 = value_to_double(mrb, d2_val);
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     void* result;
     if (mrb_nil_p(sel_val)) {
@@ -1191,8 +1209,7 @@ static mrb_value mrb_rrcad_shape_chamfer_asym(mrb_state* mrb, mrb_value self) {
         const char* sel = mrb_sym_name(mrb, mrb_symbol(sel_val));
         result = rrcad_shape_chamfer_asym_sel(ptr, d1, d2, sel, &err);
     }
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -1200,12 +1217,10 @@ static mrb_value mrb_rrcad_shape_mirror(mrb_state* mrb, mrb_value self) {
     mrb_sym plane_sym;
     mrb_get_args(mrb, "n", &plane_sym);
     const char* plane = mrb_sym_name(mrb, plane_sym);
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     void* result = rrcad_shape_mirror(ptr, plane, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -1222,8 +1237,7 @@ static mrb_value mrb_rrcad_rect(mrb_state* mrb, mrb_value self) {
     double h = value_to_double(mrb, h_val);
     const char* err = NULL;
     void* ptr = rrcad_make_rect(w, h, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, ptr);
 }
 
@@ -1234,8 +1248,7 @@ static mrb_value mrb_rrcad_circle(mrb_state* mrb, mrb_value self) {
     double r = value_to_double(mrb, r_val);
     const char* err = NULL;
     void* ptr = rrcad_make_circle_face(r, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, ptr);
 }
 
@@ -1260,34 +1273,24 @@ static mrb_value mrb_rrcad_shape_extrude(mrb_state* mrb, mrb_value self) {
     double draft_deg = 0.0;
 
     if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
-        mrb_value twist_val =
-            mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "twist_deg")),
-                           mrb_float_value(mrb, 0.0));
-        mrb_value scale_val = mrb_hash_fetch(
-            mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "scale")), mrb_float_value(mrb, 1.0));
-        mrb_value draft_val = mrb_hash_fetch(
-            mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "draft")), mrb_float_value(mrb, 0.0));
-        twist_deg = value_to_double(mrb, twist_val);
-        scale = value_to_double(mrb, scale_val);
-        draft_deg = value_to_double(mrb, draft_val);
+        twist_deg = opt_double(mrb, opts, "twist_deg", 0.0);
+        scale = opt_double(mrb, opts, "scale", 1.0);
+        draft_deg = opt_double(mrb, opts, "draft", 0.0);
     }
 
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
 
     /* draft: keyword routes to BRepOffsetAPI_DraftAngle path. */
     if (draft_deg != 0.0) {
         void* result = rrcad_shape_extrude_draft(ptr, height, draft_deg, &err);
-        if (err)
-            mrb_raise(mrb, E_RUNTIME_ERROR, err);
+        raise_if_err(mrb, err);
         return shape_from_ptr(mrb, result);
     }
 
     /* rrcad_shape_extrude_ex falls back to MakePrism when twist≈0 and scale≈1 */
     void* result = rrcad_shape_extrude_ex(ptr, height, twist_deg, scale, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -1309,36 +1312,17 @@ static mrb_value mrb_rrcad_loft(mrb_state* mrb, mrb_value self) {
 
     int ruled = 0;
     if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
-        mrb_value v = mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "ruled")),
-                                     mrb_false_value());
-        ruled = mrb_test(v) ? 1 : 0;
+        ruled = opt_flag(mrb, opts, "ruled");
     }
 
-    int n = (int)RARRAY_LEN(arr);
-    if (n < 2)
-        mrb_raise(mrb, E_ARGUMENT_ERROR, "loft requires at least 2 profiles");
-
-    const void** ptrs = (const void**)malloc((size_t)n * sizeof(void*));
-    if (!ptrs)
-        mrb_raise(mrb, E_RUNTIME_ERROR, "out of memory");
-
-    for (int i = 0; i < n; i++) {
-        mrb_value elem = mrb_ary_ref(mrb, arr, i);
-        /* mrb_data_check_get_ptr is non-raising: returns NULL for wrong type or
-         * stub shape.  Free before raising so the buffer is never leaked. */
-        void* p = mrb_data_check_get_ptr(mrb, elem, &shape_type);
-        if (!p) {
-            free(ptrs);
-            mrb_raisef(mrb, E_TYPE_ERROR, "loft: element %d is not a valid Shape", i);
-        }
-        ptrs[i] = p;
-    }
+    int n = 0;
+    const void** ptrs =
+        collect_shape_ptrs(mrb, arr, 2, "loft requires at least 2 profiles", "loft", &n);
 
     const char* err = NULL;
     void* result = rrcad_shape_loft(ptrs, (size_t)n, ruled, &err);
     free(ptrs);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -1347,12 +1331,10 @@ static mrb_value mrb_rrcad_shape_shell(mrb_state* mrb, mrb_value self) {
     mrb_value thickness_val;
     mrb_get_args(mrb, "o", &thickness_val);
     double thickness = value_to_double(mrb, thickness_val);
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     void* result = rrcad_shape_shell(ptr, thickness, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -1361,12 +1343,10 @@ static mrb_value mrb_rrcad_shape_offset(mrb_state* mrb, mrb_value self) {
     mrb_value distance_val;
     mrb_get_args(mrb, "o", &distance_val);
     double distance = value_to_double(mrb, distance_val);
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     void* result = rrcad_shape_offset(ptr, distance, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -1375,12 +1355,10 @@ static mrb_value mrb_rrcad_shape_offset_2d(mrb_state* mrb, mrb_value self) {
     mrb_value distance_val;
     mrb_get_args(mrb, "o", &distance_val);
     double distance = value_to_double(mrb, distance_val);
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     void* result = rrcad_shape_offset_2d(ptr, distance, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -1390,12 +1368,10 @@ static mrb_value mrb_rrcad_shape_simplify(mrb_state* mrb, mrb_value self) {
     mrb_value min_size_val;
     mrb_get_args(mrb, "o", &min_size_val);
     double min_size = value_to_double(mrb, min_size_val);
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     void* result = rrcad_shape_simplify(ptr, min_size, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -1403,12 +1379,10 @@ static mrb_value mrb_rrcad_shape_revolve(mrb_state* mrb, mrb_value self) {
     mrb_value angle_val = mrb_float_value(mrb, 360.0);
     mrb_get_args(mrb, "|o", &angle_val);
     double angle = value_to_double(mrb, angle_val);
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     void* result = rrcad_shape_revolve(ptr, angle, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -1473,8 +1447,7 @@ static mrb_value mrb_rrcad_spline_2d(mrb_state* mrb, mrb_value self) {
     }
 
     free(pts);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, ptr);
 }
 
@@ -1510,8 +1483,7 @@ static mrb_value mrb_rrcad_spline_3d(mrb_state* mrb, mrb_value self) {
     }
 
     free(pts);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, ptr);
 }
 
@@ -1527,10 +1499,8 @@ static mrb_value mrb_rrcad_shape_sweep(mrb_state* mrb, mrb_value self) {
     mrb_value opts = mrb_nil_value();
     mrb_get_args(mrb, "o|H", &path_val, &opts);
 
-    void* profile = DATA_PTR(self);
-    require_native_ptr(mrb, profile);
-    void* path = shape_ptr(mrb, path_val);
-    require_native_ptr(mrb, path);
+    void* profile = self_ptr(mrb, self);
+    void* path = checked_shape_ptr(mrb, path_val);
 
     /* Check for optional guide: keyword. */
     mrb_value guide_val = mrb_nil_value();
@@ -1543,15 +1513,13 @@ static mrb_value mrb_rrcad_shape_sweep(mrb_state* mrb, mrb_value self) {
     void* result;
     if (!mrb_nil_p(guide_val)) {
         /* Guided sweep: auxiliary spine mode. */
-        void* guide = shape_ptr(mrb, guide_val);
-        require_native_ptr(mrb, guide);
+        void* guide = checked_shape_ptr(mrb, guide_val);
         result = rrcad_shape_sweep_guide(profile, path, guide, &err);
     } else {
         /* Plain sweep. */
         result = rrcad_shape_sweep(profile, path, &err);
     }
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -1576,33 +1544,16 @@ static mrb_value mrb_rrcad_sweep_sections(mrb_state* mrb, mrb_value self) {
     mrb_value arr;
     mrb_get_args(mrb, "oA", &path_val, &arr);
 
-    void* path = shape_ptr(mrb, path_val);
-    require_native_ptr(mrb, path);
+    void* path = checked_shape_ptr(mrb, path_val);
 
-    int n = (int)RARRAY_LEN(arr);
-    if (n < 2)
-        mrb_raise(mrb, E_ARGUMENT_ERROR, "sweep_sections requires at least 2 profiles");
-
-    const void** ptrs = (const void**)malloc((size_t)n * sizeof(void*));
-    if (!ptrs)
-        mrb_raise(mrb, E_RUNTIME_ERROR, "out of memory");
-
-    for (int i = 0; i < n; i++) {
-        mrb_value elem = mrb_ary_ref(mrb, arr, i);
-        /* Non-raising check: free before raise to avoid leaking the buffer. */
-        void* p = mrb_data_check_get_ptr(mrb, elem, &shape_type);
-        if (!p) {
-            free(ptrs);
-            mrb_raisef(mrb, E_TYPE_ERROR, "sweep_sections: element %d is not a valid Shape", i);
-        }
-        ptrs[i] = p;
-    }
+    int n = 0;
+    const void** ptrs = collect_shape_ptrs(
+        mrb, arr, 2, "sweep_sections requires at least 2 profiles", "sweep_sections", &n);
 
     const char* err = NULL;
     void* result = rrcad_shape_sweep_sections(ptrs, (size_t)n, path, &err);
     free(ptrs);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -1622,8 +1573,7 @@ static mrb_value mrb_rrcad_polygon(mrb_state* mrb, mrb_value self) {
     const char* err = NULL;
     void* ptr = rrcad_make_polygon(pts, (size_t)n, &err);
     free(pts);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, ptr);
 }
 
@@ -1635,8 +1585,7 @@ static mrb_value mrb_rrcad_ellipse(mrb_state* mrb, mrb_value self) {
     double ry = value_to_double(mrb, ry_val);
     const char* err = NULL;
     void* ptr = rrcad_make_ellipse_face(rx, ry, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, ptr);
 }
 
@@ -1649,8 +1598,7 @@ static mrb_value mrb_rrcad_arc(mrb_state* mrb, mrb_value self) {
     double end_deg = value_to_double(mrb, end_val);
     const char* err = NULL;
     void* ptr = rrcad_make_arc(r, start_deg, end_deg, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, ptr);
 }
 
@@ -1665,8 +1613,7 @@ static mrb_value mrb_rrcad_import_step(mrb_state* mrb, mrb_value self) {
     mrb_get_args(mrb, "z", &path);
     const char* err = NULL;
     void* ptr = rrcad_import_step(path, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, ptr);
 }
 
@@ -1676,8 +1623,7 @@ static mrb_value mrb_rrcad_import_stl(mrb_state* mrb, mrb_value self) {
     mrb_get_args(mrb, "z", &path);
     const char* err = NULL;
     void* ptr = rrcad_import_stl(path, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, ptr);
 }
 
@@ -1700,8 +1646,7 @@ static mrb_value mrb_rrcad_preview(mrb_state* mrb, mrb_value self) {
 
     const char* err = NULL;
     rrcad_preview_shape(ptr, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return mrb_nil_value();
 }
 
@@ -1731,20 +1676,17 @@ static mrb_value mrb_rrcad_shape_faces(mrb_state* mrb, mrb_value self) {
                   "or a String (\">Z\", \"<X\", etc.)");
     }
 
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
 
     const char* err = NULL;
     int count = rrcad_shape_faces_count(ptr, sel, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
 
     mrb_value result = mrb_ary_new_capa(mrb, count);
     for (int i = 0; i < count; i++) {
         err = NULL;
         void* face_ptr = rrcad_shape_faces_get(ptr, sel, i, &err);
-        if (err)
-            mrb_raise(mrb, E_RUNTIME_ERROR, err);
+        raise_if_err(mrb, err);
         mrb_ary_push(mrb, result, shape_from_ptr(mrb, face_ptr));
     }
     return result;
@@ -1755,20 +1697,17 @@ static mrb_value mrb_rrcad_shape_edges(mrb_state* mrb, mrb_value self) {
     mrb_get_args(mrb, "n", &sel_sym);
     const char* sel = mrb_sym_name(mrb, sel_sym);
 
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
 
     const char* err = NULL;
     int count = rrcad_shape_edges_count(ptr, sel, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
 
     mrb_value result = mrb_ary_new_capa(mrb, count);
     for (int i = 0; i < count; i++) {
         err = NULL;
         void* edge_ptr = rrcad_shape_edges_get(ptr, sel, i, &err);
-        if (err)
-            mrb_raise(mrb, E_RUNTIME_ERROR, err);
+        raise_if_err(mrb, err);
         mrb_ary_push(mrb, result, shape_from_ptr(mrb, edge_ptr));
     }
     return result;
@@ -1787,20 +1726,17 @@ static mrb_value mrb_rrcad_shape_vertices(mrb_state* mrb, mrb_value self) {
     mrb_get_args(mrb, "n", &sel_sym);
     const char* sel = mrb_sym_name(mrb, sel_sym);
 
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
 
     const char* err = NULL;
     int count = rrcad_shape_vertices_count(ptr, sel, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
 
     mrb_value result = mrb_ary_new_capa(mrb, count);
     for (int i = 0; i < count; i++) {
         err = NULL;
         void* vertex_ptr = rrcad_shape_vertices_get(ptr, sel, i, &err);
-        if (err)
-            mrb_raise(mrb, E_RUNTIME_ERROR, err);
+        raise_if_err(mrb, err);
         mrb_ary_push(mrb, result, shape_from_ptr(mrb, vertex_ptr));
     }
     return result;
@@ -1812,14 +1748,12 @@ static mrb_value mrb_rrcad_shape_vertices(mrb_state* mrb, mrb_value self) {
  */
 
 static mrb_value mrb_rrcad_shape_bounding_box(mrb_state* mrb, mrb_value self) {
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
 
     double bounds[6];
     const char* err = NULL;
     rrcad_shape_bounding_box(ptr, bounds, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
 
     /* Return {x:, y:, z:, dx:, dy:, dz:} where x/y/z is the min corner
      * and dx/dy/dz is the extent in each axis. */
@@ -1840,22 +1774,18 @@ static mrb_value mrb_rrcad_shape_bounding_box(mrb_state* mrb, mrb_value self) {
 }
 
 static mrb_value mrb_rrcad_shape_volume(mrb_state* mrb, mrb_value self) {
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     double vol = rrcad_shape_volume(ptr, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return mrb_float_value(mrb, vol);
 }
 
 static mrb_value mrb_rrcad_shape_surface_area(mrb_state* mrb, mrb_value self) {
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     double area = rrcad_shape_surface_area(ptr, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return mrb_float_value(mrb, area);
 }
 
@@ -1880,8 +1810,7 @@ static mrb_value mrb_rrcad_linear_pattern(mrb_state* mrb, mrb_value self) {
     mrb_int n;
     mrb_get_args(mrb, "oiA", &shape_val, &n, &vec_val);
 
-    void* ptr = shape_ptr(mrb, shape_val);
-    require_native_ptr(mrb, ptr);
+    void* ptr = checked_shape_ptr(mrb, shape_val);
 
     if ((int)RARRAY_LEN(vec_val) < 3)
         mrb_raise(mrb, E_ARGUMENT_ERROR, "linear_pattern: vector must have 3 elements [dx,dy,dz]");
@@ -1900,8 +1829,7 @@ static mrb_value mrb_rrcad_linear_pattern(mrb_state* mrb, mrb_value self) {
 
     const char* err = NULL;
     void* result = rrcad_shape_linear_pattern(ptr, (int)n, dx, dy, dz, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -1914,13 +1842,11 @@ static mrb_value mrb_rrcad_polar_pattern(mrb_state* mrb, mrb_value self) {
     mrb_get_args(mrb, "oio", &shape_val, &n, &angle_val);
     double angle_deg = value_to_double(mrb, angle_val);
 
-    void* ptr = shape_ptr(mrb, shape_val);
-    require_native_ptr(mrb, ptr);
+    void* ptr = checked_shape_ptr(mrb, shape_val);
 
     const char* err = NULL;
     void* result = rrcad_shape_polar_pattern(ptr, (int)n, angle_deg, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -1946,13 +1872,11 @@ static mrb_value mrb_rrcad_grid_pattern(mrb_state* mrb, mrb_value self) {
     double dx = value_to_double(mrb, dx_val);
     double dy = value_to_double(mrb, dy_val);
 
-    void* ptr = shape_ptr(mrb, shape_val);
-    require_native_ptr(mrb, ptr);
+    void* ptr = checked_shape_ptr(mrb, shape_val);
 
     const char* err = NULL;
     void* result = rrcad_shape_grid_pattern(ptr, (int)nx, (int)ny, dx, dy, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -1967,30 +1891,14 @@ static mrb_value mrb_rrcad_fuse_all(mrb_state* mrb, mrb_value self) {
     mrb_value arr;
     mrb_get_args(mrb, "A", &arr);
 
-    int n = (int)RARRAY_LEN(arr);
-    if (n < 2)
-        mrb_raise(mrb, E_ARGUMENT_ERROR, "fuse_all requires at least 2 shapes");
-
-    const void** ptrs = (const void**)malloc((size_t)n * sizeof(void*));
-    if (!ptrs)
-        mrb_raise(mrb, E_RUNTIME_ERROR, "out of memory");
-
-    for (int i = 0; i < n; i++) {
-        mrb_value elem = mrb_ary_ref(mrb, arr, (mrb_int)i);
-        /* Non-raising check: free before raise to avoid leaking the buffer. */
-        void* p = mrb_data_check_get_ptr(mrb, elem, &shape_type);
-        if (!p) {
-            free(ptrs);
-            mrb_raisef(mrb, E_TYPE_ERROR, "fuse_all: element %d is not a valid Shape", i);
-        }
-        ptrs[i] = p;
-    }
+    int n = 0;
+    const void** ptrs =
+        collect_shape_ptrs(mrb, arr, 2, "fuse_all requires at least 2 shapes", "fuse_all", &n);
 
     const char* err = NULL;
     void* result = rrcad_shape_fuse_all(ptrs, (size_t)n, &err);
     free(ptrs);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -2005,33 +1913,16 @@ static mrb_value mrb_rrcad_cut_all(mrb_state* mrb, mrb_value self) {
     mrb_value base_val, arr;
     mrb_get_args(mrb, "oA", &base_val, &arr);
 
-    void* base = shape_ptr(mrb, base_val);
-    require_native_ptr(mrb, base);
+    void* base = checked_shape_ptr(mrb, base_val);
 
-    int n = (int)RARRAY_LEN(arr);
-    if (n < 1)
-        mrb_raise(mrb, E_ARGUMENT_ERROR, "cut_all requires at least 1 tool");
-
-    const void** ptrs = (const void**)malloc((size_t)n * sizeof(void*));
-    if (!ptrs)
-        mrb_raise(mrb, E_RUNTIME_ERROR, "out of memory");
-
-    for (int i = 0; i < n; i++) {
-        mrb_value elem = mrb_ary_ref(mrb, arr, (mrb_int)i);
-        /* Non-raising check: free before raise to avoid leaking the buffer. */
-        void* p = mrb_data_check_get_ptr(mrb, elem, &shape_type);
-        if (!p) {
-            free(ptrs);
-            mrb_raisef(mrb, E_TYPE_ERROR, "cut_all: element %d is not a valid Shape", i);
-        }
-        ptrs[i] = p;
-    }
+    int n = 0;
+    const void** ptrs =
+        collect_shape_ptrs(mrb, arr, 1, "cut_all requires at least 1 tool", "cut_all", &n);
 
     const char* err = NULL;
     void* result = rrcad_shape_cut_all(base, ptrs, (size_t)n, &err);
     free(ptrs);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -2073,8 +1964,7 @@ static mrb_value mrb_rrcad_bezier_patch(mrb_state* mrb, mrb_value self) {
 
     const char* err = NULL;
     void* ptr = rrcad_make_bezier_patch(pts, 48, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, ptr);
 }
 
@@ -2095,35 +1985,16 @@ static mrb_value mrb_rrcad_sew(mrb_state* mrb, mrb_value self) {
     mrb_get_args(mrb, "A|H", &arr, &opts);
 
     if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
-        mrb_value tv = mrb_hash_fetch(mrb, opts, mrb_symbol_value(mrb_intern_lit(mrb, "tolerance")),
-                                      mrb_float_value(mrb, 1e-4));
-        tol = value_to_double(mrb, tv);
+        tol = opt_double(mrb, opts, "tolerance", 1e-4);
     }
 
-    int n = (int)RARRAY_LEN(arr);
-    if (n < 1)
-        mrb_raise(mrb, E_ARGUMENT_ERROR, "sew requires at least 1 shape");
-
-    const void** ptrs = (const void**)malloc((size_t)n * sizeof(void*));
-    if (!ptrs)
-        mrb_raise(mrb, E_RUNTIME_ERROR, "out of memory");
-
-    for (int i = 0; i < n; i++) {
-        mrb_value elem = mrb_ary_ref(mrb, arr, i);
-        /* Non-raising check: free before raise to avoid leaking the buffer. */
-        void* p = mrb_data_check_get_ptr(mrb, elem, &shape_type);
-        if (!p) {
-            free(ptrs);
-            mrb_raisef(mrb, E_TYPE_ERROR, "sew: element %d is not a valid Shape", i);
-        }
-        ptrs[i] = p;
-    }
+    int n = 0;
+    const void** ptrs = collect_shape_ptrs(mrb, arr, 1, "sew requires at least 1 shape", "sew", &n);
 
     const char* err = NULL;
     void* result = rrcad_sew(ptrs, (size_t)n, (double)tol, &err);
     free(ptrs);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -2134,73 +2005,50 @@ static mrb_value mrb_rrcad_sew(mrb_state* mrb, mrb_value self) {
 
 /* shape.shape_type  → :solid, :shell, :face, :wire, :edge, :vertex, ... */
 static mrb_value mrb_rrcad_shape_type(mrb_state* mrb, mrb_value self) {
-    void* ptr = shape_ptr(mrb, self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = checked_shape_ptr(mrb, self);
 
     const char* err = NULL;
     const char* type_str = rrcad_shape_type_name(ptr, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return mrb_symbol_value(mrb_intern_cstr(mrb, type_str));
 }
 
 /* shape.centroid  → [x, y, z] */
 static mrb_value mrb_rrcad_shape_centroid(mrb_state* mrb, mrb_value self) {
-    void* ptr = shape_ptr(mrb, self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = checked_shape_ptr(mrb, self);
 
     double out[3] = {0.0, 0.0, 0.0};
     const char* err = NULL;
     rrcad_shape_centroid(ptr, out, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
 
-    mrb_value ary = mrb_ary_new_capa(mrb, 3);
-    mrb_ary_push(mrb, ary, mrb_float_value(mrb, (mrb_float)out[0]));
-    mrb_ary_push(mrb, ary, mrb_float_value(mrb, (mrb_float)out[1]));
-    mrb_ary_push(mrb, ary, mrb_float_value(mrb, (mrb_float)out[2]));
-    return ary;
+    return float_ary3(mrb, out);
 }
 
 /* face.normal  → [nx, ny, nz] outward unit normal of a planar face */
 static mrb_value mrb_rrcad_shape_face_normal(mrb_state* mrb, mrb_value self) {
-    void* ptr = shape_ptr(mrb, self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = checked_shape_ptr(mrb, self);
 
     double out[3] = {0.0, 0.0, 0.0};
     const char* err = NULL;
     rrcad_shape_face_normal(ptr, out, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
 
-    mrb_value ary = mrb_ary_new_capa(mrb, 3);
-    mrb_ary_push(mrb, ary, mrb_float_value(mrb, (mrb_float)out[0]));
-    mrb_ary_push(mrb, ary, mrb_float_value(mrb, (mrb_float)out[1]));
-    mrb_ary_push(mrb, ary, mrb_float_value(mrb, (mrb_float)out[2]));
-    return ary;
+    return float_ary3(mrb, out);
 }
 
 /* face.cylinder_axis  → {origin: [x,y,z], axis: [ax,ay,az], radius: r}
  * Errors when the shape is not a cylindrical face. */
 static mrb_value mrb_rrcad_shape_cylinder_axis(mrb_state* mrb, mrb_value self) {
-    void* ptr = shape_ptr(mrb, self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = checked_shape_ptr(mrb, self);
 
     double out[7] = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
     const char* err = NULL;
     rrcad_shape_cylinder_axis(ptr, out, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
 
-    mrb_value origin = mrb_ary_new_capa(mrb, 3);
-    mrb_ary_push(mrb, origin, mrb_float_value(mrb, (mrb_float)out[0]));
-    mrb_ary_push(mrb, origin, mrb_float_value(mrb, (mrb_float)out[1]));
-    mrb_ary_push(mrb, origin, mrb_float_value(mrb, (mrb_float)out[2]));
-
-    mrb_value axis = mrb_ary_new_capa(mrb, 3);
-    mrb_ary_push(mrb, axis, mrb_float_value(mrb, (mrb_float)out[3]));
-    mrb_ary_push(mrb, axis, mrb_float_value(mrb, (mrb_float)out[4]));
-    mrb_ary_push(mrb, axis, mrb_float_value(mrb, (mrb_float)out[5]));
+    mrb_value origin = float_ary3(mrb, &out[0]);
+    mrb_value axis = float_ary3(mrb, &out[3]);
 
     mrb_value hash = mrb_hash_new(mrb);
     mrb_hash_set(mrb, hash, mrb_symbol_value(mrb_intern_lit(mrb, "origin")), origin);
@@ -2212,79 +2060,48 @@ static mrb_value mrb_rrcad_shape_cylinder_axis(mrb_state* mrb, mrb_value self) {
 
 /* shape.closed?  → true/false */
 static mrb_value mrb_rrcad_shape_closed(mrb_state* mrb, mrb_value self) {
-    void* ptr = shape_ptr(mrb, self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = checked_shape_ptr(mrb, self);
 
     const char* err = NULL;
     int result = rrcad_shape_is_closed(ptr, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return mrb_bool_value(result != 0);
 }
 
 /* shape.manifold?  → true/false */
 static mrb_value mrb_rrcad_shape_manifold(mrb_state* mrb, mrb_value self) {
-    void* ptr = shape_ptr(mrb, self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = checked_shape_ptr(mrb, self);
 
     const char* err = NULL;
     int result = rrcad_shape_is_manifold(ptr, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return mrb_bool_value(result != 0);
 }
 
 /* shape.validate  → :ok  or  ["error1", "error2", ...] */
 static mrb_value mrb_rrcad_shape_validate(mrb_state* mrb, mrb_value self) {
-    void* ptr = shape_ptr(mrb, self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = checked_shape_ptr(mrb, self);
 
     const char* err = NULL;
     const char* report = rrcad_shape_validate(ptr, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
 
     /* "ok" → :ok; anything else → split on "\n" and return Array of strings */
     if (strcmp(report, "ok") == 0)
         return mrb_symbol_value(mrb_intern_lit(mrb, "ok"));
 
-    mrb_value ary = mrb_ary_new(mrb);
-    const char* p = report;
-    while (*p) {
-        const char* nl = strchr(p, '\n');
-        size_t len = nl ? (size_t)(nl - p) : strlen(p);
-        mrb_ary_push(mrb, ary, mrb_str_new(mrb, p, (mrb_int)len));
-        p += len;
-        if (*p == '\n')
-            p++;
-    }
-    return ary;
+    return split_lines(mrb, report);
 }
 
 /* shape.history  → ["op(...)", "op(...)", ...] */
 static mrb_value mrb_rrcad_shape_history(mrb_state* mrb, mrb_value self) {
-    void* ptr = shape_ptr(mrb, self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = checked_shape_ptr(mrb, self);
 
     const char* err = NULL;
     const char* report = rrcad_shape_history(ptr, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
 
-    mrb_value ary = mrb_ary_new(mrb);
-    if (report[0] == '\0')
-        return ary;
-
-    const char* p = report;
-    while (*p) {
-        const char* nl = strchr(p, '\n');
-        size_t len = nl ? (size_t)(nl - p) : strlen(p);
-        mrb_ary_push(mrb, ary, mrb_str_new(mrb, p, (mrb_int)len));
-        p += len;
-        if (*p == '\n')
-            p++;
-    }
-    return ary;
+    return split_lines(mrb, report);
 }
 
 static mrb_value mrb_rrcad_shape_feature_graph_line(mrb_state* mrb, const char* line, size_t len) {
@@ -2344,13 +2161,11 @@ static mrb_value mrb_rrcad_shape_feature_graph_line(mrb_state* mrb, const char* 
 
 /* shape.feature_graph  → [{id:, parents:, label:, entry:}, ...] */
 static mrb_value mrb_rrcad_shape_feature_graph(mrb_state* mrb, mrb_value self) {
-    void* ptr = shape_ptr(mrb, self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = checked_shape_ptr(mrb, self);
 
     const char* err = NULL;
     const char* report = rrcad_shape_feature_graph(ptr, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
 
     mrb_value ary = mrb_ary_new(mrb);
     if (report[0] == '\0')
@@ -2371,13 +2186,11 @@ static mrb_value mrb_rrcad_shape_feature_graph(mrb_state* mrb, mrb_value self) {
 }
 
 static mrb_value mrb_rrcad_shape_rebuild(mrb_state* mrb, mrb_value self) {
-    void* ptr = shape_ptr(mrb, self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = checked_shape_ptr(mrb, self);
 
     const char* err = NULL;
     void* rebuilt = rrcad_shape_rebuild(ptr, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, rebuilt);
 }
 
@@ -2395,15 +2208,12 @@ static mrb_value mrb_rrcad_ruled_surface(mrb_state* mrb, mrb_value self) {
     mrb_value a, b;
     mrb_get_args(mrb, "oo", &a, &b);
 
-    void* pa = shape_ptr(mrb, a);
-    require_native_ptr(mrb, pa);
-    void* pb = shape_ptr(mrb, b);
-    require_native_ptr(mrb, pb);
+    void* pa = checked_shape_ptr(mrb, a);
+    void* pb = checked_shape_ptr(mrb, b);
 
     const char* err = NULL;
     void* result = rrcad_ruled_surface(pa, pb, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -2416,13 +2226,11 @@ static mrb_value mrb_rrcad_fill_surface(mrb_state* mrb, mrb_value self) {
     mrb_value v;
     mrb_get_args(mrb, "o", &v);
 
-    void* ptr = shape_ptr(mrb, v);
-    require_native_ptr(mrb, ptr);
+    void* ptr = checked_shape_ptr(mrb, v);
 
     const char* err = NULL;
     void* result = rrcad_fill_surface(ptr, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -2436,15 +2244,13 @@ static mrb_value mrb_rrcad_fill_surface(mrb_state* mrb, mrb_value self) {
  *   solid.slice(plane: :yz, x: 1.0)   # YZ plane at x=1
  */
 static mrb_value mrb_rrcad_shape_slice(mrb_state* mrb, mrb_value self) {
-    void* ptr = shape_ptr(mrb, self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = checked_shape_ptr(mrb, self);
 
     mrb_value kwargs = mrb_nil_value();
     mrb_get_args(mrb, "H", &kwargs);
 
     /* Require plane: keyword */
-    mrb_value plane_sym = mrb_hash_fetch(
-        mrb, kwargs, mrb_symbol_value(mrb_intern_lit(mrb, "plane")), mrb_nil_value());
+    mrb_value plane_sym = opt_fetch(mrb, kwargs, "plane", mrb_nil_value());
     if (mrb_nil_p(plane_sym))
         mrb_raise(mrb, E_ARGUMENT_ERROR, "slice requires plane: :xy, :xz, or :yz");
 
@@ -2470,8 +2276,7 @@ static mrb_value mrb_rrcad_shape_slice(mrb_state* mrb, mrb_value self) {
 
     const char* err = NULL;
     void* result = rrcad_shape_slice(ptr, pname, offset, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -2501,21 +2306,18 @@ static void* resolve_face(mrb_state* mrb, void* body_ptr, mrb_value sel_val) {
 
     const char* err = NULL;
     int count = rrcad_shape_faces_count(body_ptr, sel, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     if (count < 1)
         mrb_raisef(mrb, E_RUNTIME_ERROR, "no faces matching '%s'", sel);
 
     void* face_ptr = rrcad_shape_faces_get(body_ptr, sel, 0, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return face_ptr;
 }
 
 /* .pad(face_sel, height:) { sketch } — extrude sketch on face, fuse with self. */
 static mrb_value mrb_rrcad_shape_pad(mrb_state* mrb, mrb_value self) {
-    void* body_ptr = DATA_PTR(self);
-    require_native_ptr(mrb, body_ptr);
+    void* body_ptr = self_ptr(mrb, self);
 
     mrb_value face_sel;
     mrb_value kwargs = mrb_nil_value();
@@ -2525,8 +2327,7 @@ static mrb_value mrb_rrcad_shape_pad(mrb_state* mrb, mrb_value self) {
     /* Extract height: keyword (required). */
     if (mrb_nil_p(kwargs))
         mrb_raise(mrb, E_ARGUMENT_ERROR, "pad requires height: keyword");
-    mrb_value height_val = mrb_hash_fetch(
-        mrb, kwargs, mrb_symbol_value(mrb_intern_lit(mrb, "height")), mrb_nil_value());
+    mrb_value height_val = opt_fetch(mrb, kwargs, "height", mrb_nil_value());
     if (mrb_nil_p(height_val))
         mrb_raise(mrb, E_ARGUMENT_ERROR, "pad requires height: keyword");
     double height = value_to_double(mrb, height_val);
@@ -2537,8 +2338,7 @@ static mrb_value mrb_rrcad_shape_pad(mrb_state* mrb, mrb_value self) {
     mrb_value sketch_val = mrb_yield(mrb, block, mrb_nil_value());
     if (mrb->exc)
         return mrb_nil_value(); /* let the exception propagate */
-    void* sketch_ptr = shape_ptr(mrb, sketch_val);
-    require_native_ptr(mrb, sketch_ptr);
+    void* sketch_ptr = checked_shape_ptr(mrb, sketch_val);
 
     /* Resolve face selector. */
     void* face_ptr = resolve_face(mrb, body_ptr, face_sel);
@@ -2546,15 +2346,13 @@ static mrb_value mrb_rrcad_shape_pad(mrb_state* mrb, mrb_value self) {
 
     const char* err = NULL;
     void* result = rrcad_shape_pad(body_ptr, face_ptr, sketch_ptr, height, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
 /* .pocket(face_sel, depth:) { sketch } — extrude sketch inward, cut from self. */
 static mrb_value mrb_rrcad_shape_pocket(mrb_state* mrb, mrb_value self) {
-    void* body_ptr = DATA_PTR(self);
-    require_native_ptr(mrb, body_ptr);
+    void* body_ptr = self_ptr(mrb, self);
 
     mrb_value face_sel;
     mrb_value kwargs = mrb_nil_value();
@@ -2564,8 +2362,7 @@ static mrb_value mrb_rrcad_shape_pocket(mrb_state* mrb, mrb_value self) {
     /* Extract depth: keyword (required). */
     if (mrb_nil_p(kwargs))
         mrb_raise(mrb, E_ARGUMENT_ERROR, "pocket requires depth: keyword");
-    mrb_value depth_val = mrb_hash_fetch(
-        mrb, kwargs, mrb_symbol_value(mrb_intern_lit(mrb, "depth")), mrb_nil_value());
+    mrb_value depth_val = opt_fetch(mrb, kwargs, "depth", mrb_nil_value());
     if (mrb_nil_p(depth_val))
         mrb_raise(mrb, E_ARGUMENT_ERROR, "pocket requires depth: keyword");
     double depth = value_to_double(mrb, depth_val);
@@ -2576,8 +2373,7 @@ static mrb_value mrb_rrcad_shape_pocket(mrb_state* mrb, mrb_value self) {
     mrb_value sketch_val = mrb_yield(mrb, block, mrb_nil_value());
     if (mrb->exc)
         return mrb_nil_value(); /* let the exception propagate */
-    void* sketch_ptr = shape_ptr(mrb, sketch_val);
-    require_native_ptr(mrb, sketch_ptr);
+    void* sketch_ptr = checked_shape_ptr(mrb, sketch_val);
 
     /* Resolve face selector. */
     void* face_ptr = resolve_face(mrb, body_ptr, face_sel);
@@ -2585,15 +2381,13 @@ static mrb_value mrb_rrcad_shape_pocket(mrb_state* mrb, mrb_value self) {
 
     const char* err = NULL;
     void* result = rrcad_shape_pocket(body_ptr, face_ptr, sketch_ptr, depth, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
 /* .fillet_wire(radius) — fillet all corners of a 2D Wire or Face profile. */
 static mrb_value mrb_rrcad_shape_fillet_wire(mrb_state* mrb, mrb_value self) {
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
 
     mrb_value radius_val;
     mrb_get_args(mrb, "o", &radius_val);
@@ -2601,8 +2395,7 @@ static mrb_value mrb_rrcad_shape_fillet_wire(mrb_state* mrb, mrb_value self) {
 
     const char* err = NULL;
     void* result = rrcad_shape_fillet_wire(ptr, radius, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -2646,8 +2439,7 @@ static mrb_value mrb_rrcad_datum_plane(mrb_state* mrb, mrb_value self) {
     const char* err = NULL;
     void* result = rrcad_datum_plane((double)ox, (double)oy, (double)oz, (double)nx, (double)ny,
                                      (double)nz, (double)xx, (double)xy, (double)xz, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -2661,28 +2453,24 @@ static mrb_value mrb_rrcad_datum_plane(mrb_state* mrb, mrb_value self) {
 static mrb_value mrb_rrcad_shape_distance_to(mrb_state* mrb, mrb_value self) {
     mrb_value other;
     mrb_get_args(mrb, "o", &other);
-    void* a_ptr = DATA_PTR(self);
-    require_native_ptr(mrb, a_ptr);
+    void* a_ptr = self_ptr(mrb, self);
     void* b_ptr = DATA_PTR(other);
     if (!b_ptr)
         mrb_raise(mrb, E_TYPE_ERROR, "distance_to: argument must be a Shape");
     const char* err = NULL;
     double dist = rrcad_shape_distance_to(a_ptr, b_ptr, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return mrb_float_value(mrb, dist);
 }
 
 /* shape.inertia → {ixx:, iyy:, izz:, ixy:, ixz:, iyz:}
  * Inertia tensor about the centre of mass in the world frame. */
 static mrb_value mrb_rrcad_shape_inertia(mrb_state* mrb, mrb_value self) {
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     double buf[6] = {0};
     const char* err = NULL;
     rrcad_shape_inertia(ptr, buf, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
 
     mrb_value hash = mrb_hash_new(mrb);
     static const char* keys[] = {"ixx", "iyy", "izz", "ixy", "ixz", "iyz"};
@@ -2696,12 +2484,10 @@ static mrb_value mrb_rrcad_shape_inertia(mrb_state* mrb, mrb_value self) {
 /* shape.min_thickness → Float
  * Minimum wall thickness of a solid or shell. */
 static mrb_value mrb_rrcad_shape_min_thickness(mrb_state* mrb, mrb_value self) {
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     double t = rrcad_shape_min_thickness(ptr, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return mrb_float_value(mrb, t);
 }
 
@@ -2736,8 +2522,7 @@ static mrb_value mrb_rrcad_helix(mrb_state* mrb, mrb_value self) {
 
     const char* err = NULL;
     void* result = rrcad_make_helix(radius, pitch, height, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -2766,27 +2551,23 @@ static mrb_value mrb_rrcad_fragment(mrb_state* mrb, mrb_value self) {
     const void** ptrs = (const void**)mrb_malloc(mrb, (size_t)n * sizeof(void*));
     for (mrb_int i = 0; i < n; i++) {
         mrb_value elem = mrb_ary_ref(mrb, ary, i);
-        void* p = shape_ptr(mrb, elem);
-        require_native_ptr(mrb, p);
+        void* p = checked_shape_ptr(mrb, elem);
         ptrs[i] = p;
     }
 
     const char* err = NULL;
     void* result = rrcad_shape_fragment(ptrs, (size_t)n, &err);
     mrb_free(mrb, ptrs);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
 /* shape.convex_hull */
 static mrb_value mrb_rrcad_shape_convex_hull(mrb_state* mrb, mrb_value self) {
-    void* ptr = DATA_PTR(self);
-    require_native_ptr(mrb, ptr);
+    void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     void* result = rrcad_shape_convex_hull(ptr, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 
@@ -2811,8 +2592,7 @@ static mrb_value mrb_rrcad_path_pattern(mrb_state* mrb, mrb_value self) {
 
     const char* err = NULL;
     void* result = rrcad_shape_path_pattern(ptr, path_ptr, (int)n, &err);
-    if (err)
-        mrb_raise(mrb, E_RUNTIME_ERROR, err);
+    raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
 

@@ -4,190 +4,97 @@ use std::ffi::{c_char, c_void};
 
 use crate::occt::Shape;
 
-use super::native_helpers::{DEFAULT_LINEAR_DEFLECTION, set_err};
+use super::native_helpers::{DEFAULT_LINEAR_DEFLECTION, set_err, utf8_arg};
 
 // ---------------------------------------------------------------------------
-// Phase 3: Sub-shape selectors — faces and edges
+// Sub-shape selectors — faces (Phase 3), edges (Phase 3), vertices (Phase 4)
+//
+// Each family exposes the same pair of entry points: a `_count` that returns
+// how many sub-shapes match the selector, and a `_get` that hands back the
+// idx-th match as a freshly boxed `Shape`.  Only the underlying `Shape` method,
+// the count error sentinel and the out-of-range message differ, so the pair is
+// generated from one declaration.
 // ---------------------------------------------------------------------------
 
-/// Returns the count of matching faces, or -1 on error (sets *error_out).
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rrcad_shape_faces_count(
-    ptr: *mut c_void,
-    selector: *const c_char,
-    error_out: *mut *const c_char,
-) -> i32 {
-    unsafe { *error_out = std::ptr::null() };
-    let shape = unsafe { &*(ptr as *const Shape) };
-    let sel = match unsafe { std::ffi::CStr::from_ptr(selector) }.to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            unsafe { set_err(error_out, "selector is not valid UTF-8") };
-            return -1;
-        }
-    };
-    match shape.faces(sel) {
-        Ok(v) => v.len() as i32,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            -1
-        }
-    }
-}
-
-/// Returns the idx-th matching face as an owned Shape pointer, or null on error.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rrcad_shape_faces_get(
-    ptr: *mut c_void,
-    selector: *const c_char,
-    idx: i32,
-    error_out: *mut *const c_char,
-) -> *mut c_void {
-    unsafe { *error_out = std::ptr::null() };
-    let shape = unsafe { &*(ptr as *const Shape) };
-    let sel = match unsafe { std::ffi::CStr::from_ptr(selector) }.to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            unsafe { set_err(error_out, "selector is not valid UTF-8") };
-            return std::ptr::null_mut();
-        }
-    };
-    match shape.faces(sel) {
-        Ok(mut v) => {
-            let i = idx as usize;
-            if i < v.len() {
-                Box::into_raw(Box::new(v.swap_remove(i))) as *mut c_void
-            } else {
-                unsafe { set_err(error_out, "face index out of range") };
-                std::ptr::null_mut()
+macro_rules! shape_selector {
+    (
+        $count_fn:ident, $get_fn:ident => $method:ident,
+        count_on_error = $count_err:expr,
+        out_of_range = $oob:expr
+    ) => {
+        /// Returns the number of matching sub-shapes, or the family's error
+        /// sentinel with `*error_out` set.
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn $count_fn(
+            ptr: *mut c_void,
+            selector: *const c_char,
+            error_out: *mut *const c_char,
+        ) -> i32 {
+            unsafe { *error_out = std::ptr::null() };
+            let shape = unsafe { &*(ptr as *const Shape) };
+            let Some(selector) = (unsafe { utf8_arg(selector, "selector", error_out) }) else {
+                return $count_err;
+            };
+            match shape.$method(selector) {
+                Ok(v) => v.len() as i32,
+                Err(e) => {
+                    unsafe { set_err(error_out, &e) };
+                    $count_err
+                }
             }
         }
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
-}
 
-/// Returns the count of matching edges, or -1 on error.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rrcad_shape_edges_count(
-    ptr: *mut c_void,
-    selector: *const c_char,
-    error_out: *mut *const c_char,
-) -> i32 {
-    unsafe { *error_out = std::ptr::null() };
-    let shape = unsafe { &*(ptr as *const Shape) };
-    let sel = match unsafe { std::ffi::CStr::from_ptr(selector) }.to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            unsafe { set_err(error_out, "selector is not valid UTF-8") };
-            return -1;
-        }
-    };
-    match shape.edges(sel) {
-        Ok(v) => v.len() as i32,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            -1
-        }
-    }
-}
-
-/// Returns the idx-th matching edge as an owned Shape pointer, or null on error.
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rrcad_shape_edges_get(
-    ptr: *mut c_void,
-    selector: *const c_char,
-    idx: i32,
-    error_out: *mut *const c_char,
-) -> *mut c_void {
-    unsafe { *error_out = std::ptr::null() };
-    let shape = unsafe { &*(ptr as *const Shape) };
-    let sel = match unsafe { std::ffi::CStr::from_ptr(selector) }.to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            unsafe { set_err(error_out, "selector is not valid UTF-8") };
-            return std::ptr::null_mut();
-        }
-    };
-    match shape.edges(sel) {
-        Ok(mut v) => {
-            let i = idx as usize;
-            if i < v.len() {
-                Box::into_raw(Box::new(v.swap_remove(i))) as *mut c_void
-            } else {
-                unsafe { set_err(error_out, "edge index out of range") };
-                std::ptr::null_mut()
+        /// Returns the idx-th match as an owned Shape pointer, or null on error.
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn $get_fn(
+            ptr: *mut c_void,
+            selector: *const c_char,
+            idx: i32,
+            error_out: *mut *const c_char,
+        ) -> *mut c_void {
+            unsafe { *error_out = std::ptr::null() };
+            let shape = unsafe { &*(ptr as *const Shape) };
+            let Some(selector) = (unsafe { utf8_arg(selector, "selector", error_out) }) else {
+                return std::ptr::null_mut();
+            };
+            match shape.$method(selector) {
+                Ok(mut v) => {
+                    let i = idx as usize;
+                    if i < v.len() {
+                        Box::into_raw(Box::new(v.swap_remove(i))) as *mut c_void
+                    } else {
+                        unsafe { set_err(error_out, $oob) };
+                        std::ptr::null_mut()
+                    }
+                }
+                Err(e) => {
+                    unsafe { set_err(error_out, &e) };
+                    std::ptr::null_mut()
+                }
             }
         }
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Phase 4: Vertices selector
-// ---------------------------------------------------------------------------
-
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rrcad_shape_vertices_count(
-    ptr: *mut c_void,
-    selector: *const c_char,
-    error_out: *mut *const c_char,
-) -> i32 {
-    unsafe { *error_out = std::ptr::null() };
-    let shape = unsafe { &*(ptr as *const Shape) };
-    let sel = match unsafe { std::ffi::CStr::from_ptr(selector) }.to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            unsafe { set_err(error_out, "selector is not valid UTF-8") };
-            return 0;
-        }
     };
-    match shape.vertices(sel) {
-        Ok(v) => v.len() as i32,
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            0
-        }
-    }
 }
 
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn rrcad_shape_vertices_get(
-    ptr: *mut c_void,
-    selector: *const c_char,
-    idx: i32,
-    error_out: *mut *const c_char,
-) -> *mut c_void {
-    unsafe { *error_out = std::ptr::null() };
-    let shape = unsafe { &*(ptr as *const Shape) };
-    let sel = match unsafe { std::ffi::CStr::from_ptr(selector) }.to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            unsafe { set_err(error_out, "selector is not valid UTF-8") };
-            return std::ptr::null_mut();
-        }
-    };
-    match shape.vertices(sel) {
-        Ok(mut v) => {
-            let i = idx as usize;
-            if i < v.len() {
-                Box::into_raw(Box::new(v.swap_remove(i))) as *mut c_void
-            } else {
-                unsafe { set_err(error_out, "vertex index out of range") };
-                std::ptr::null_mut()
-            }
-        }
-        Err(e) => {
-            unsafe { set_err(error_out, &e) };
-            std::ptr::null_mut()
-        }
-    }
-}
+shape_selector!(
+    rrcad_shape_faces_count, rrcad_shape_faces_get => faces,
+    count_on_error = -1,
+    out_of_range = "face index out of range"
+);
+
+shape_selector!(
+    rrcad_shape_edges_count, rrcad_shape_edges_get => edges,
+    count_on_error = -1,
+    out_of_range = "edge index out of range"
+);
+
+// NOTE: unlike faces/edges, the vertices count reports 0 (not -1) on failure —
+// preserved as-is because `glue.c` loops over the returned count.
+shape_selector!(
+    rrcad_shape_vertices_count, rrcad_shape_vertices_get => vertices,
+    count_on_error = 0,
+    out_of_range = "vertex index out of range"
+);
 
 // ---------------------------------------------------------------------------
 // Phase 3: Live preview
