@@ -973,3 +973,94 @@ fn mass_properties_rejects_a_malformed_about_point() {
         "unexpected error: {err}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Assembly#export options
+//
+// `Assembly#export` used to take only a path, silently dropping every drawing
+// option, so an assembly could not produce the one deliverable it most needs —
+// a sheet. Options are now forwarded to the fused Shape untouched.
+// ---------------------------------------------------------------------------
+
+/// A throwaway working directory, removed on drop. `safe_path` confines
+/// exports to the process CWD, so these write into it and clean up after.
+struct Workspace {
+    dir: std::path::PathBuf,
+}
+
+impl Workspace {
+    fn new(tag: &str) -> Self {
+        let dir = std::env::current_dir()
+            .expect("cwd")
+            .join(format!("target/asmexport_{tag}"));
+        std::fs::remove_dir_all(&dir).ok();
+        std::fs::create_dir_all(&dir).expect("create workspace");
+        Self { dir }
+    }
+
+    /// Export `asm` with `opts` and return the file's contents.
+    fn export(&self, name: &str, opts: &str) -> String {
+        let path = self.dir.join(name);
+        let literal = format!("{:?}", path.to_string_lossy());
+        let args = if opts.is_empty() {
+            literal.clone()
+        } else {
+            format!("{literal}, {opts}")
+        };
+        eval(&format!(
+            "asm = assembly(\"rig\") do |a|
+               a.place box(40, 30, 10), name: :base
+               a.place cylinder(6, 25).translate(20, 15, 10), name: :post
+             end
+             asm.export({args})"
+        ));
+        std::fs::read_to_string(&path).expect("read exported file")
+    }
+}
+
+impl Drop for Workspace {
+    fn drop(&mut self) {
+        std::fs::remove_dir_all(&self.dir).ok();
+    }
+}
+
+#[test]
+fn assembly_export_still_works_with_no_options() {
+    let ws = Workspace::new("plain");
+    let svg = ws.export("plain.svg", "");
+    assert!(svg.contains("<svg"), "expected an SVG document");
+}
+
+#[test]
+fn assembly_export_forwards_the_view_option() {
+    let ws = Workspace::new("sheet");
+    let svg = ws.export("sheet.svg", "view: :sheet, title_block: true");
+    for view in ["view-top", "view-front", "view-side"] {
+        assert!(svg.contains(view), "missing {view} on the sheet");
+    }
+}
+
+#[test]
+fn assembly_export_forwards_the_section_option() {
+    let ws = Workspace::new("section");
+    let svg = ws.export("section.svg", "view: :front, section: :xz");
+    assert!(svg.contains("hatch\""), "expected a hatched cut face");
+}
+
+#[test]
+fn assembly_export_forwards_the_annotation_options() {
+    let ws = Workspace::new("annotations");
+    let svg = ws.export("ann.svg", "view: :top, dimensions: true, ordinate: true");
+    assert!(svg.contains("class=\"dimensions\""), "missing dimensions");
+    assert!(
+        svg.contains("class=\"ordinates\""),
+        "missing ordinate dimensions — the post's cylinder is a located feature"
+    );
+}
+
+#[test]
+fn assembly_export_still_reaches_the_solid_formats() {
+    let ws = Workspace::new("step");
+    let step = ws.export("rig.step", "");
+    assert!(step.contains("ISO-10303-21"), "expected a STEP file");
+}

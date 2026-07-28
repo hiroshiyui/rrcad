@@ -144,9 +144,10 @@ sheets.
       and features sharing a coordinate collapse to one ordinate. SVG uses an
       `ordinates` group, DXF an `ORDINATE` layer with right-aligned text.
       Tests: 16 in `tests/auto_dimensioning.rs`.
-- [ ] BOM tables with balloon callouts on assembly sheets.
-      Blocked on: `Assembly#export` accepts no options today (see
-      [Project Improvements](#project-improvements)).
+- [ ] BOM tables with balloon callouts on assembly sheets. No longer blocked:
+      `Assembly#export` now forwards drawing options. What remains is a channel
+      for per-component data (item numbers, quantities, leader anchors) to reach
+      the exporter, which the current flat scalar FFI cannot carry.
 
 ### Flat cut-file export
 
@@ -185,9 +186,7 @@ Cross-cutting work that does not belong to a phase.
 
 ### Open
 
-- [ ] `Assembly#export(path)` takes no options, so `view:`, `section:`, and
-      every other drawing option is silently dropped for assemblies. Blocks
-      BOM-on-sheet work in Track C.
+
 - [ ] The drawing export carries a flat parameter list — 29 scalars through
       `glue.c` → `native_io.rs` → `drawing_ops.rs` → `bridge.cpp`, four layers
       that must stay in lockstep. Detail views bundled their six values into a
@@ -200,6 +199,10 @@ Cross-cutting work that does not belong to a phase.
 
 ### Done
 
+- [x] `Assembly#export` accepts and forwards drawing options. It took only a
+      path, so `view:`, `section:`, and every other option was silently dropped
+      and an assembly could not produce a sheet. This also unblocks the
+      BOM-on-sheet item in Track C.
 - [x] `puts` / `print` / `p` / `pp` in scripts, built on a native output
       primitive rather than reintroducing the IO gems. Removed in MCP mode,
       where stdout carries the JSON-RPC responses.

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`Assembly#export` accepts drawing options** (`src/ruby/prelude.rb`): it
+  took only a path, so `view:`, `section:`, `dimensions:`, and every other
+  option was silently dropped — an assembly could produce a STEP file but not a
+  sheet, which is the drawing an assembly most needs. Options are now forwarded
+  untouched to the fused `Shape`, so `asm.export("rig.svg", view: :sheet,
+  title_block: true)` works. Also unblocks the BOM-on-sheet item in Track C.
+
 - **Ordinate dimensioning on 2-D drawings** (`src/occt/bridge.cpp`,
   `src/ruby/glue.c`): `part.export("plate.svg", ordinate: true)` measures every
   located feature from a single datum corner and labels it, so a drawing says

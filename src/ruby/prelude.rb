@@ -3727,8 +3727,22 @@ class Assembly
     shapes.inject { |acc, s| acc.fuse(s) }
   end
 
-  def export(path)
-    to_shape.export(path)
+  # export(path, **opts) — write the whole assembly, fused, to any format
+  # Shape#export supports.
+  #
+  # Options are forwarded untouched, so an assembly gets the same drawing
+  # controls a part does: `view:`, `scale:`, `section:`, `dimensions:`,
+  # `ordinate:`, `detail:`, `title_block:`, and the rest.
+  #
+  #   asm.export("layout.step")
+  #   asm.export("layout.svg", view: :sheet, title_block: true)
+  #   asm.export("section.svg", view: :front, section: :xz)
+  def export(path, opts = nil)
+    shape = to_shape
+    # Shape#export takes the options as an optional trailing Hash; passing an
+    # explicit nil would fail its argument spec, so drop the argument instead.
+    return shape.export(path) if opts.nil? || opts.empty?
+    shape.export(path, opts)
   end
 
   def inspect

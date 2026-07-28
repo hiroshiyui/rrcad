@@ -280,6 +280,27 @@ Per-part color is written to glTF, GLB, and OBJ exports (with companion
 part.color(0.8, 0.3, 0.1)   # sRGB
 ```
 
+## Exporting an assembly
+
+`Assembly#export` fuses the components and writes the result, taking the same
+options `Shape#export` does:
+
+```ruby
+asm.export("rig.step")                                    # solid, for CAM
+asm.export("rig.svg", view: :sheet, title_block: true)    # 3-view sheet
+asm.export("rig.svg", view: :front, section: :xz)         # section view
+asm.export("rig.svg", view: :top, dimensions: true, ordinate: true)
+```
+
+Everything in [chapter 10](10-import-export.md#2-d-drawings-svg--dxf) —
+`view:`, `scale:`, `section:`, `dimensions:`, `ordinate:`, `detail:`,
+`hidden:`, `title_block:` — is forwarded untouched.
+
+The export is of the **fused** geometry, so it is a picture of the assembled
+product, not a parts list. For per-component figures use
+[`bom_text`](#bill-of-materials) and [`mass_properties`](#mass-rollup)
+alongside it.
+
 ## Worked example: coloured assembly
 
 ```ruby
