@@ -423,7 +423,7 @@ class SketchPoint
 end
 
 class SketchBuilder
-  attr_accessor :points, :lines, :constraints, :named, :profile, :corner_mods, :edits
+  attr_accessor :points, :lines, :constraints, :named, :profile, :corner_mods, :edits, :offset_by
 
   def initialize
     @points = []
@@ -436,6 +436,9 @@ class SketchBuilder
     # [:trim|:extend, a, b, moved, target, distance] segment edits, applied in
     # declaration order after the constraint solver runs.
     @edits = []
+    # Distance the finished profile is grown (+) or shrunk (-) by, or nil.
+    # Named apart from the `offset` DSL method so both can coexist.
+    @offset_by = nil
   end
 
   def point(x_or_name = nil, y = nil, maybe_y = nil)
@@ -640,6 +643,29 @@ class SketchBuilder
     add_segment_edit(:extend, a, b, to, by, at)
   end
 
+  # Grow (positive distance) or shrink (negative) the finished profile in its
+  # own plane, keeping every edge parallel to where it started and rounding
+  # the corners the offset opens up.
+  #
+  # The offset is the last step of building the profile, so it applies to
+  # whatever the sketch produced — a constrained polygon including its corner
+  # fillets and chamfers, or a `circle_at` / `arc_at` / `slot_between` profile.
+  # It is the sketch-level spelling of `Shape#offset_2d`.
+  def offset(distance)
+    unless distance.is_a?(Numeric)
+      raise ArgumentError, "offset distance must be a number"
+    end
+    if RRCADUnits.scalar(distance).abs < 1.0e-12
+      raise ArgumentError, "offset distance must be non-zero"
+    end
+    unless @offset_by.nil?
+      raise ArgumentError, "a sketch takes only one offset"
+    end
+
+    @offset_by = distance
+    nil
+  end
+
   def fixed(point, x = point.x, y = point.y)
     require_point!(point, "fixed")
     @constraints << [:fixed, point, x, y]
@@ -752,7 +778,7 @@ class SketchBuilder
 
     if @profile
       solve_constraints
-      shape = profile_shape
+      shape = apply_profile_offset(profile_shape)
       shape.sketch_diagnostics = diagnostics_payload if diagnostics_payload
       return shape
     end
@@ -787,9 +813,16 @@ class SketchBuilder
     end
 
     pts = apply_corner_mods(pts, corner_points)
-    shape = polygon(pts)
+    shape = apply_profile_offset(polygon(pts))
     shape.sketch_diagnostics = diagnostics_payload if diagnostics_payload
     shape
+  end
+
+  # Grow or shrink the finished profile, if the sketch asked for it.
+  def apply_profile_offset(shape)
+    return shape if @offset_by.nil?
+
+    shape.offset_2d(RRCADUnits.scalar(@offset_by))
   end
 
   def analyze_diagnostics
@@ -896,6 +929,7 @@ class SketchBuilder
       ]
     end
 
+    clone.offset_by = @offset_by
     clone.profile = remap_profile(@profile, point_map) if @profile
     clone
   end

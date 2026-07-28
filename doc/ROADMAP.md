@@ -47,7 +47,14 @@ operations used most in practice.
       mutating solved points, so corner modifiers see the moved corner and
       `to_profile` stays idempotent.
       Tests: `tests/phase11_sketch_edits.rs` (21).
-- [ ] Profile `offset`.
+- [x] **Profile `offset`** — `offset` inside `sketch do … end`, plus a fixed
+      `Shape#offset_2d`. The offsetter returns bare wires, so an offset profile
+      used to extrude into an open shell instead of a solid; the wires are now
+      rebuilt into a planar face, largest as the outer boundary and the rest as
+      holes. Profiles with holes offset in both directions, with a per-wire
+      fallback (and sign flip) for the faces OCCT cannot offset whole, such as
+      an all-circular annulus.
+      Tests: `tests/phase11_profile_offset.rs` (18).
 - [ ] Sketch-level linear and polar patterns.
 - [ ] Spline segments in sketch profiles.
 

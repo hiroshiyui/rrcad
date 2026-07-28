@@ -237,6 +237,40 @@ Errors are reported before any geometry is built:
 - A point pair that no `line` connects.
 - Passing both `to:` and `by:`, or neither.
 
+### Offsetting the profile
+
+`offset` grows (positive) or shrinks (negative) the finished profile in its
+own plane, keeping every edge parallel to where it started:
+
+```ruby
+seal = sketch do
+  a = point(:a, 0, 0)
+  b = point(:b, 40.mm, 0)
+  c = point(:c, 40.mm, 20.mm)
+  d = point(:d, 0, 20.mm)
+  line a, b
+  line b, c
+  line c, d
+  line d, a
+
+  offset 3.mm       # 46 x 26 outline with r = 3 corners
+end.extrude(2.mm)
+```
+
+The offset is the last step of building the profile, so it applies to whatever
+the sketch produced — a constrained polygon including its corner fillets and
+`trim` / `extend` edits, or a `circle_at`, `arc_at`, or `slot_between` profile.
+Growing rounds the corners it opens up; shrinking leaves interior corners
+square.
+
+A sketch takes at most one `offset`, and the distance must be non-zero — use a
+negative distance to shrink rather than a second call. An inward offset larger
+than the profile raises rather than returning an empty shape.
+
+`Shape#offset_2d(distance)` is the same operation on an already-built profile,
+including profiles with holes; see
+[Features and Modifiers](04-features-and-modifiers.md).
+
 ### Diagnostics
 
 When a sketch fails to solve, the error names the constraint type, the

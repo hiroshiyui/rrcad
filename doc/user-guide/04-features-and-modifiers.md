@@ -22,7 +22,7 @@ bottom.
 | `.chamfer_asym(d1, d2)` | Asymmetric bevel (different distances on each side) |
 | `.shell(thickness)` | Hollow the solid (negative = inward offset) |
 | `.offset(distance)` | Offset the solid volume |
-| `.offset_2d(distance)` | Offset a 2D Wire or Face in its own plane |
+| `.offset_2d(distance)` | Offset a 2D profile in its own plane; returns a profile you can extrude |
 | `.simplify(min_feature_size)` | Remove features smaller than the threshold |
 | `.fillet_wire(r)` | Round all corners of a 2D Wire/Face profile (before extruding) |
 
@@ -86,8 +86,28 @@ inward); `.offset` grows or shrinks the whole volume.
 case_body = box(80, 50, 30).fillet(4).shell(-2)   # hollow with 2 mm walls
 ```
 
-`.offset_2d(distance)` works on a 2D Wire or Face in its own plane —
-useful when you want to grow a profile before extruding.
+`.offset_2d(distance)` grows (positive) or shrinks (negative) a 2-D profile
+in its own plane, keeping every edge parallel to where it started. A Face in
+gives a Face out, so the offset profile extrudes, pads, and pockets like any
+other:
+
+```ruby
+gasket = rect(40, 20).offset_2d(3).extrude(2)   # 46 x 26 with r = 3 corners
+```
+
+Growing rounds the corners the offset opens up (radius = the distance);
+shrinking leaves interior corners square. Profiles with holes work in both
+directions — growing the material closes the holes by the same distance:
+
+```ruby
+plate = rect(40, 20).cut(circle(5).translate(20, 10, 0))
+plate.offset_2d(2)    # outline out to 44 x 24, hole in from r = 5 to r = 3
+```
+
+An inward offset larger than the profile raises rather than returning an
+empty shape. Inside a sketch, `offset` does the same thing as part of the
+profile's definition — see
+[Sketches and Profiles](03-sketches-and-profiles.md#offsetting-the-profile).
 
 ## Worked example: filleted enclosure with rounded profile
 

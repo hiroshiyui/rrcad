@@ -714,7 +714,7 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `.sweep(path)` | Sweep profile along a `spline_3d` wire |
 | `.shell(thickness)` | Hollow out a solid by removing the topmost face and offsetting walls inward |
 | `.offset(distance)` | Inflate (positive) or deflate (negative) a solid uniformly |
-| `.offset_2d(distance)` | Offset a 2D Wire or Face inward (negative) or outward (positive) in its own plane. Uses `BRepOffsetAPI_MakeOffset`. |
+| `.offset_2d(distance)` | Offset a 2D Wire or Face inward (negative) or outward (positive) in its own plane. Uses `BRepOffsetAPI_MakeOffset`. A Face returns a Face — the offset wires are rebuilt into a planar profile, so the result extrudes, pads, and pockets like any other profile. Profiles with holes are supported: growing the material shrinks the holes. Raises if an inward offset consumes the whole profile. |
 | `.simplify(min_feature_size)` | Remove small holes/fillets; faces with area < `min_feature_size²` are defeatured. Returns the original shape if none qualify. |
 | `.color(r, g, b)` | Attach an sRGB color (`r`, `g`, `b` each in `[0.0, 1.0]`); written into GLB/glTF/OBJ export. Returns a new Shape; original unchanged. |
 | `.mate(from_face, to_face, offset=0.0)` | Reposition `self` so `from_face` aligns flush against `to_face` (antiparallel normals, coincident centroids). `offset > 0` = gap; `offset < 0` = overlap. Both faces must be planar. |

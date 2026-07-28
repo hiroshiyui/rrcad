@@ -166,6 +166,7 @@
 #include <Quantity_Color.hxx>
 #include <RWGltf_CafWriter.hxx>
 #include <RWObj_CafWriter.hxx>
+#include <ShapeFix_Face.hxx>
 #include <TColStd_IndexedDataMapOfStringString.hxx>
 #include <TCollection_AsciiString.hxx>
 #include <TCollection_ExtendedString.hxx>
@@ -177,12 +178,14 @@
 #include <XCAFDoc_DocumentTool.hxx>
 #include <XCAFDoc_ShapeTool.hxx>
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
 #include <unistd.h>
+#include <vector>
 
 namespace rrcad {
 
@@ -1372,21 +1375,149 @@ std::unique_ptr<OcctShape> shape_offset(const OcctShape& shape, double distance)
 // Positive distance expands the profile; negative shrinks it.
 // ---------------------------------------------------------------------------
 
+// Area of the region a planar wire encloses, used to tell the offset result's
+// outer boundary from the holes inside it.
+static double planar_wire_area(const gp_Pln& plane, const TopoDS_Wire& wire) {
+    BRepBuilderAPI_MakeFace mf(plane, wire);
+    if (!mf.IsDone())
+        return 0.0;
+
+    GProp_GProps props;
+    BRepGProp::SurfaceProperties(mf.Face(), props);
+    return std::abs(props.Mass());
+}
+
+// The plane a 2-D profile lives in.  Offsetting only makes sense for a planar
+// face, and the plane is needed to rebuild the result.
+static gp_Pln planar_face_plane(const TopoDS_Face& face) {
+    Handle(Geom_Surface) surf = BRep_Tool::Surface(face);
+    Handle(Geom_Plane) plane = Handle(Geom_Plane)::DownCast(surf);
+    if (plane.IsNull())
+        throw std::runtime_error("offset_2d: the face must be planar");
+    return plane->Pln();
+}
+
+// Fallback for faces BRepOffsetAPI_MakeOffset cannot offset in one go — an
+// all-circular annulus, for one.  Each boundary wire is offset on its own and
+// the results handed back for reassembly.
+//
+// A standalone wire offsets by its own geometry, losing the sense it had as a
+// hole in the face, so hole wires take the opposite sign: growing the material
+// (distance > 0) has to shrink the holes.
+static TopoDS_Shape offset_face_wires_individually(const TopoDS_Face& face, const gp_Pln& plane,
+                                                   double distance) {
+    std::vector<TopoDS_Wire> wires;
+    for (TopExp_Explorer ex(face, TopAbs_WIRE); ex.More(); ex.Next())
+        wires.push_back(TopoDS::Wire(ex.Current()));
+
+    // The wire enclosing the most area is the outer boundary; the rest are
+    // holes.
+    std::size_t outer = 0;
+    for (std::size_t i = 1; i < wires.size(); ++i) {
+        if (planar_wire_area(plane, wires[i]) > planar_wire_area(plane, wires[outer]))
+            outer = i;
+    }
+
+    BRep_Builder builder;
+    TopoDS_Compound compound;
+    builder.MakeCompound(compound);
+
+    for (std::size_t i = 0; i < wires.size(); ++i) {
+        BRepOffsetAPI_MakeOffset wire_offsetter(wires[i], GeomAbs_Arc);
+        wire_offsetter.Perform(i == outer ? distance : -distance);
+        if (!wire_offsetter.IsDone())
+            throw std::runtime_error("BRepOffsetAPI_MakeOffset (offset_2d, face) failed");
+        builder.Add(compound, wire_offsetter.Shape());
+    }
+
+    return compound;
+}
+
+// Rebuild a planar Face from the wires BRepOffsetAPI_MakeOffset produced.
+//
+// The offsetter returns a Wire (or a Compound of them) rather than a Face, so
+// the raw result cannot be extruded into a solid — the largest wire becomes
+// the new outer boundary and every smaller one is added back as a hole.
+static TopoDS_Shape face_from_offset_wires(const gp_Pln& plane, const TopoDS_Shape& offset_result,
+                                           double distance) {
+    std::vector<TopoDS_Wire> wires;
+    if (offset_result.ShapeType() == TopAbs_WIRE) {
+        wires.push_back(TopoDS::Wire(offset_result));
+    } else {
+        for (TopExp_Explorer ex(offset_result, TopAbs_WIRE); ex.More(); ex.Next())
+            wires.push_back(TopoDS::Wire(ex.Current()));
+    }
+
+    // An inward offset wider than the profile collapses it entirely; OCCT
+    // signals that with an empty result rather than an error.
+    if (wires.empty())
+        throw std::runtime_error("offset_2d(" + std::to_string(distance) +
+                                 ") leaves no profile: the inward offset consumed the whole face");
+
+    // Largest enclosed area first: that wire is the outer boundary.
+    std::stable_sort(wires.begin(), wires.end(), [&](const TopoDS_Wire& a, const TopoDS_Wire& b) {
+        return planar_wire_area(plane, a) > planar_wire_area(plane, b);
+    });
+
+    BRepBuilderAPI_MakeFace outer(plane, wires[0]);
+    if (!outer.IsDone())
+        throw std::runtime_error("offset_2d: could not rebuild the offset profile as a face");
+
+    TopoDS_Face result = outer.Face();
+    for (std::size_t i = 1; i < wires.size(); ++i) {
+        // A hole wire must run opposite to the outer boundary.
+        BRepBuilderAPI_MakeFace with_hole(result, TopoDS::Wire(wires[i].Reversed()));
+        if (!with_hole.IsDone())
+            throw std::runtime_error("offset_2d: could not add an offset hole to the profile");
+        result = with_hole.Face();
+    }
+
+    // Let OCCT settle the wire orientations so the holes really read as holes.
+    ShapeFix_Face fixer(result);
+    fixer.Perform();
+    fixer.FixOrientation();
+    return fixer.Face();
+}
+
 std::unique_ptr<OcctShape> shape_offset_2d(const OcctShape& shape, double distance) {
     try {
-        TopAbs_ShapeEnum type = shape.get().ShapeType();
+        // A profile built by a boolean (e.g. rect(40, 20).cut(circle(5)))
+        // arrives as a Compound wrapping a single Face; unwrap it so profiles
+        // with holes offset like any other.
+        TopoDS_Shape input = shape.get();
+        if (input.ShapeType() == TopAbs_COMPOUND) {
+            TopExp_Explorer ex(input, TopAbs_FACE);
+            if (ex.More()) {
+                TopoDS_Shape only_face = ex.Current();
+                ex.Next();
+                if (!ex.More())
+                    input = only_face;
+            }
+        }
+
+        TopAbs_ShapeEnum type = input.ShapeType();
         if (type != TopAbs_FACE && type != TopAbs_WIRE)
             throw std::runtime_error("offset_2d: input must be a Face or Wire");
 
         // BRepOffsetAPI_MakeOffset has separate constructors for Face and Wire.
         if (type == TopAbs_FACE) {
-            BRepOffsetAPI_MakeOffset offsetter(TopoDS::Face(shape.get()), GeomAbs_Arc);
+            TopoDS_Face face = TopoDS::Face(input);
+            gp_Pln plane = planar_face_plane(face);
+
+            BRepOffsetAPI_MakeOffset offsetter(face, GeomAbs_Arc);
             offsetter.Perform(distance);
-            if (!offsetter.IsDone())
-                throw std::runtime_error("BRepOffsetAPI_MakeOffset (offset_2d, face) failed");
-            return wrap(offsetter.Shape());
+
+            // Offsetting the face as a whole fails on some profiles with holes;
+            // offsetting each boundary wire on its own still succeeds.
+            TopoDS_Shape offset_wires = offsetter.IsDone()
+                                            ? offsetter.Shape()
+                                            : offset_face_wires_individually(face, plane, distance);
+
+            // A Face in stays a Face out, so the offset profile can be padded,
+            // pocketed, or extruded like any other profile.
+            return wrap(face_from_offset_wires(plane, offset_wires, distance));
         } else {
-            BRepOffsetAPI_MakeOffset offsetter(TopoDS::Wire(shape.get()), GeomAbs_Arc);
+            BRepOffsetAPI_MakeOffset offsetter(TopoDS::Wire(input), GeomAbs_Arc);
             offsetter.Perform(distance);
             if (!offsetter.IsDone())
                 throw std::runtime_error("BRepOffsetAPI_MakeOffset (offset_2d, wire) failed");
