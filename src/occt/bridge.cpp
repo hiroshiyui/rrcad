@@ -140,6 +140,7 @@
 #include <BRepAdaptor_CompCurve.hxx>
 #include <BRepAlgoAPI_BuilderAlgo.hxx>
 #include <BRepFill_TypeOfContact.hxx>
+#include <GCPnts_QuasiUniformDeflection.hxx>
 #include <GCPnts_UniformAbscissa.hxx>
 #include <Poly_Triangulation.hxx>
 #include <TopLoc_Location.hxx>
@@ -5247,6 +5248,390 @@ std::unique_ptr<OcctShape> shape_sweep_guide(const OcctShape& profile, const Occ
 
         pipe.MakeSolid();
         return wrap(pipe.Shape());
+    } catch (const Standard_Failure& e) {
+        throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
+    } catch (const std::exception&) {
+        throw;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Flat cut-file export — export_face_outline
+//
+// Distinct from export_svg/export_dxf, which draw an *HLR projection* of a 3-D
+// shape: a drawing, complete with whatever else is visible from that
+// direction.  A cut file is a different deliverable.  A laser or CNC shop
+// wants the closed loops of one flat face, at 1:1, with nothing else in the
+// file — outer profile plus every hole, and nothing standing in for a curve
+// that a controller could cut exactly.
+//
+// So circular edges become true DXF CIRCLE / ARC entities rather than many
+// short chords; only genuinely free-form curves (splines) are approximated,
+// to the caller's deflection tolerance.
+// ---------------------------------------------------------------------------
+
+// One outline entity in the face's own 2-D plane coordinates.
+struct OutlineEntity {
+    enum class Kind { Polyline, Circle, Arc } kind = Kind::Polyline;
+    // Polyline: the vertices, in order.  Circle/Arc: unused.
+    std::vector<gp_Pnt2d> points;
+    // Circle/Arc.  Angles are degrees, CCW, as DXF expects.
+    gp_Pnt2d center;
+    double radius = 0.0;
+    double start_angle = 0.0;
+    double end_angle = 0.0;
+};
+
+// One closed loop: the outer boundary or a hole.
+struct OutlineLoop {
+    std::vector<OutlineEntity> entities;
+    bool is_hole = false;
+};
+
+// Locate the single planar face to export.
+//
+// Accepts a Face directly, or any shape containing exactly one face (a lone
+// sketch profile, typically).  More than one face is ambiguous — the user has
+// to say which — and the error says so rather than guessing.
+static TopoDS_Face outline_target_face(const TopoDS_Shape& shape) {
+    if (shape.IsNull())
+        throw std::runtime_error("export_outline: shape is empty");
+
+    if (shape.ShapeType() == TopAbs_FACE)
+        return TopoDS::Face(shape);
+
+    std::vector<TopoDS_Face> faces;
+    for (TopExp_Explorer exp(shape, TopAbs_FACE); exp.More(); exp.Next()) {
+        faces.push_back(TopoDS::Face(exp.Current()));
+        if (faces.size() > 1)
+            break;
+    }
+    if (faces.empty())
+        throw std::runtime_error("export_outline: shape has no faces to export");
+    if (faces.size() > 1)
+        throw std::runtime_error(
+            "export_outline: shape has more than one face — select the one to cut, "
+            "e.g. part.faces(:top).first.export_outline(...)");
+    return faces.front();
+}
+
+// The plane a face lies in, or an error naming what it actually is.
+static gp_Pln outline_face_plane(const TopoDS_Face& face) {
+    BRepAdaptor_Surface adaptor(face, Standard_True);
+    if (adaptor.GetType() != GeomAbs_Plane)
+        throw std::runtime_error(
+            "export_outline: face is not planar — a cut file needs a flat face");
+    return adaptor.Plane();
+}
+
+// Project a 3-D point onto the face's plane coordinate system.
+static gp_Pnt2d outline_to_2d(const gp_Pln& plane, const gp_Pnt& p) {
+    const gp_Pnt origin = plane.Location();
+    const gp_Vec delta(origin, p);
+    return gp_Pnt2d(delta.Dot(gp_Vec(plane.Position().XDirection())),
+                    delta.Dot(gp_Vec(plane.Position().YDirection())));
+}
+
+// Normalise an angle in degrees to [0, 360).
+static double outline_norm_deg(double deg) {
+    double d = std::fmod(deg, 360.0);
+    if (d < 0.0)
+        d += 360.0;
+    return d;
+}
+
+// True when `mid` lies on the CCW sweep from `start` to `end` (all degrees).
+static bool outline_ccw_contains(double start, double end, double mid) {
+    const double sweep = outline_norm_deg(end - start);
+    const double offset = outline_norm_deg(mid - start);
+    return offset <= sweep;
+}
+
+// Convert one edge to an outline entity in plane coordinates.
+//
+// Lines and circles are emitted exactly; everything else is approximated to
+// `deflection`.  Arc direction is decided *empirically* — by sampling the
+// edge's own midpoint and checking which way round it lies — rather than by
+// reasoning about the circle axis against the plane normal and the edge
+// orientation.  Those three signs compose in ways that are easy to get
+// backwards and produce an arc bulging the wrong way, which a reader would
+// not notice until the part came back from the cutter.
+static OutlineEntity outline_edge_entity(const TopoDS_Edge& edge, const gp_Pln& plane,
+                                         double deflection) {
+    BRepAdaptor_Curve curve(edge);
+    const double first = curve.FirstParameter();
+    const double last = curve.LastParameter();
+
+    OutlineEntity entity;
+
+    if (curve.GetType() == GeomAbs_Line) {
+        entity.kind = OutlineEntity::Kind::Polyline;
+        entity.points.push_back(outline_to_2d(plane, curve.Value(first)));
+        entity.points.push_back(outline_to_2d(plane, curve.Value(last)));
+        return entity;
+    }
+
+    if (curve.GetType() == GeomAbs_Circle) {
+        const gp_Circ circle = curve.Circle();
+        const gp_Pnt2d center = outline_to_2d(plane, circle.Location());
+        const double radius = circle.Radius();
+
+        const gp_Pnt2d p_start = outline_to_2d(plane, curve.Value(first));
+        const gp_Pnt2d p_end = outline_to_2d(plane, curve.Value(last));
+        const gp_Pnt2d p_mid = outline_to_2d(plane, curve.Value((first + last) / 2.0));
+
+        // A closed circular edge is a full circle: one CIRCLE entity, which is
+        // what a bolt hole should be in a cut file.
+        const bool closed = p_start.Distance(p_end) <= Precision::Confusion() * 10.0 ||
+                            std::abs((last - first) - 2.0 * M_PI) < 1.0e-7;
+        if (closed) {
+            entity.kind = OutlineEntity::Kind::Circle;
+            entity.center = center;
+            entity.radius = radius;
+            return entity;
+        }
+
+        auto angle_of = [&center](const gp_Pnt2d& p) {
+            return outline_norm_deg(std::atan2(p.Y() - center.Y(), p.X() - center.X()) * 180.0 /
+                                    M_PI);
+        };
+        double a_start = angle_of(p_start);
+        double a_end = angle_of(p_end);
+        const double a_mid = angle_of(p_mid);
+
+        // DXF arcs always sweep CCW from start to end.  If the edge's own
+        // midpoint is not on that sweep, we have the two ends the wrong way
+        // round; swapping them describes the identical arc.
+        if (!outline_ccw_contains(a_start, a_end, a_mid))
+            std::swap(a_start, a_end);
+
+        entity.kind = OutlineEntity::Kind::Arc;
+        entity.center = center;
+        entity.radius = radius;
+        entity.start_angle = a_start;
+        entity.end_angle = a_end;
+        return entity;
+    }
+
+    // Free-form geometry: approximate to the requested deflection.
+    entity.kind = OutlineEntity::Kind::Polyline;
+    GCPnts_QuasiUniformDeflection sampler(curve, deflection, first, last);
+    if (sampler.IsDone() && sampler.NbPoints() >= 2) {
+        for (int i = 1; i <= sampler.NbPoints(); ++i)
+            entity.points.push_back(outline_to_2d(plane, sampler.Value(i)));
+    } else {
+        // Fall back to a coarse uniform sampling rather than dropping the edge.
+        const int steps = 32;
+        for (int i = 0; i <= steps; ++i) {
+            const double t = first + (last - first) * (double(i) / double(steps));
+            entity.points.push_back(outline_to_2d(plane, curve.Value(t)));
+        }
+    }
+    return entity;
+}
+
+// Walk one wire in order and convert every edge.
+static OutlineLoop outline_wire_loop(const TopoDS_Wire& wire, const TopoDS_Face& face,
+                                     const gp_Pln& plane, double deflection, bool is_hole) {
+    OutlineLoop loop;
+    loop.is_hole = is_hole;
+    for (BRepTools_WireExplorer exp(wire, face); exp.More(); exp.Next())
+        loop.entities.push_back(outline_edge_entity(exp.Current(), plane, deflection));
+    if (loop.entities.empty())
+        throw std::runtime_error("export_outline: a boundary loop produced no geometry");
+    return loop;
+}
+
+// Extract the outer boundary and every hole from a planar face.
+static std::vector<OutlineLoop> outline_loops(const TopoDS_Face& face, const gp_Pln& plane,
+                                              double deflection) {
+    std::vector<OutlineLoop> loops;
+    const TopoDS_Wire outer = BRepTools::OuterWire(face);
+    loops.push_back(outline_wire_loop(outer, face, plane, deflection, false));
+
+    for (TopExp_Explorer exp(face, TopAbs_WIRE); exp.More(); exp.Next()) {
+        const TopoDS_Wire wire = TopoDS::Wire(exp.Current());
+        if (wire.IsSame(outer))
+            continue;
+        loops.push_back(outline_wire_loop(wire, face, plane, deflection, true));
+    }
+    return loops;
+}
+
+// Bounding box of every loop, used to shift the outline to the origin.
+static void outline_bounds(const std::vector<OutlineLoop>& loops, double& xmin, double& ymin,
+                           double& xmax, double& ymax) {
+    xmin = ymin = std::numeric_limits<double>::max();
+    xmax = ymax = std::numeric_limits<double>::lowest();
+    auto note = [&](double x, double y) {
+        xmin = std::min(xmin, x);
+        ymin = std::min(ymin, y);
+        xmax = std::max(xmax, x);
+        ymax = std::max(ymax, y);
+    };
+    for (const OutlineLoop& loop : loops) {
+        for (const OutlineEntity& e : loop.entities) {
+            switch (e.kind) {
+            case OutlineEntity::Kind::Polyline:
+                for (const gp_Pnt2d& p : e.points)
+                    note(p.X(), p.Y());
+                break;
+            case OutlineEntity::Kind::Circle:
+            case OutlineEntity::Kind::Arc:
+                // Bound the whole circle: an arc's extreme point may lie
+                // between its endpoints, so using the endpoints alone would
+                // clip a bulge out of the bounding box.
+                note(e.center.X() - e.radius, e.center.Y() - e.radius);
+                note(e.center.X() + e.radius, e.center.Y() + e.radius);
+                break;
+            }
+        }
+    }
+    if (xmin > xmax || ymin > ymax)
+        throw std::runtime_error("export_outline: outline has an empty bounding box");
+}
+
+static void write_outline_dxf(const std::string& path, const std::vector<OutlineLoop>& loops,
+                              double dx, double dy) {
+    std::ofstream f(path);
+    if (!f.is_open())
+        throw std::runtime_error("export_outline: cannot open file: " + path);
+    f << std::fixed << std::setprecision(6);
+
+    // DXF R12, the most portable dialect.  $INSUNITS 4 declares millimetres so
+    // a controller does not have to guess the scale.
+    f << "  0\nSECTION\n  2\nHEADER\n";
+    f << "  9\n$ACADVER\n  1\nAC1009\n";
+    f << "  9\n$INSUNITS\n 70\n     4\n";
+    f << "  0\nENDSEC\n";
+    f << "  0\nSECTION\n  2\nENTITIES\n";
+
+    for (const OutlineLoop& loop : loops) {
+        // Separate layers so a shop can treat holes differently from the
+        // profile (inside cuts before the outside cut, typically).
+        const char* layer = loop.is_hole ? "HOLES" : "PROFILE";
+        for (const OutlineEntity& e : loop.entities) {
+            switch (e.kind) {
+            case OutlineEntity::Kind::Polyline:
+                for (size_t i = 1; i < e.points.size(); ++i) {
+                    f << "  0\nLINE\n  8\n" << layer << "\n";
+                    f << " 10\n" << (e.points[i - 1].X() + dx) << "\n";
+                    f << " 20\n" << (e.points[i - 1].Y() + dy) << "\n";
+                    f << " 30\n0.0\n";
+                    f << " 11\n" << (e.points[i].X() + dx) << "\n";
+                    f << " 21\n" << (e.points[i].Y() + dy) << "\n";
+                    f << " 31\n0.0\n";
+                }
+                break;
+            case OutlineEntity::Kind::Circle:
+                f << "  0\nCIRCLE\n  8\n" << layer << "\n";
+                f << " 10\n" << (e.center.X() + dx) << "\n";
+                f << " 20\n" << (e.center.Y() + dy) << "\n";
+                f << " 30\n0.0\n";
+                f << " 40\n" << e.radius << "\n";
+                break;
+            case OutlineEntity::Kind::Arc:
+                f << "  0\nARC\n  8\n" << layer << "\n";
+                f << " 10\n" << (e.center.X() + dx) << "\n";
+                f << " 20\n" << (e.center.Y() + dy) << "\n";
+                f << " 30\n0.0\n";
+                f << " 40\n" << e.radius << "\n";
+                f << " 50\n" << e.start_angle << "\n";
+                f << " 51\n" << e.end_angle << "\n";
+                break;
+            }
+        }
+    }
+
+    f << "  0\nENDSEC\n  0\nEOF\n";
+    if (!f.good())
+        throw std::runtime_error("export_outline: write error on file: " + path);
+}
+
+static void write_outline_svg(const std::string& path, const std::vector<OutlineLoop>& loops,
+                              double dx, double dy, double width, double height) {
+    std::ofstream f(path);
+    if (!f.is_open())
+        throw std::runtime_error("export_outline: cannot open file: " + path);
+    f << std::fixed << std::setprecision(6);
+
+    // SVG is Y-down; flip so the drawing matches the DXF and the model.
+    auto sx = [&](double x) { return x + dx; };
+    auto sy = [&](double y) { return height - (y + dy); };
+
+    f << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+    f << "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"" << width << "mm\" height=\"" << height
+      << "mm\" viewBox=\"0 0 " << width << " " << height << "\">\n";
+
+    for (const OutlineLoop& loop : loops) {
+        const char* cls = loop.is_hole ? "holes" : "profile";
+        f << "<g class=\"" << cls << "\" fill=\"none\" stroke=\"black\" stroke-width=\"0.1\">\n";
+        for (const OutlineEntity& e : loop.entities) {
+            switch (e.kind) {
+            case OutlineEntity::Kind::Polyline:
+                for (size_t i = 1; i < e.points.size(); ++i) {
+                    f << "<line x1=\"" << sx(e.points[i - 1].X()) << "\" y1=\""
+                      << sy(e.points[i - 1].Y()) << "\" x2=\"" << sx(e.points[i].X()) << "\" y2=\""
+                      << sy(e.points[i].Y()) << "\"/>\n";
+                }
+                break;
+            case OutlineEntity::Kind::Circle:
+                f << "<circle cx=\"" << sx(e.center.X()) << "\" cy=\"" << sy(e.center.Y())
+                  << "\" r=\"" << e.radius << "\"/>\n";
+                break;
+            case OutlineEntity::Kind::Arc: {
+                const double rad = M_PI / 180.0;
+                const double x1 = e.center.X() + e.radius * std::cos(e.start_angle * rad);
+                const double y1 = e.center.Y() + e.radius * std::sin(e.start_angle * rad);
+                const double x2 = e.center.X() + e.radius * std::cos(e.end_angle * rad);
+                const double y2 = e.center.Y() + e.radius * std::sin(e.end_angle * rad);
+                const double sweep = outline_norm_deg(e.end_angle - e.start_angle);
+                const int large = sweep > 180.0 ? 1 : 0;
+                // The Y-flip reverses handedness, so a CCW arc in model space
+                // is drawn clockwise (sweep-flag 0) in SVG's Y-down frame.
+                f << "<path d=\"M " << sx(x1) << " " << sy(y1) << " A " << e.radius << " "
+                  << e.radius << " 0 " << large << " 0 " << sx(x2) << " " << sy(y2) << "\"/>\n";
+                break;
+            }
+            }
+        }
+        f << "</g>\n";
+    }
+    f << "</svg>\n";
+    if (!f.good())
+        throw std::runtime_error("export_outline: write error on file: " + path);
+}
+
+// Export the closed loops of one planar face at 1:1, as a cut file.
+//
+// The outline is shifted so its bounding box starts at the origin, which is
+// what makes the file directly nestable on a sheet; `format` is "dxf" or
+// "svg".  `deflection` bounds the chord error where a free-form curve has to
+// be approximated.
+void export_face_outline(const OcctShape& shape, rust::Str path, rust::Str format,
+                         double deflection) {
+    try {
+        const std::string path_str(path);
+        const std::string fmt(format);
+        if (!(deflection > 0.0) || !std::isfinite(deflection))
+            throw std::runtime_error("export_outline: deflection must be a positive number");
+
+        const TopoDS_Face face = outline_target_face(shape.get());
+        const gp_Pln plane = outline_face_plane(face);
+        const std::vector<OutlineLoop> loops = outline_loops(face, plane, deflection);
+
+        double xmin = 0.0, ymin = 0.0, xmax = 0.0, ymax = 0.0;
+        outline_bounds(loops, xmin, ymin, xmax, ymax);
+        const double dx = -xmin;
+        const double dy = -ymin;
+
+        if (fmt == "dxf") {
+            write_outline_dxf(path_str, loops, dx, dy);
+        } else if (fmt == "svg") {
+            write_outline_svg(path_str, loops, dx, dy, xmax - xmin, ymax - ymin);
+        } else {
+            throw std::runtime_error("export_outline: format must be \"dxf\" or \"svg\"");
+        }
     } catch (const Standard_Failure& e) {
         throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
     } catch (const std::exception&) {

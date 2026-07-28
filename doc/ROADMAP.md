@@ -135,6 +135,18 @@ sheets.
       Blocked on: `Assembly#export` accepts no options today (see
       [Project Improvements](#project-improvements)).
 
+### Flat cut-file export
+
+- [x] **`Shape#export_outline`** — `export("x.dxf")` writes an HLR *drawing*
+      of a whole solid, which is the wrong deliverable for a cutter. This
+      writes the closed loops of one planar face at 1:1 and nothing else,
+      with circular edges as true `CIRCLE` / `ARC` entities rather than chord
+      approximations, holes on their own layer, and the outline shifted to the
+      origin for nesting. Taken in the face's own plane, so a tilted face keeps
+      true size. `.dxf` and `.svg`. This is also the writer Track D's
+      flat-pattern output will reuse.
+      Tests: 16 in `tests/cut_file_export.rs`.
+
 ### Track D — Sheet metal
 
 A new modelling domain, largely independent of the other tracks.
@@ -142,6 +154,7 @@ A new modelling domain, largely independent of the other tracks.
 - [ ] Base flanges; edge flanges with bend radius and angle.
 - [ ] Bend relief and K-factor bend allowance.
 - [ ] Unfolded flat-pattern generation, exportable to DXF for laser cutting.
+      The DXF writer for this already exists — see `export_outline` above.
 
 ### Opportunistic additions
 

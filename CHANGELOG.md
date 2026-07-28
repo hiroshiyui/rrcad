@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Flat cut-file export** (`src/occt/bridge.cpp`, `src/ruby/prelude.rb`):
+  `face.export_outline("plate.dxf")` writes the closed loops of one planar
+  face at 1:1 with nothing else in the file. This is a different deliverable
+  from `export("plate.dxf")`, which draws an HLR projection of the whole solid
+  and carries whatever else is visible from that direction — right for a shop
+  drawing, wrong for a laser or CNC controller. Circular edges become true
+  `CIRCLE` and `ARC` entities rather than strings of short chords, so a bolt
+  hole arrives as a hole and a filleted corner as an arc; only free-form
+  curves are approximated, bounded by `deflection:`. The outline is taken in
+  the face's own plane, so a face tilted in space keeps true size instead of
+  foreshortening, and is shifted so its bounding box starts at the origin,
+  ready to nest on a sheet. Holes go on a `HOLES` layer separate from
+  `PROFILE`, since inside cuts normally run first, and the DXF declares
+  millimetres via `$INSUNITS`. `.svg` is supported as a second format. A
+  planar face is required: a multi-face solid raises and names how to select
+  one, and a curved face is refused.
+
 - **Multi-file projects via `require_relative`** (`src/ruby/loader.rs`,
   `src/ruby/native_loader.rs`, `src/ruby/glue.c`, `src/cli.rs`): a project of
   any size outgrows one script, and until now the alternative was one large

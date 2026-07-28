@@ -433,6 +433,7 @@ is still active.
 | `tests/phase11_sketch_splines.rs` | Phase 11 Track A: `spline` segments and the `make_profile_2d` builder beneath them |
 | `tests/phase11_assembly_reports.rs` | Phase 11 Track B: `Assembly#components`, `#interferences` / `#clash?`, `#bom` / `#bom_text`, `#mass_properties`, `mass:` overrides and inertia rollup |
 | `tests/multi_file_projects.rs` | `require_relative`: relative resolution, evaluate-once, cycles, error attribution, dependency reporting |
+| `tests/cut_file_export.rs` | `Shape#export_outline`: flat cut files — CIRCLE/ARC fidelity, true size, layers, errors |
 | `tests/export_confinement.rs` | Import/export path confinement: working-directory rule, symlink escapes, missing directories |
 | `tests/project_config_integration.rs` | `rrcad.toml` discovery, parent-directory walk-up, `[params]` and `preview_port` |
 | `tests/script_output.rs` | `puts`, `print`, `p`, `pp` formatting rules and the output sink |

@@ -485,6 +485,13 @@ void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double s
                 double tolerance_plus, double tolerance_minus, rust::Str section_plane,
                 double section_offset);
 
+// Flat cut-file export: the closed loops of one planar face at 1:1.
+// Unlike export_svg/export_dxf (HLR drawings of a 3-D shape), this emits only
+// the face's outer profile and holes, with circular edges as true CIRCLE/ARC
+// entities. `format` is "dxf" or "svg".
+void export_face_outline(const OcctShape& shape, rust::Str path, rust::Str format,
+                         double deflection);
+
 // --- Phase 8 Tier 5: Advanced composition ---
 
 // fragment — General Boolean fragment: split all shapes at their mutual

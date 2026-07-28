@@ -325,6 +325,14 @@ mod ffi {
             section_offset: f64,
         ) -> Result<()>;
 
+        // Flat cut-file export: the closed loops of one planar face at 1:1.
+        fn export_face_outline(
+            shape: &OcctShape,
+            path: &str,
+            format: &str,
+            deflection: f64,
+        ) -> Result<()>;
+
         // Phase 8 Tier 5: Advanced composition.
 
         // fragment builder — accumulate shapes then split at all intersections.

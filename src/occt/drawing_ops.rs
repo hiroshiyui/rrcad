@@ -273,6 +273,35 @@ impl Shape {
     }
 }
 
+
+impl Shape {
+    /// Export the closed loops of one planar face as a 1:1 cut file.
+    ///
+    /// This is a different deliverable from [`Shape::export_svg`] /
+    /// [`Shape::export_dxf`], which draw an HLR *projection* of a 3-D shape —
+    /// a drawing, carrying whatever else happens to be visible from that
+    /// direction. A cut file carries only this face's outer profile and its
+    /// holes, at true size, which is what a laser or CNC shop consumes.
+    ///
+    /// The receiver must be a planar `Face`, or a shape containing exactly one
+    /// face. Circular edges become true `CIRCLE` / `ARC` entities rather than
+    /// chord approximations, so a bolt hole stays a hole; only free-form
+    /// curves are approximated, bounded by `deflection` (mm of chord error).
+    ///
+    /// The outline is shifted so its bounding box starts at the origin, ready
+    /// to nest on a sheet. `format` is `"dxf"` or `"svg"`.
+    pub fn export_face_outline(
+        &self,
+        path: &str,
+        format: &str,
+        deflection: f64,
+    ) -> Result<(), String> {
+        ffi::export_face_outline(&self.inner, path, format, deflection).map_err(|e| {
+            format!("export_outline({path:?}) failed: {e} [{}]", summarize(self))
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::occt::Shape;

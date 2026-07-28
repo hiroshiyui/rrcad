@@ -485,6 +485,36 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
     }
 }
 
+
+/// `face.export_outline(path, format:, deflection:)` — flat cut-file export.
+///
+/// Path confinement is enforced by `resolve_path` (`safe_path`) exactly as for
+/// every other export, so this adds no new way to write outside the CWD.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_export_outline(
+    ptr: *mut c_void,
+    path: *const c_char,
+    format: *const c_char,
+    deflection: f64,
+    error_out: *mut *const c_char,
+) {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+
+    let Some(resolved) = (unsafe { super::native_helpers::resolve_path(path, error_out) }) else {
+        return;
+    };
+    let Some(format) =
+        (unsafe { super::native_helpers::utf8_arg(format, "export_outline format", error_out) })
+    else {
+        return;
+    };
+
+    if let Err(e) = shape.export_face_outline(&resolved.to_string_lossy(), format, deflection) {
+        unsafe { super::native_helpers::set_err(error_out, &e) };
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

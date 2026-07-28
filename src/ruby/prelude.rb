@@ -2355,6 +2355,46 @@ class Shape
     raise NotImplementedError, "Shape#export is not yet implemented (Phase 1)"
   end
 
+  # export_outline(path, deflection: 0.05) — write this planar face's closed
+  # loops as a 1:1 cut file for a laser cutter or CNC router.
+  #
+  # This is a different deliverable from `export("part.dxf")`, which draws an
+  # HLR *projection* of a 3-D shape and carries whatever else is visible from
+  # that direction. A cut file carries only this face's outer profile and its
+  # holes, at true size:
+  #
+  #   plate.faces(:top).first.export_outline("plate.dxf")
+  #
+  # The receiver must be a planar face, or a shape holding exactly one face
+  # (a sketch profile, typically). Circular edges are written as real CIRCLE
+  # and ARC entities rather than many short chords, so a bolt hole arrives as
+  # a hole a controller can cut exactly; only free-form curves are
+  # approximated, and `deflection:` bounds their chord error in millimetres.
+  #
+  # The outline is shifted so its bounding box starts at the origin, ready to
+  # nest on a sheet. Holes go on a separate layer (DXF `HOLES` / SVG
+  # `class="holes"`) from the profile, since inside cuts usually run first.
+  # Format follows the extension: `.dxf` or `.svg`.
+  def export_outline(path, deflection: 0.05)
+    unless path.is_a?(String) && !path.empty?
+      raise ArgumentError, "export_outline path must be a non-empty String"
+    end
+    unless deflection.is_a?(Numeric) && RRCADUnits.scalar(deflection) > 0
+      raise ArgumentError, "export_outline deflection must be > 0"
+    end
+    lower = path.downcase
+    format = if lower.end_with?(".dxf")
+               "dxf"
+             elsif lower.end_with?(".svg")
+               "svg"
+             else
+               raise ArgumentError,
+                     "export_outline needs a .dxf or .svg path (got #{path.inspect})"
+             end
+    __rrcad_export_outline(path, format, RRCADUnits.scalar(deflection))
+    self
+  end
+
   def fuse(_other)
     raise NotImplementedError, "Shape#fuse is not yet implemented (Phase 1)"
   end

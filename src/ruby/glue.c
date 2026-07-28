@@ -205,6 +205,8 @@ extern void rrcad_shape_export_dxf(void* ptr, const char* path, const char* view
                                    double feature_control_anchor_z, double tolerance_plus,
                                    double tolerance_minus, const char* section_plane,
                                    double section_offset, const char** error_out);
+extern void rrcad_shape_export_outline(void* ptr, const char* path, const char* format,
+                                       double deflection, const char** error_out);
 
 /* Phase 7 — Bézier patch and sewing */
 extern void* rrcad_make_bezier_patch(const double* pts, size_t n_pts, const char** error_out);
@@ -1835,6 +1837,26 @@ static mrb_value mrb_rrcad_require_relative(mrb_state* mrb, mrb_value self) {
     return mrb_true_value();
 }
 
+/* face.export_outline(path, format, deflection) — flat cut-file export.
+ *
+ * Distinct from export("x.dxf"), which draws an HLR projection of the whole
+ * shape.  This writes only the closed loops of one planar face at 1:1.
+ * The prelude picks the format from the file extension and supplies the
+ * default deflection, so this primitive takes both explicitly.
+ */
+static mrb_value mrb_rrcad_shape_export_outline(mrb_state* mrb, mrb_value self) {
+    const char* path;
+    const char* format;
+    mrb_float deflection;
+    mrb_get_args(mrb, "zzf", &path, &format, &deflection);
+
+    void* ptr = shape_ptr(mrb, self);
+    const char* err = NULL;
+    rrcad_shape_export_outline(ptr, path, format, (double)deflection, &err);
+    raise_if_err(mrb, err);
+    return self;
+}
+
 static mrb_value mrb_rrcad_preview(mrb_state* mrb, mrb_value self) {
     (void)self;
     mrb_value shape_val;
@@ -2813,6 +2835,9 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     mrb_define_method(mrb, shape_class, "to_s", mrb_rrcad_shape_inspect, MRB_ARGS_NONE());
     mrb_define_method(mrb, shape_class, "export", mrb_rrcad_shape_export,
                       MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
+    /* Flat cut-file export from a planar face (see mrb_rrcad_shape_export_outline). */
+    mrb_define_method(mrb, shape_class, "__rrcad_export_outline", mrb_rrcad_shape_export_outline,
+                      MRB_ARGS_REQ(3));
     mrb_define_method(mrb, shape_class, "fuse", mrb_rrcad_shape_fuse, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "cut", mrb_rrcad_shape_cut, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "common", mrb_rrcad_shape_common, MRB_ARGS_REQ(1));

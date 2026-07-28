@@ -176,6 +176,58 @@ part.export("drawing.svg", view: :sheet, title_block: true,
 See [`samples/05_export_formats.rb`](../../samples/05_export_formats.rb)
 for a more elaborate format showcase.
 
+## Cut files for laser and CNC
+
+`export("plate.dxf")` writes a *drawing*: an HLR projection of the whole solid,
+carrying whatever else is visible from that direction. That is the right output
+for a shop drawing and the wrong one for a cutter.
+
+`export_outline` writes a **cut file** — the closed loops of one flat face, at
+1:1, and nothing else:
+
+```ruby
+plate = box(60, 40, 2).fillet(5, :vertical)
+[[10, 10], [50, 10], [10, 30], [50, 30]].each do |x, y|
+  plate = plate.cut(cylinder(1.7, 10).translate(x, y, -1))
+end
+
+plate.faces(:top).first.export_outline("plate.dxf")
+```
+
+That plate comes out as 4 `CIRCLE`, 4 `ARC`, and 4 `LINE` entities — the holes
+are real circles and the rounded corners real arcs, not strings of short
+chords. A controller cuts them exactly, and the file stays small. Only
+free-form curves (splines) have to be approximated; `deflection:` bounds their
+chord error in millimetres:
+
+```ruby
+sk.export_outline("cam.dxf", deflection: 0.01)   # default 0.05
+```
+
+The receiver must be a **planar face**, or a shape holding exactly one face —
+so a sketch profile exports directly:
+
+```ruby
+circle(12).export_outline("washer.dxf")
+```
+
+A solid has many faces, and rather than guess, `export_outline` asks you to
+pick one. A curved face is refused outright: a cut file needs a flat one.
+
+Three things the output does for you:
+
+- **Shifted to the origin.** The outline's bounding box starts at (0, 0),
+  ready to nest on a sheet.
+- **True size, whatever the orientation.** The outline is taken in the face's
+  own plane, so a face tilted in space still measures its real dimensions
+  rather than a foreshortened projection.
+- **Holes on their own layer.** DXF `HOLES` and `PROFILE` layers (SVG
+  `class="holes"` / `class="profile"`), because inside cuts normally run
+  before the outside profile.
+
+DXF declares millimetres via `$INSUNITS`, so the controller need not guess the
+scale. `.svg` is accepted too, sized in millimetres, for cutters that take it.
+
 ---
 
 [← Previous: Inspection and CAM Checks](09-inspection-and-cam.md) · [Index](../user-guide.md) · [Next: Parametric Design and Batch Export →](11-parametric-and-batch.md)
