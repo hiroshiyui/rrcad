@@ -9,23 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **`puts`, `print`, `p`, and `pp` now work in scripts** (`src/ruby/prelude.rb`,
-  `src/ruby/native_output.rs`): the embedded interpreter ships without the IO
-  gems, so scripts previously had no way to print anything — `puts` raised
-  `undefined method`, even though the REPL help advertised it. They are now
-  defined in the prelude on a native output primitive, with Ruby's formatting
-  rules (array flattening, `nil` as a blank line, no doubled trailing
-  newline, `p` returning its argument). Output goes to standard output and is
-  removed entirely in MCP mode, where stdout carries the JSON-RPC responses.
+- **Profile offset** (Phase 11 Track A, `src/ruby/prelude.rb`,
+  `src/occt/bridge.cpp`): `offset(distance)` inside `sketch do ... end` grows
+  (positive) or shrinks (negative) the finished profile in its own plane,
+  keeping every edge parallel to where it started. It is the last step of
+  building the profile, so it applies to a constrained polygon including its
+  corner modifiers and segment edits, or to a `circle_at` / `arc_at` /
+  `slot_between` profile. A sketch takes one non-zero offset.
 
-### Fixed
+- **Sketch segment `trim` and `extend`** (Phase 11 Track A,
+  `src/ruby/prelude.rb`): shorten or lengthen an individual segment of a
+  line-based sketch — one endpoint slides along the segment while the other
+  anchors it, either `by:` a distance or `to:` the intersection with another
+  segment's infinite line. `at:` chooses which endpoint moves. Edits apply in
+  declaration order after the constraint solver runs, so a later edit sees an
+  earlier one and corner modifiers act on the moved corner's final position.
+  Collapsed segments, parallel `to:` references, wrong-direction
+  intersections (which name the operation the user meant), unregistered point
+  pairs, and bad `at:` targets are all rejected before any geometry is built.
 
-- **MCP printing escape** (`src/mcp/security.rs`): the security prelude
-  undefined `puts`/`print`/`p`/`pp` on `Kernel` only. Methods defined by a
-  top-level `def` land on `Object`, so once the prelude defined them there
-  they stayed reachable inside MCP tool calls. They are now undefined on
-  `Object` too, along with the `__rrcad_write` primitive beneath them, and
-  MCP additionally routes script output off stdout as a second guard.
+- **Sketch corner fillets and chamfers** (Phase 11 Track A,
+  `src/ruby/prelude.rb`): `fillet(point, radius)` and
+  `chamfer(point, distance)` inside `sketch do ... end` round or bevel an
+  individual corner while the 2-D profile is built, so the shaping is part of
+  the profile rather than a 3-D fillet applied afterwards. Both accept unit
+  values, and oversized modifiers, overlapping setbacks, duplicate modifiers
+  on one corner, collinear corners, and modifiers targeting a point outside
+  the closed loop are all rejected up front with the offending corner named.
 
 - **Drawing section views** (Phase 11 Track C, `src/occt/bridge.cpp`,
   `src/ruby/native_io.rs`, `src/ruby/glue.c`): `shape.export("part.svg",
@@ -37,14 +47,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   origin. Non-solids, planes that miss the shape, and unknown plane names are
   each rejected with a specific message.
 
-- **Sketch corner fillets and chamfers** (Phase 11 Track A,
-  `src/ruby/prelude.rb`): `fillet(point, radius)` and
-  `chamfer(point, distance)` inside `sketch do ... end` round or bevel an
-  individual corner while the 2-D profile is built, so the shaping is part of
-  the profile rather than a 3-D fillet applied afterwards. Both accept unit
-  values, and oversized modifiers, overlapping setbacks, duplicate modifiers
-  on one corner, collinear corners, and modifiers targeting a point outside
-  the closed loop are all rejected up front with the offending corner named.
+- **`puts`, `print`, `p`, and `pp` now work in scripts** (`src/ruby/prelude.rb`,
+  `src/ruby/native_output.rs`): the embedded interpreter ships without the IO
+  gems, so scripts previously had no way to print anything — `puts` raised
+  `undefined method`, even though the REPL help advertised it. They are now
+  defined in the prelude on a native output primitive, with Ruby's formatting
+  rules (array flattening, `nil` as a blank line, no doubled trailing
+  newline, `p` returning its argument). Output goes to standard output and is
+  removed entirely in MCP mode, where stdout carries the JSON-RPC responses.
+
+- **Export-path confinement tests and documentation**
+  (`tests/export_confinement.rs`, `doc/user-guide/10-import-export.md`): the
+  intentionally strict import/export path rules — inside the working
+  directory only, symlink escapes rejected, target directory must exist,
+  applies to reads as well as writes — are now pinned by explicit tests and
+  described for users.
 
 ### Changed
 
@@ -59,19 +76,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`Shape#offset_2d` returns a usable profile** (`src/occt/bridge.cpp`):
+  `BRepOffsetAPI_MakeOffset` returns bare wires, so a Face went in and a Wire
+  came out — the result extruded into an open shell rather than a solid, and
+  an inward offset even reported a negative volume. The offset wires are now
+  rebuilt into a planar face, the largest enclosed area becoming the outer
+  boundary and the rest holes, so an offset profile extrudes, pads, and
+  pockets like any other. Profiles with holes offset in both directions, and
+  faces OCCT cannot offset whole (an all-circular annulus among them) fall
+  back to offsetting each boundary wire separately, with the sign flipped for
+  hole wires. An inward offset that consumes the profile now raises instead
+  of returning an empty result.
+
+- **MCP printing escape** (`src/mcp/security.rs`): the security prelude
+  undefined `puts`/`print`/`p`/`pp` on `Kernel` only. Methods defined by a
+  top-level `def` land on `Object`, so once the prelude defined them there
+  they stayed reachable inside MCP tool calls. They are now undefined on
+  `Object` too, along with the `__rrcad_write` primitive beneath them, and
+  MCP additionally routes script output off stdout as a second guard.
+
 - **Design tables fail fast on malformed rows** (`src/cli.rs`): a data row
   whose field count does not match the header is now rejected with the real
   file line number and the expected vs actual counts, instead of being
   silently truncated by `zip()` and producing a subtly wrong part.
-
-### Added
-
-- **Export-path confinement tests and documentation**
-  (`tests/export_confinement.rs`, `doc/user-guide/10-import-export.md`): the
-  intentionally strict import/export path rules — inside the working
-  directory only, symlink escapes rejected, target directory must exist,
-  applies to reads as well as writes — are now pinned by explicit tests and
-  described for users.
 
 ## [0.4.0] - 2026-07-28
 
