@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-28
+
+### Added
+
+- **Project configuration** (`src/project_config.rs`, `rrcad.toml.example`):
+  optional `rrcad.toml` files are discovered from the script directory or
+  current working directory, walking up parent directories. Supports
+  `preview_port` for `--preview` defaults and `[params]` for default `param()`
+  overrides; CLI flags still take precedence.
+- **Preview auto port selection** (`src/preview/server.rs`, `src/cli.rs`):
+  `--preview` now asks the OS for a free port by default (printed at startup)
+  instead of requiring a fixed port; `--preview-port` or `rrcad.toml`
+  `preview_port` pin a specific one.
+- **User guide chapters** (`doc/user-guide/`): the user guide is split into 15
+  task-oriented chapters with navigation links; README gained install and
+  running sections.
+- **Viewer resilience** (`src/preview/viewer.html`): a clear on-page message
+  when Three.js cannot be loaded from the CDN (offline use) and automatic
+  model reload after a WebSocket reconnect.
+
+### Changed
+
+- **Dependencies**: `axum` 0.7 → 0.8, `rmcp` 0.1 → 2.2, `notify` 6 → 8,
+  `rustyline` 14 → 18, `toml` 0.8 → 1; the MCP server and preview WebSocket
+  were migrated to the new APIs.
+- **Viewer controls** (`src/preview/viewer.html`): orbiting stays enabled
+  while measuring, keyboard shortcuts ignore Ctrl/Cmd/Alt combinations, and
+  section planes clip only the model (floor, axes, and measure markers stay
+  visible).
+- **Internal quality**: the SVG/DXF export chain shares one options struct and
+  common C++ layout helpers; MCP sandbox filenames and the export-format
+  allowlist are named constants; public DSL-facing items carry doc comments;
+  the whole tree is `rustfmt`/`clang-format` clean with zero clippy warnings.
+
+### Fixed
+
+- **OCCT exception safety** (`src/occt/bridge.cpp`): pipe-shell, sewing,
+  thru-sections, and fragment builders now translate `Standard_Failure` into
+  Rust errors instead of aborting the process when given malformed geometry.
+- **Config discovery** (`src/project_config.rs`): `rrcad.toml` lookup now
+  walks up parent directories correctly when the script is given as a bare
+  relative path (e.g. `rrcad --preview part.rb`).
+- **CLI validation** (`src/cli.rs`): `--preview-port` without `--preview` is
+  now a hard error instead of being silently ignored.
+- **MCP hardening** (`src/mcp/security.rs`): VM security constants tightened
+  and the security prelude documented as defence-in-depth on top of the
+  compile-time `mcp_safe.gembox` sandbox.
+
+### Security
+
+- **rmcp 2.2 upgrade** fixes RUSTSEC-2026-0189 (high severity, DNS rebinding
+  in the Streamable HTTP transport) and drops the unmaintained `paste` crate;
+  a `rand` unsoundness advisory was also cleared via the axum/tungstenite
+  bump. `cargo audit` reports zero advisories.
+- **Preview server DNS-rebinding defence** (`src/preview/server.rs`): all
+  preview routes (including the WebSocket) reject requests whose `Host` or
+  `Origin` headers do not identify the local machine.
+
 ## [0.3.0] - 2026-05-15
 
 ### Added
