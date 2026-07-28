@@ -262,6 +262,8 @@ mod native_helpers;
 mod native_inspect;
 #[path = "native_io.rs"]
 mod native_io;
+#[path = "native_loader.rs"]
+mod native_loader;
 #[path = "native_modeling_ops.rs"]
 mod native_modeling_ops;
 #[path = "native_output.rs"]

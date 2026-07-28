@@ -95,6 +95,64 @@ For a fully parametric box, see
 [`samples/08_parametric_box.rb`](../../samples/08_parametric_box.rb) and
 its companion [`samples/08_box_sizes.csv`](../../samples/08_box_sizes.csv).
 
+## Splitting a project across files
+
+A project of any size outgrows one script. `require_relative` pulls in another
+file, exactly as in Ruby:
+
+```ruby
+# frame/params.rb
+PLATE_T      = 2.0
+BOLT_SPACING = 16.0
+
+# frame/arm.rb
+require_relative "params"          # frame/params.rb, not ./params.rb
+def arm
+  box(60, 8, PLATE_T)
+end
+
+# quad.rb
+require_relative "frame/arm"
+asm = assembly("quad") { |a| a.place arm }
+```
+
+```bash
+cargo run -- quad.rb
+```
+
+The path resolves against **the file doing the requiring**, not the working
+directory — so `frame/arm.rb` finds its own `params.rb` neighbour, and the
+project runs the same from anywhere. The `.rb` suffix is optional.
+
+Everything a required file defines — constants, methods, classes — is visible
+to the file that required it. Sharing a parameter table this way is the point:
+a plate thickness defined once cannot drift out of sync between the arm and
+the motor mount.
+
+Each file is evaluated **once**. Requiring it again returns `false` instead of
+re-running it, so two files can both require a shared dependency, and a
+require cycle terminates instead of recursing:
+
+```ruby
+first  = require_relative "params"   # => true, evaluated
+second = require_relative "params"   # => false, already loaded
+```
+
+`param` declarations work in a required file, and `rrcad.toml` is still found
+by walking up from the entry script, so one config covers the whole project.
+
+Under `--preview`, every required file is watched, not just the entry script —
+editing `frame/arm.rb` reloads the model. Adding or removing a
+`require_relative` updates the watch set on the next reload.
+
+Two things to know:
+
+- There is no load path and no gem system, so plain `require` does not exist;
+  it raises and points you at `require_relative`.
+- `require_relative` is unavailable in [MCP mode](13-mcp-server.md), where
+  scripts arrive as strings with no file to be relative to, and reading
+  arbitrary files is not something a sandboxed script should do.
+
 ---
 
 [← Previous: Import and Export](10-import-export.md) · [Index](../user-guide.md) · [Next: Live Preview and REPL →](12-live-preview-and-repl.md)

@@ -38,7 +38,7 @@ New to rrcad? Read these in order:
 | 8 | [Assemblies](user-guide/08-assemblies.md) | Assembly DSL, mate / distance / axis / angle constraints, color |
 | 9 | [Inspection and CAM Checks](user-guide/09-inspection-and-cam.md) | Validate, history, centroid / inertia, manufacturability checks |
 | 10 | [Import and Export](user-guide/10-import-export.md) | Formats, SVG / DXF views, GLB tessellation, GD&T frames |
-| 11 | [Parametric Design and Batch Export](user-guide/11-parametric-and-batch.md) | `param`, CLI overrides, CSV design tables |
+| 11 | [Parametric Design and Batch Export](user-guide/11-parametric-and-batch.md) | `param`, CLI overrides, CSV design tables, multi-file projects |
 | 12 | [Live Preview and REPL](user-guide/12-live-preview-and-repl.md) | Browser viewer, viewer controls, interactive REPL |
 | 13 | [MCP Server](user-guide/13-mcp-server.md) | JSON-RPC tools, resources, security |
 | 14 | [Recipes](user-guide/14-recipes.md) | Cross-cutting common patterns |

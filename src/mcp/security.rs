@@ -43,6 +43,13 @@ pub(crate) const MCP_MEMORY_LIMIT_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 /// compile-time gem restrictions (Mitigation 1). Works whether or not the
 /// binary was compiled with `mcp_safe.gembox`.
 ///
+/// `require_relative` gets special mention: unlike the others it is *not* a
+/// stock mRuby method that happens to exist, but one rrcad defines natively
+/// for multi-file projects (`src/ruby/loader.rs`). It reads arbitrary files,
+/// so it is undefined here on both Kernel and Object. A second, independent
+/// guard exists in the loader itself: it refuses to run until a base
+/// directory is set, and MCP never sets one.
+///
 /// Includes file-access methods (`open`, `require`, `load`) and metaprogramming
 /// methods (`eval`, `send`, `instance_eval`, `define_method`, `binding`, …) even
 /// though Mitigation 1's `mcp_safe.gembox` already excludes the gems that
@@ -91,7 +98,10 @@ Object.module_eval do
     # which lands on Object rather than Kernel — undefining them on Kernel
     # alone leaves them reachable.  __rrcad_write is the primitive beneath
     # them and must go too, or it can be called directly.
-    :puts, :print, :p, :pp, :__rrcad_write
+    :puts, :print, :p, :pp, :__rrcad_write,
+    # rrcad defines require_relative natively on Kernel for multi-file
+    # projects; it reads arbitrary files, so it must not survive here.
+    :require, :require_relative
   ].each do |m|
     undef_method(m) rescue nil
   end
@@ -291,5 +301,48 @@ mod tests {
 
         // Leave the process default alone for any test that runs afterwards.
         crate::ruby::set_output_sink(crate::ruby::OutputSink::Stdout);
+    }
+}
+
+#[cfg(test)]
+mod loader_security_tests {
+    use super::create_mcp_vm;
+
+    #[test]
+    fn mcp_vm_cannot_require_files() {
+        // require_relative is a file-read primitive. It is defined natively
+        // for CLI use, so MCP must actively remove it — this test is the
+        // guard against someone adding a loader method and forgetting the
+        // security prelude.
+        let mut vm = create_mcp_vm().expect("VM should initialise");
+        for call in [
+            "require_relative 'x'",
+            "require 'x'",
+            "Kernel.require_relative 'x'",
+        ] {
+            // Must *fail*: succeeding would mean the method survived.
+            let err = match vm.eval(call) {
+                Ok(v) => panic!("{call} should have been undefined, but returned {v}"),
+                Err(e) => e,
+            };
+            assert!(
+                err.contains("undefined method") || err.contains("private method"),
+                "{call} should be undefined in MCP mode, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn loader_refuses_without_a_base_directory_even_if_reachable() {
+        // Second, independent guard: even if the security prelude were
+        // weakened, the loader itself refuses until a base directory is set,
+        // and MCP never sets one.
+        crate::ruby::loader::reset();
+        let err = crate::ruby::loader::begin_require("anything")
+            .expect_err("should refuse without a base dir");
+        assert!(
+            err.contains("only available when running a script file"),
+            "unexpected error: {err}"
+        );
     }
 }

@@ -4,7 +4,7 @@ use std::{
     sync::{Mutex, MutexGuard, OnceLock},
 };
 
-use super::ffi;
+use super::{ffi, loader};
 
 /// The DSL prelude is embedded at compile time so the binary is self-contained.
 /// It is evaluated once during `MrubyVm::new()` — users never need `require`.
@@ -59,6 +59,11 @@ impl MrubyVm {
         // pointer, or NULL on OOM (caught by the assert below).
         let mrb = unsafe { ffi::mrb_open() };
         assert!(!mrb.is_null(), "mrb_open() failed: out of memory");
+        // Each VM starts with a clean slate for multi-file loading. Only one
+        // MrubyVm exists at a time (this VM holds the global lock for its
+        // lifetime), so the loader's process-global state is effectively
+        // per-VM — provided it is reset here.
+        loader::reset();
         let mut vm = Self { mrb, _lock: lock };
         vm.eval_unlocked(PRELUDE)
             .unwrap_or_else(|e| panic!("rrcad prelude failed to load: {e}"));
@@ -94,6 +99,33 @@ impl MrubyVm {
             .join(", ");
         let code = format!("$_rrcad_params = {{{entries}}}");
         self.eval_unlocked(&code).map(|_| ())
+    }
+
+    /// Enable `require_relative` for this VM, resolving against `dir`.
+    ///
+    /// Until this is called, `require_relative` raises — which is what keeps
+    /// it unavailable in MCP mode and in bare `eval` callers such as tests.
+    /// The CLI passes the entry script's directory; the REPL passes the CWD.
+    pub fn set_script_dir(&mut self, dir: std::path::PathBuf) {
+        loader::set_base_dir(dir);
+    }
+
+    /// Convenience wrapper: point `require_relative` at the directory holding
+    /// `script_path`. A path with no parent resolves against the CWD.
+    pub fn set_script_path(&mut self, script_path: &std::path::Path) {
+        let dir = script_path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        self.set_script_dir(dir);
+    }
+
+    /// Every file pulled in by `require_relative` during this VM's lifetime,
+    /// in load order. `--preview` uses this to watch the whole project rather
+    /// than only the entry script.
+    pub fn loaded_files(&self) -> Vec<std::path::PathBuf> {
+        loader::loaded_files()
     }
 
     /// Evaluate `code` as Ruby source and return the `inspect` string of

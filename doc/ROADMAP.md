@@ -108,6 +108,16 @@ Follow-ons, driven by working through a quadcopter as a test case:
       solid, which agrees to machine precision on all six components.
       Tests: 59 in `tests/phase11_assembly_reports.rs`.
 
+### Multi-file projects
+
+- [x] **`require_relative`** — a project of any size outgrows one file, and
+      copy-pasted constants are how two parts drift out of sync. Resolves
+      against the requiring file's directory (not the CWD), evaluates each
+      file once so cycles terminate, and reports its load set so `--preview`
+      watches the whole project. Disabled in MCP mode by two independent
+      guards. Tests: 18 in `tests/multi_file_projects.rs`, 6 in
+      `src/ruby/loader.rs`, 3 in `src/cli.rs`, 2 in `src/mcp/security.rs`.
+
 ### Track C — Drawing completeness
 
 SVG/DXF output already has hidden lines, GD&T frames, title blocks, and 3-view

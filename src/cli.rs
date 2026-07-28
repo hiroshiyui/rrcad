@@ -463,6 +463,10 @@ fn run_repl() {
         std::process::exit(1);
     });
     let mut vm = MrubyVm::new();
+    // In the REPL there is no script file, so require_relative resolves
+    // against the working directory — the natural reading of "relative" when
+    // you are typing at a prompt inside a project.
+    vm.set_script_dir(std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")));
     if let Err(e) = vm.set_params(&project.params) {
         eprintln!("error loading project config params: {e}");
         std::process::exit(1);
@@ -521,6 +525,9 @@ fn run_script(path: &str, params: &[(String, String)]) {
         }
     };
     let mut vm = MrubyVm::new();
+    // require_relative resolves against the entry script's directory, not the
+    // CWD, so a project runs the same from anywhere.
+    vm.set_script_path(std::path::Path::new(path));
     let effective_params = merge_params(&project.params, params);
     if let Err(e) = vm.set_params(&effective_params) {
         eprintln!("{path}: error setting params: {e}");
@@ -644,6 +651,7 @@ fn run_design_table(
             .unwrap_or_else(|| format!("row_{:03}", i + 1));
 
         let mut vm = MrubyVm::new();
+        vm.set_script_path(std::path::Path::new(script_path));
         match vm.set_params(&params).and_then(|_| vm.eval(&code)) {
             Ok(_) => println!("  [{}/{}] {} → ok", i + 1, total, label),
             Err(e) => {
@@ -710,54 +718,101 @@ fn run_preview(script_path: &str, params: &[(String, String)], port: Option<u16>
     // Helper: read and eval the script, reporting errors to stderr.
     // Each eval creates a fresh VM; params are re-injected every time so that
     // live-reload picks up the same overrides as the initial run.
-    let eval_script = |path: &str| match std::fs::read_to_string(path) {
-        Ok(code) => {
-            let mut vm = MrubyVm::new();
-            if let Err(e) = vm.set_params(&effective_params) {
-                eprintln!("{path}: error setting params: {e}");
-            } else if let Err(e) = vm.eval(&code) {
-                eprintln!("{path}: {e}");
+    // Returns every file the script pulled in, so the watcher can follow a
+    // project that spans more than one file.
+    let eval_script = |path: &str| -> Vec<std::path::PathBuf> {
+        match std::fs::read_to_string(path) {
+            Ok(code) => {
+                let mut vm = MrubyVm::new();
+                vm.set_script_path(std::path::Path::new(path));
+                if let Err(e) = vm.set_params(&effective_params) {
+                    eprintln!("{path}: error setting params: {e}");
+                } else if let Err(e) = vm.eval(&code) {
+                    eprintln!("{path}: {e}");
+                }
+                // Collected even when the eval failed: a syntax error in a
+                // required file still means we must watch it to see the fix.
+                vm.loaded_files()
+            }
+            Err(e) => {
+                eprintln!("error: could not read '{path}': {e}");
+                Vec::new()
             }
         }
-        Err(e) => eprintln!("error: could not read '{path}': {e}"),
     };
 
     // Initial eval.
-    eval_script(script_path);
+    let initial_deps = eval_script(script_path);
 
     // Delegate to the file-watcher loop; it returns when the watcher channel
     // closes (normally never — the process exits via Ctrl-C).
-    watch_script_loop(script_path, &eval_script);
+    watch_script_loop(script_path, initial_deps, &eval_script);
 
     // Best-effort cleanup: remove the randomised temp GLB file so it does not
     // accumulate in /tmp across restarts.  Errors are silently ignored.
     std::fs::remove_file(&glb_path_for_cleanup).ok();
 }
 
-/// Watch `script_path` for changes and call `eval_script` on every change.
+/// The set of files a preview run depends on: the entry script plus anything
+/// it pulled in with `require_relative`.
+///
+/// Editing any of them must trigger a reload, so the watcher tracks the files
+/// themselves (for filtering events) and their parent directories (for placing
+/// watches). Returned sorted and de-duplicated so the watch set is stable
+/// across reloads.
+fn dependency_set(script_path: &str, deps: &[std::path::PathBuf]) -> Vec<std::path::PathBuf> {
+    let mut files: Vec<std::path::PathBuf> = std::iter::once(
+        std::fs::canonicalize(script_path)
+            .unwrap_or_else(|_| std::path::PathBuf::from(script_path)),
+    )
+    .chain(deps.iter().cloned())
+    .collect();
+    files.sort();
+    files.dedup();
+    files
+}
+
+/// Parent directories of `files`, de-duplicated — the actual watch targets.
+fn watch_dirs(files: &[std::path::PathBuf]) -> Vec<std::path::PathBuf> {
+    let mut dirs: Vec<std::path::PathBuf> = files
+        .iter()
+        .filter_map(|f| f.parent().map(|p| p.to_path_buf()))
+        .collect();
+    dirs.sort();
+    dirs.dedup();
+    dirs
+}
+
+/// Watch every file the script depends on and call `eval_script` on change.
 ///
 /// Blocks until the watcher channel closes.  Extracted from `run_preview` so
 /// that function reads as: load config → start server → initial eval →
 /// delegate here.
-fn watch_script_loop(script_path: &str, eval_script: &dyn Fn(&str)) {
+///
+/// `initial_deps` is what the first eval loaded. The dependency set is
+/// recomputed after each reload, because adding or removing a
+/// `require_relative` changes which files matter.
+fn watch_script_loop(
+    script_path: &str,
+    initial_deps: Vec<std::path::PathBuf>,
+    eval_script: &dyn Fn(&str) -> Vec<std::path::PathBuf>,
+) {
     use notify::{RecursiveMode, Watcher};
 
-    // Watch the script file; re-eval on every change.
+    // Watch the script's directory; re-eval on every relevant change.
     //
-    // We watch the *parent directory* rather than the file itself to handle
+    // We watch *parent directories* rather than the files themselves to handle
     // atomic-write editors (write temp → rename into place).  inotify tracks
     // inodes: a rename replaces the inode and the file-level watch goes silent.
     // A directory-level watch fires Create/Rename events for any file in the
-    // directory, so we filter by the canonical script path.
+    // directory, so we filter by the canonical dependency paths.
     let canonical_script = std::fs::canonicalize(script_path)
         .unwrap_or_else(|_| std::path::PathBuf::from(script_path));
-    let watch_dir = match canonical_script.parent() {
-        Some(d) => d.to_path_buf(),
-        None => {
-            eprintln!("error: script path '{script_path}' has no parent directory");
-            std::process::exit(1);
-        }
-    };
+    if canonical_script.parent().is_none() {
+        eprintln!("error: script path '{script_path}' has no parent directory");
+        std::process::exit(1);
+    }
+    let mut deps = dependency_set(script_path, &initial_deps);
 
     let (tx, rx) = std::sync::mpsc::channel();
     let mut watcher = notify::recommended_watcher(move |res| {
@@ -767,25 +822,48 @@ fn watch_script_loop(script_path: &str, eval_script: &dyn Fn(&str)) {
         eprintln!("error: failed to create file watcher: {e}");
         std::process::exit(1);
     });
-    watcher
-        .watch(&watch_dir, RecursiveMode::NonRecursive)
-        .unwrap_or_else(|e| {
-            eprintln!("error: failed to watch '{}': {e}", watch_dir.display());
-            std::process::exit(1);
-        });
+    // Watch every directory holding a dependency. Directories are tracked
+    // separately from files so that re-watching after a reload only has to
+    // diff directories, which change far less often than the file set.
+    let mut watched: Vec<std::path::PathBuf> = Vec::new();
+    let sync_watches =
+        |watcher: &mut notify::RecommendedWatcher, watched: &mut Vec<std::path::PathBuf>, deps: &[std::path::PathBuf]| {
+            for dir in watch_dirs(deps) {
+                if watched.contains(&dir) {
+                    continue;
+                }
+                match watcher.watch(&dir, RecursiveMode::NonRecursive) {
+                    Ok(()) => watched.push(dir),
+                    Err(e) => eprintln!("error: failed to watch '{}': {e}", dir.display()),
+                }
+            }
+        };
+    sync_watches(&mut watcher, &mut watched, &deps);
+    if watched.is_empty() {
+        eprintln!("error: failed to watch any directory for '{script_path}'");
+        std::process::exit(1);
+    }
 
-    println!("Watching {script_path} for changes…");
+    if deps.len() > 1 {
+        println!(
+            "Watching {script_path} and {} required file(s) for changes…",
+            deps.len() - 1
+        );
+    } else {
+        println!("Watching {script_path} for changes…");
+    }
 
     loop {
         match rx.recv() {
             Ok(Ok(event)) => {
-                // Filter: only react when the event involves our script file.
-                let affects_script = event.paths.iter().any(|p| {
+                // Filter: only react when the event touches a file this run
+                // actually depends on.
+                let affects_project = event.paths.iter().any(|p| {
                     std::fs::canonicalize(p)
-                        .map(|c| c == canonical_script)
+                        .map(|c| deps.contains(&c))
                         .unwrap_or(false)
                 });
-                if !affects_script {
+                if !affects_project {
                     continue;
                 }
                 // Debounce: drain any further events that arrive within 50 ms.
@@ -793,7 +871,10 @@ fn watch_script_loop(script_path: &str, eval_script: &dyn Fn(&str)) {
                     .recv_timeout(std::time::Duration::from_millis(50))
                     .is_ok()
                 {}
-                eval_script(script_path);
+                // The dependency set can change with the edit — a new
+                // require_relative adds a file, a deleted one drops it.
+                deps = dependency_set(script_path, &eval_script(script_path));
+                sync_watches(&mut watcher, &mut watched, &deps);
             }
             Ok(Err(e)) => eprintln!("watch error: {e}"),
             Err(_) => break,
@@ -1167,5 +1248,45 @@ mod runtime_tests {
         assert_ne!(a, b);
         assert!(a.starts_with(std::env::temp_dir()));
         assert!(b.starts_with(std::env::temp_dir()));
+    }
+}
+
+#[cfg(test)]
+mod dependency_watch_tests {
+    use super::{dependency_set, watch_dirs};
+    use std::path::PathBuf;
+
+    #[test]
+    fn dependency_set_always_includes_the_entry_script() {
+        let deps = dependency_set("Cargo.toml", &[]);
+        assert_eq!(deps.len(), 1, "entry script alone: {deps:?}");
+        assert!(
+            deps[0].ends_with("Cargo.toml"),
+            "entry script should be canonicalised: {deps:?}"
+        );
+    }
+
+    #[test]
+    fn dependency_set_merges_and_dedupes_required_files() {
+        // The entry script also appearing in the loaded list must not double.
+        let entry = std::fs::canonicalize("Cargo.toml").expect("canonicalize");
+        let extra = PathBuf::from("/tmp/rrcad_dep_a.rb");
+        let deps = dependency_set("Cargo.toml", &[entry.clone(), extra.clone(), extra.clone()]);
+        assert_eq!(deps.len(), 2, "expected entry + one unique dep: {deps:?}");
+        assert!(deps.contains(&entry) && deps.contains(&extra));
+    }
+
+    #[test]
+    fn watch_dirs_dedupes_shared_parents() {
+        // Several files in one directory need only one watch.
+        let files = vec![
+            PathBuf::from("/tmp/proj/a.rb"),
+            PathBuf::from("/tmp/proj/b.rb"),
+            PathBuf::from("/tmp/proj/sub/c.rb"),
+        ];
+        let dirs = watch_dirs(&files);
+        assert_eq!(dirs.len(), 2, "expected two distinct parents: {dirs:?}");
+        assert!(dirs.contains(&PathBuf::from("/tmp/proj")));
+        assert!(dirs.contains(&PathBuf::from("/tmp/proj/sub")));
     }
 }

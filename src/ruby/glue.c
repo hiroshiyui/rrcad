@@ -16,6 +16,7 @@
 #include <mruby/hash.h>
 #include <mruby/range.h>
 #include <mruby/string.h>
+#include <mruby/throw.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -70,6 +71,9 @@ extern void* rrcad_make_torus(double r1, double r2, const char** error_out);
 extern void* rrcad_make_wedge(double dx, double dy, double dz, double ltx, const char** error_out);
 extern void rrcad_shape_drop(void* ptr);
 extern void rrcad_script_write(const char* text, const char** error_out);
+extern int rrcad_require_begin(const char* arg, const char** code_out, const char** name_out,
+                               const char** error_out);
+extern void rrcad_require_end(void);
 extern void* rrcad_import_step(const char* path, const char** error_out);
 extern void* rrcad_import_stl(const char* path, const char** error_out);
 extern void rrcad_shape_export_step(void* ptr, const char* path, const char** error_out);
@@ -1748,6 +1752,89 @@ static mrb_value mrb_rrcad_write(mrb_state* mrb, mrb_value self) {
     return mrb_nil_value();
 }
 
+/* require_relative(path) — evaluate another script file once.
+ *
+ * The Rust side resolves the path and reads the source; evaluation has to
+ * happen here because it needs the mrb_state. rrcad_require_begin pushes the
+ * include stack and rrcad_require_end pops it, so the two must be paired even
+ * when the required file raises — otherwise a later require would resolve
+ * against a stale directory. mrb_load_string_cxt carries the real filename so
+ * a syntax error names the file it is in rather than "(eval)".
+ *
+ * Returns true when the file was evaluated, false when it had already been
+ * loaded (matching Ruby's require semantics, and what makes a require cycle
+ * terminate rather than recurse).
+ */
+static mrb_value mrb_rrcad_require_relative(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value path;
+    mrb_get_args(mrb, "S", &path);
+
+    const char* bytes = RSTRING_PTR(path);
+    const mrb_int len = RSTRING_LEN(path);
+    if (len > 0 && (mrb_int)strlen(bytes) != len)
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "require_relative path must not contain a NUL byte");
+
+    const char* code = NULL;
+    const char* filename = NULL;
+    const char* err = NULL;
+    const int status =
+        rrcad_require_begin(mrb_string_value_cstr(mrb, &path), &code, &filename, &err);
+    if (status < 0) {
+        raise_if_err(mrb, err);
+        /* Defensive: a negative status always sets err, but never fall through
+         * into evaluation with a NULL code pointer. */
+        mrb_raise(mrb, E_RUNTIME_ERROR, "require_relative failed");
+    }
+    if (status == 0)
+        return mrb_false_value();
+
+    mrbc_context* cxt = mrbc_context_new(mrb);
+    if (cxt == NULL) {
+        rrcad_require_end();
+        mrb_raise(mrb, E_RUNTIME_ERROR, "require_relative: out of memory");
+    }
+    mrbc_filename(mrb, cxt, filename);
+
+    /* mRuby propagates exceptions with longjmp, so a `raise` inside the
+     * required file would jump straight past the cleanup below and leave the
+     * include stack pushed — after which the *next* require would resolve
+     * against the failed file's directory instead of this one's.  Catching it
+     * here with our own jmpbuf is what makes the stack unwind with the C
+     * stack.  (Only visible when the two directories differ, which is why the
+     * regression test puts the raising file in a subdirectory.) */
+    struct mrb_jmpbuf* prev_jmp = mrb->jmp;
+    struct mrb_jmpbuf c_jmp;
+    mrb_value raised = mrb_nil_value();
+    mrb_bool did_raise = FALSE;
+
+    MRB_TRY(&c_jmp) {
+        mrb->jmp = &c_jmp;
+        mrb_load_string_cxt(mrb, code, cxt);
+        mrb->jmp = prev_jmp;
+        /* A parse error does not longjmp; it returns with mrb->exc set. */
+        if (mrb->exc) {
+            raised = mrb_obj_value(mrb->exc);
+            mrb->exc = NULL;
+            did_raise = TRUE;
+        }
+    }
+    MRB_CATCH(&c_jmp) {
+        mrb->jmp = prev_jmp;
+        raised = mrb_obj_value(mrb->exc);
+        mrb->exc = NULL;
+        did_raise = TRUE;
+    }
+    MRB_END_EXC(&c_jmp);
+
+    mrbc_context_free(mrb, cxt);
+    rrcad_require_end();
+
+    if (did_raise)
+        mrb_exc_raise(mrb, raised);
+    return mrb_true_value();
+}
+
 static mrb_value mrb_rrcad_preview(mrb_state* mrb, mrb_value self) {
     (void)self;
     mrb_value shape_val;
@@ -2791,6 +2878,10 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     mrb_define_method(mrb, mrb->kernel_module, "preview", mrb_rrcad_preview, MRB_ARGS_REQ(1));
     /* Output primitive behind the prelude's puts / print / p. */
     mrb_define_method(mrb, mrb->kernel_module, "__rrcad_write", mrb_rrcad_write, MRB_ARGS_REQ(1));
+    /* Multi-file projects.  Disabled unless a base directory was set, and
+     * undefined outright by the MCP security prelude. */
+    mrb_define_method(mrb, mrb->kernel_module, "require_relative", mrb_rrcad_require_relative,
+                      MRB_ARGS_REQ(1));
 
     /* Phase 3: Sub-shape selectors */
     mrb_define_method(mrb, shape_class, "faces", mrb_rrcad_shape_faces, MRB_ARGS_REQ(1));

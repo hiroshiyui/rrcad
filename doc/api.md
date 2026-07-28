@@ -690,6 +690,7 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `solid { ... }` | Block returning its last expression |
 | `assembly("name") { \|a\| ... }` | Named assembly. See `Assembly` below. |
 | `preview(shape)` | Tessellate and push to live browser preview. No-op when not in `--preview` mode. |
+| `require_relative(path)` | Evaluate another script file, resolved against the directory of the *requiring* file. `.rb` suffix optional. Returns `true` when evaluated, `false` when already loaded — so a file loads at most once and require cycles terminate. Unavailable in MCP mode and in the absence of a script directory. Plain `require` does not exist (no load path); it raises and redirects here. |
 | `sketch(diagnostics: false, strict: false) { ... }` | Constraint sketch. Returns the profile Face the block describes, or the block's own return value if it is already a Shape. See [Constraint sketching](#constraint-sketching). |
 | `puts(*args)` / `print(*args)` / `p(*args)` / `pp(*args)` | Print to standard output with Ruby's formatting rules (arrays flattened, `nil` as a blank line, no doubled trailing newline); `p` returns its argument. Defined in the prelude on a native primitive, since the embedded interpreter ships without the IO gems. Removed entirely in MCP mode, where stdout carries the JSON-RPC responses. |
 
@@ -917,7 +918,7 @@ medium,60,40,20
 large,90,60,30
 ```
 
-`--preview` starts an `axum` HTTP server on `http://localhost:3000`, opens the browser, watches the script with `notify`, and calls `preview(shape)` automatically on each re-eval. Ctrl-C to quit.
+`--preview` starts an `axum` HTTP server on `http://localhost:3000`, opens the browser, watches the script with `notify`, and calls `preview(shape)` automatically on each re-eval. Every file pulled in with `require_relative` is watched too, and the watch set is recomputed after each reload. Ctrl-C to quit.
 
 **Preview server routes:**
 

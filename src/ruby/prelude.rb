@@ -4671,6 +4671,17 @@ module Kernel
     builder.to_profile(diagnostics: diagnostics, strict: strict)
   end
 
+  # `require` exists only to redirect. rrcad has no load path and no gems, so
+  # there is nothing for Ruby's `require` to search; every include is relative
+  # to the file doing the including. Without this stub the failure would be a
+  # bare NoMethodError, which says nothing about what to do instead.
+  # `require_relative` itself is defined natively after the prelude runs.
+  def require(_feature)
+    raise NotImplementedError,
+          "rrcad has no load path — use require_relative to include a file " \
+          "relative to the current one"
+  end
+
   # `assembly "name" do |asm| ... end` — creates an Assembly.
   def assembly(name)
     asm = Assembly.new(name)

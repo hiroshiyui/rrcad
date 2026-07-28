@@ -53,6 +53,15 @@ Live preview               (src/preview/)
   • notify watches .rb script → re-eval → GLB → WS "reload"
 ```
 
+**Multi-file scripts:** `require_relative` (`src/ruby/loader.rs` + `native_loader.rs`)
+resolves against the requiring file's directory, evaluates each file once, and
+records the load set so `--preview` can watch the whole project. It is a
+file-read primitive: it refuses to run until a base directory is set (the CLI
+sets one, MCP never does) *and* is undefined by the MCP security prelude. Both
+guards are deliberate — keep both. Because mRuby propagates exceptions with
+`longjmp`, `glue.c` catches them with `MRB_TRY`/`MRB_CATCH` so the include
+stack unwinds with the C stack.
+
 **Memory model:** Each native `Shape` is a heap-allocated `Box<occt::Shape>`. The raw pointer is stored directly in the mRuby `RData void*` slot — no SlotMap. The `dfree` GC callback drops the Box. No cross-language reference counting.
 
 **Bridge invariants:** Keep OCCT bridge and mRuby lifetime changes one-way: Rust owns the `Shape` box, mRuby only holds the opaque pointer, `dfree` remains the only drop path, and live `MrubyVm` / `mrb_state` values must never be shared across threads.

@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Multi-file projects via `require_relative`** (`src/ruby/loader.rs`,
+  `src/ruby/native_loader.rs`, `src/ruby/glue.c`, `src/cli.rs`): a project of
+  any size outgrows one script, and until now the alternative was one large
+  file or copy-pasted constants — which is how a motor mount and an arm end up
+  disagreeing about a bolt pattern. Paths resolve against the directory of the
+  file doing the requiring, not the working directory, so a required file can
+  pull in its own neighbours and the project runs the same from anywhere. The
+  `.rb` suffix is optional. Each file is evaluated at most once, returning
+  `false` on later requires, which also makes a require cycle terminate rather
+  than recurse. Syntax errors name the file they are in. Under `--preview`
+  every required file is watched, not just the entry script, and the watch set
+  is recomputed after each reload. Plain `require` has no load path to search,
+  so it raises and redirects. Unavailable in MCP mode, guarded both by the
+  security prelude and by the loader's own refusal to run without a base
+  directory.
+
 - **Stated part mass and assembly inertia** (Phase 11 Track B follow-on,
   `src/ruby/prelude.rb`): `mass_properties` derived mass from `volume ×
   density`, which is right for parts you model and wrong for parts you buy —
