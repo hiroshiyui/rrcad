@@ -264,6 +264,8 @@ mod native_inspect;
 mod native_io;
 #[path = "native_modeling_ops.rs"]
 mod native_modeling_ops;
+#[path = "native_output.rs"]
+pub mod native_output;
 #[path = "native_profile_ops.rs"]
 mod native_profile_ops;
 #[path = "native_selector_ops.rs"]

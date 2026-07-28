@@ -5,6 +5,35 @@ sketch solver failures, OCCT geometry failures (fillets, booleans), and
 export failures. This chapter shows how to read the error messages and
 the most common fixes.
 
+## Printing values from a script
+
+`puts`, `print`, `p`, and `pp` work as they do in Ruby and are the quickest
+way to see what a script is actually computing:
+
+```ruby
+part = box(40.mm, 20.mm, 10.mm)
+puts "volume: #{part.volume}"
+puts part.bounding_box.inspect
+p part.shape_type            # p prints and returns its argument
+```
+
+`p` returns what it prints, so it can be wrapped around an expression
+without changing the result:
+
+```ruby
+thickness = p(wall * 2)      # prints the value, still assigns it
+```
+
+Output goes to standard output, so `rrcad part.rb > log.txt` captures it.
+
+These are provided by rrcad's own prelude, since the embedded interpreter
+ships without Ruby's IO library. That has one consequence worth knowing:
+**printing is unavailable in MCP mode**, where the server's standard output
+carries the protocol's responses. A script that calls `puts` through an MCP
+tool gets `undefined method 'puts'` rather than corrupting the connection —
+return the value from the script instead, or use `cad_eval`, which reports
+shape properties directly.
+
 ## Reading error messages
 
 OCCT errors raised from boolean, fillet / chamfer, extrude / sweep /

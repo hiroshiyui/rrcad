@@ -43,6 +43,10 @@ The MCP server is hardened for unattended use by an AI agent:
   changed to that directory at startup so `safe_path()` accepts the
   default export paths.
 - 64 KB input size cap; null-byte filtering on incoming code.
+- Printing (`puts`, `print`, `p`, `pp`) is removed, and script output is
+  routed away from standard output regardless — the server's stdout carries
+  the JSON-RPC responses, so stray script output would corrupt them. Return
+  values from the script instead of printing them.
 
 ## Worked example: client request
 

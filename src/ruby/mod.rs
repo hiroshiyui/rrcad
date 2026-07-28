@@ -5,3 +5,7 @@
 pub mod ffi;
 pub mod native;
 pub mod vm;
+
+pub use native::native_output::{
+    OutputSink, current_output_sink, set_output_sink, take_captured_output,
+};

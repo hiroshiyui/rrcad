@@ -8,6 +8,60 @@
 # Native methods shadow the Ruby stubs below.
 
 # ---------------------------------------------------------------------------
+# Script output
+#
+# The vendored mRuby build omits the IO gems, so Kernel#puts and friends do not
+# exist.  They are defined here on top of the native `__rrcad_write` primitive
+# (see src/ruby/native_output.rs), which is the only route from a script to the
+# process output.  Formatting stays in Ruby; the primitive writes exact bytes.
+#
+# In MCP mode these are undefined again by the security prelude, because the
+# worker's stdout carries the JSON-RPC response.
+# ---------------------------------------------------------------------------
+
+# Write each argument with no separator and no trailing newline.
+def print(*args)
+  args.each { |arg| __rrcad_write(arg.to_s) }
+  nil
+end
+
+# Write each argument on its own line, flattening arrays, as Ruby's Kernel#puts
+# does.  A string that already ends in a newline is not given a second one.
+def puts(*args)
+  if args.empty?
+    __rrcad_write("\n")
+    return nil
+  end
+
+  args.each do |arg|
+    if arg.is_a?(Array)
+      arg.empty? ? __rrcad_write("\n") : puts(*arg)
+    else
+      text = arg.nil? ? "" : arg.to_s
+      text += "\n" unless text.size > 0 && text[text.size - 1] == "\n"
+      __rrcad_write(text)
+    end
+  end
+  nil
+end
+
+# Write the inspect form of each argument on its own line.  Returns the single
+# argument (or the array of them), matching Kernel#p, so `p x` stays usable
+# inside an expression.
+def p(*args)
+  args.each { |arg| __rrcad_write("#{arg.inspect}\n") }
+  return nil if args.empty?
+
+  args.size == 1 ? args[0] : args
+end
+
+# rrcad has no pretty-printer; `pp` is provided as an alias of `p` so scripts
+# copied from elsewhere keep working.
+def pp(*args)
+  p(*args)
+end
+
+# ---------------------------------------------------------------------------
 # Units — model lengths are mm, angles are degrees.
 #
 # Numeric helpers now return lightweight typed value objects so CAD scripts can

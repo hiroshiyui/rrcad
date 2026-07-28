@@ -69,6 +69,7 @@ extern void* rrcad_make_cone(double r1, double r2, double h, const char** error_
 extern void* rrcad_make_torus(double r1, double r2, const char** error_out);
 extern void* rrcad_make_wedge(double dx, double dy, double dz, double ltx, const char** error_out);
 extern void rrcad_shape_drop(void* ptr);
+extern void rrcad_script_write(const char* text, const char** error_out);
 extern void* rrcad_import_step(const char* path, const char** error_out);
 extern void* rrcad_import_stl(const char* path, const char** error_out);
 extern void rrcad_shape_export_step(void* ptr, const char* path, const char** error_out);
@@ -1680,6 +1681,28 @@ static mrb_value mrb_rrcad_import_stl(mrb_state* mrb, mrb_value self) {
  * -------------------------------------------------------------------------
  */
 
+/* Write an already-formatted string to the script output sink.
+ *
+ * The prelude's puts / print / p do all formatting in Ruby and pass the exact
+ * bytes here.  mruby strings may contain embedded NULs, so the length is
+ * checked against strlen and a NUL-bearing string is rejected rather than
+ * silently truncated at the C boundary. */
+static mrb_value mrb_rrcad_write(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    mrb_value text;
+    mrb_get_args(mrb, "S", &text);
+
+    const char* bytes = RSTRING_PTR(text);
+    const mrb_int len = RSTRING_LEN(text);
+    if (len > 0 && (mrb_int)strlen(bytes) != len)
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "output text must not contain a NUL byte");
+
+    const char* err = NULL;
+    rrcad_script_write(mrb_string_value_cstr(mrb, &text), &err);
+    raise_if_err(mrb, err);
+    return mrb_nil_value();
+}
+
 static mrb_value mrb_rrcad_preview(mrb_state* mrb, mrb_value self) {
     (void)self;
     mrb_value shape_val;
@@ -2719,6 +2742,8 @@ void rrcad_register_shape_class(mrb_state* mrb) {
 
     /* Phase 3: Live preview */
     mrb_define_method(mrb, mrb->kernel_module, "preview", mrb_rrcad_preview, MRB_ARGS_REQ(1));
+    /* Output primitive behind the prelude's puts / print / p. */
+    mrb_define_method(mrb, mrb->kernel_module, "__rrcad_write", mrb_rrcad_write, MRB_ARGS_REQ(1));
 
     /* Phase 3: Sub-shape selectors */
     mrb_define_method(mrb, shape_class, "faces", mrb_rrcad_shape_faces, MRB_ARGS_REQ(1));

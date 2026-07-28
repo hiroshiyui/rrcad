@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`puts`, `print`, `p`, and `pp` now work in scripts** (`src/ruby/prelude.rb`,
+  `src/ruby/native_output.rs`): the embedded interpreter ships without the IO
+  gems, so scripts previously had no way to print anything — `puts` raised
+  `undefined method`, even though the REPL help advertised it. They are now
+  defined in the prelude on a native output primitive, with Ruby's formatting
+  rules (array flattening, `nil` as a blank line, no doubled trailing
+  newline, `p` returning its argument). Output goes to standard output and is
+  removed entirely in MCP mode, where stdout carries the JSON-RPC responses.
+
+### Fixed
+
+- **MCP printing escape** (`src/mcp/security.rs`): the security prelude
+  undefined `puts`/`print`/`p`/`pp` on `Kernel` only. Methods defined by a
+  top-level `def` land on `Object`, so once the prelude defined them there
+  they stayed reachable inside MCP tool calls. They are now undefined on
+  `Object` too, along with the `__rrcad_write` primitive beneath them, and
+  MCP additionally routes script output off stdout as a second guard.
+
 - **Drawing section views** (Phase 11 Track C, `src/occt/bridge.cpp`,
   `src/ruby/native_io.rs`, `src/ruby/glue.c`): `shape.export("part.svg",
   section: :xz)` cuts the solid with an axis-aligned plane and draws the

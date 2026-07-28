@@ -86,7 +86,12 @@ end
 
 Object.module_eval do
   [
-    :define_method, :define_singleton_method
+    :define_method, :define_singleton_method,
+    # rrcad defines puts/print/p/pp in its own prelude with a top-level `def`,
+    # which lands on Object rather than Kernel — undefining them on Kernel
+    # alone leaves them reachable.  __rrcad_write is the primitive beneath
+    # them and must go too, or it can be called directly.
+    :puts, :print, :p, :pp, :__rrcad_write
   ].each do |m|
     undef_method(m) rescue nil
   end
@@ -210,6 +215,11 @@ pub(crate) fn apply_memory_limit() {
 /// The MCP security prelude is evaluated immediately after startup to strip
 /// dangerous Kernel methods before user code runs.
 pub fn create_mcp_vm() -> Result<MrubyVm, String> {
+    // Defence in depth for the worker's JSON-RPC stream: the security prelude
+    // below undefines puts/print/p, but if that ever regresses, script output
+    // must still not land on stdout and corrupt the response.
+    crate::ruby::set_output_sink(crate::ruby::OutputSink::Stderr);
+
     let mut vm = MrubyVm::new();
     vm.eval(MCP_SECURITY_PRELUDE)?;
     Ok(vm)
@@ -254,5 +264,32 @@ mod tests {
             .eval("system('id')")
             .expect_err("system should be undefined");
         assert!(err.contains("undefined method"));
+    }
+
+    #[test]
+    fn mcp_vm_cannot_print_and_routes_output_off_stdout() {
+        // The worker child's stdout carries the JSON-RPC response, so a script
+        // must not be able to write there.  Two independent guards: the
+        // prelude undefines the printing methods, and the output sink is moved
+        // off stdout in case that ever regresses.
+        let mut vm = create_mcp_vm().expect("VM should initialise");
+        for call in ["puts 'x'", "print 'x'", "p 'x'", "pp 'x'"] {
+            let err = vm
+                .eval(call)
+                .expect_err("printing methods should be undefined in MCP mode");
+            assert!(
+                err.contains("undefined method"),
+                "{call} should be undefined, got: {err}"
+            );
+        }
+
+        assert_ne!(
+            crate::ruby::current_output_sink(),
+            crate::ruby::OutputSink::Stdout,
+            "MCP mode must not leave script output pointed at stdout"
+        );
+
+        // Leave the process default alone for any test that runs afterwards.
+        crate::ruby::set_output_sink(crate::ruby::OutputSink::Stdout);
     }
 }
