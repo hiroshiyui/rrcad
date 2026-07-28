@@ -75,6 +75,11 @@ through the same entry point.
 | `mirror_x(source, target, axis_y = 0)` | Mirror a point across a horizontal axis |
 | `mirror_y(source, target, axis_x = 0)` | Mirror a point across a vertical axis |
 | `tangent(a, b, center, radius, side: nil)` | Constrain line segment `a→b` tangent to a circle. With `side:` of `:above`/`:below` (horizontal lines) or `:left`/`:right` (vertical lines), solves the unknown perpendicular coordinate; otherwise verifies distance |
+| `fillet(point, radius)` | Round a corner of the profile with a tangent arc ([below](#corner-fillets-and-chamfers)) |
+| `chamfer(point, distance)` | Bevel a corner, setting back `distance` along both adjacent segments |
+| `trim(a, b, by:)` / `trim(a, b, to:)` | Shorten a segment, by a distance or up to an intersection ([below](#trimming-and-extending-segments)) |
+| `extend(a, b, by:)` / `extend(a, b, to:)` | Lengthen a segment; same arguments as `trim` |
+| `offset(distance)` | Grow or shrink the finished profile in its own plane ([below](#offsetting-the-profile)) |
 
 **Typical use** — a constrained rectangle with implicit corners:
 
