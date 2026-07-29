@@ -514,7 +514,7 @@ can be resolved later with `faces(:mounting_face)`, `edges(:boss_edges)`, or
 numeric parameters and selector, the operand shape kind via `summarize`, and any
 file path or view name. Covered operations: booleans (`fuse`/`cut`/`common`),
 fillets and chamfers (including selector, variable-radius, and asymmetric
-forms), `import_step`/`import_stl` and all seven export formats,
+forms), `import_step`/`import_stl` and all eight export formats,
 `extrude`/`extrude_ex`/`extrude_draft`/`revolve`,
 `shell`/`offset`/`offset_2d`/`simplify`,
 `sweep`/`sweep_guide`/`sweep_sections`, `loft`, and Part Design `pad`/`pocket`.

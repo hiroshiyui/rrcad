@@ -76,6 +76,7 @@ rrcad/
 │   │   ├── shape_core*.rs   # core Shape construction, diagnostics, named refs, debug exports
 │   │   ├── builder_*.rs     # pattern / aggregate helper ops
 │   │   ├── primitive_*.rs   # primitives, booleans, refs, and shape modifiers
+│   │   ├── threemf.rs       # 3MF OPC ZIP writer (C++ emits the model XML)
 │   │   └── *_ops.rs         # construction, file, drawing, query, and surface helpers
 │   ├── preview/            # Live browser preview (Phase 3)
 │   │   ├── mod.rs          # PreviewState, PREVIEW global, start()
@@ -162,7 +163,7 @@ Ruby DSL (.rb script)
       │
    OCCT 7.9 (system-installed)
    BRep modeling · boolean ops · splines · tessellation
-   STEP / STL / glTF export
+   STEP / STL / 3MF / glTF / GLB / OBJ / SVG / DXF export
 ```
 
 **Memory ownership:** Each native `Shape` is a heap-allocated `Box<occt::Shape>`.

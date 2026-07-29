@@ -2,7 +2,7 @@
 
 You write CAD scripts in plain Ruby `.rb` files. rrcad runs them, produces
 exact BRep solids in OCCT, and either previews them in a browser or exports
-to STEP / STL / glTF / OBJ / SVG / DXF.
+to STEP / STL / 3MF / glTF / GLB / OBJ / SVG / DXF.
 
 This chapter walks you from a fresh checkout to a running example.
 

@@ -3,7 +3,7 @@
 **rrcad** is a Ruby DSL for 3D parametric CAD. You write `.rb` scripts; an
 embedded mRuby VM executes them; Rust bindings call OpenCASCADE (OCCT) for
 exact BRep geometry. The result is industrial-grade solids exportable to
-STEP, STL, glTF, OBJ, SVG, and DXF.
+STEP, STL, 3MF, glTF/GLB, OBJ, SVG, and DXF.
 
 This guide is written for CAD engineers — mechanical designers, fixture
 makers, 3D-printing hobbyists, and anyone who builds parts by *typing* rather
