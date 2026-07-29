@@ -5,7 +5,10 @@ use std::ffi::{c_char, c_void};
 use super::native_helpers::{
     DEFAULT_LINEAR_DEFLECTION, cstr_arg, resolve_path, set_err, shape_result_to_ptr, split_csv_list,
 };
-use crate::occt::{DetailView, GdtDatumSpec, GdtFeatureControlSpec, GdtRenderSpec, GdtStandard, Shape};
+use crate::occt::{
+    DrawingAnchor, DrawingDetail, DrawingFormat, DrawingSpec, GdtDatumSpec,
+    GdtFeatureControlSpec, GdtRenderSpec, GdtStandard, Shape,
+};
 
 // ---------------------------------------------------------------------------
 // Single-file import / export
@@ -208,89 +211,14 @@ pub unsafe extern "C" fn rrcad_shape_gdt_apply(
     });
 }
 
-/// Which 2D drawing format a `DrawingExportOpts` should be rendered to.
-enum DrawingFormat {
-    Svg,
-    Dxf,
-}
-
-/// Owned, parsed arguments shared by the SVG and DXF drawing exports.
-/// Both extern "C" entry points take the same 23 raw parameters; this struct
-/// holds the validated Rust-side equivalents so the parsing lives in one place.
-struct DrawingExportOpts {
-    path: String,
-    view: String,
-    scale: f64,
-    hidden: bool,
-    center_marks: bool,
-    dimensions: bool,
-    title_block: bool,
-    callouts: bool,
-    datum: String,
-    datum_anchor_valid: bool,
-    datum_anchor: [f64; 3],
-    feature_control: String,
-    feature_control_anchor_valid: bool,
-    feature_control_anchor: [f64; 3],
-    tolerance_plus: f64,
-    tolerance_minus: f64,
-    /// Section plane name: empty means "no section", otherwise "xy"/"xz"/"yz".
-    section_plane: String,
-    /// Offset of the section plane along its own normal.
-    section_offset: f64,
-    /// Requested detail view; `None` when the caller passed no `detail:`.
-    detail: Option<DetailView>,
-    /// Ordinate dimensions for the located feature centres.
-    ordinate: bool,
-    /// Parts list, as tab/newline-delimited records; empty when not requested.
-    bom_rows: String,
-    /// Balloon callouts, as `label\tx\ty` records; empty when not requested.
-    balloons: String,
-}
-
-impl DrawingExportOpts {
-    /// Forward the parsed options to the matching `Shape` export method.
-    fn export(&self, shape: &Shape, format: DrawingFormat) -> Result<(), String> {
-        // Both methods share the exact same parameter list; only the target differs.
-        let f = match format {
-            DrawingFormat::Svg => Shape::export_svg_with_anchor,
-            DrawingFormat::Dxf => Shape::export_dxf_with_anchor,
-        };
-        f(
-            shape,
-            &self.path,
-            &self.view,
-            self.scale,
-            self.hidden,
-            self.center_marks,
-            self.dimensions,
-            self.title_block,
-            self.callouts,
-            &self.datum,
-            self.datum_anchor_valid,
-            self.datum_anchor[0],
-            self.datum_anchor[1],
-            self.datum_anchor[2],
-            &self.feature_control,
-            self.feature_control_anchor_valid,
-            self.feature_control_anchor[0],
-            self.feature_control_anchor[1],
-            self.feature_control_anchor[2],
-            self.tolerance_plus,
-            self.tolerance_minus,
-            &self.section_plane,
-            self.section_offset,
-            self.detail.as_ref(),
-            self.ordinate,
-            &self.bom_rows,
-            &self.balloons,
-        )
-    }
-}
-
-/// Parse the raw C parameters common to `rrcad_shape_export_svg` and
-/// `rrcad_shape_export_dxf`. Returns `None` (with `error_out` set) if the
-/// output path fails validation.
+/// Build a `DrawingSpec` from the raw C parameters common to
+/// `rrcad_shape_export_svg` and `rrcad_shape_export_dxf`. Returns `None` (with
+/// `error_out` set) if the output path fails validation.
+///
+/// This is the last place the drawing options are flat. Beyond it they travel
+/// as one struct, shared with the C++ writers; the flat list survives here
+/// only because it is the C ABI, where a struct would mean a hand-matched
+/// layout on both sides — a worse trade than a hand-matched argument list.
 ///
 /// # Safety
 /// All pointer arguments must satisfy the same invariants as the extern "C"
@@ -330,7 +258,7 @@ unsafe fn parse_drawing_export_opts(
     bom_rows: *const c_char,
     balloons: *const c_char,
     error_out: *mut *const c_char,
-) -> Option<DrawingExportOpts> {
+) -> Option<DrawingSpec> {
     let safe = unsafe { resolve_path(path, error_out) }?;
     let path = safe.to_string_lossy().into_owned();
     let view = unsafe { std::ffi::CStr::from_ptr(view) }
@@ -356,16 +284,10 @@ unsafe fn parse_drawing_export_opts(
     };
     // A detail view is either fully requested or absent; the label falls back
     // to "A", matching a drawing that carries only one detail bubble.
-    let detail = (detail_active != 0).then(|| {
-        let label = if detail_label.is_null() {
-            String::new()
-        } else {
-            unsafe { std::ffi::CStr::from_ptr(detail_label) }
-                .to_str()
-                .unwrap_or("")
-                .to_owned()
-        };
-        DetailView {
+    let detail = if detail_active != 0 {
+        let label = unsafe { owned_or_empty(detail_label) };
+        DrawingDetail {
+            active: true,
             x: detail_x,
             y: detail_y,
             radius: detail_radius,
@@ -376,8 +298,10 @@ unsafe fn parse_drawing_export_opts(
                 label
             },
         }
-    });
-    Some(DrawingExportOpts {
+    } else {
+        DrawingDetail::default()
+    };
+    Some(DrawingSpec {
         path,
         view,
         scale,
@@ -387,15 +311,19 @@ unsafe fn parse_drawing_export_opts(
         title_block: title_block != 0,
         callouts: callouts != 0,
         datum,
-        datum_anchor_valid: datum_anchor_valid != 0,
-        datum_anchor: [datum_anchor_x, datum_anchor_y, datum_anchor_z],
+        datum_anchor: DrawingAnchor {
+            valid: datum_anchor_valid != 0,
+            x: datum_anchor_x,
+            y: datum_anchor_y,
+            z: datum_anchor_z,
+        },
         feature_control,
-        feature_control_anchor_valid: feature_control_anchor_valid != 0,
-        feature_control_anchor: [
-            feature_control_anchor_x,
-            feature_control_anchor_y,
-            feature_control_anchor_z,
-        ],
+        feature_control_anchor: DrawingAnchor {
+            valid: feature_control_anchor_valid != 0,
+            x: feature_control_anchor_x,
+            y: feature_control_anchor_y,
+            z: feature_control_anchor_z,
+        },
         tolerance_plus,
         tolerance_minus,
         section_plane,
@@ -460,7 +388,7 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
 ) {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    let Some(opts) = (unsafe {
+    let Some(spec) = (unsafe {
         parse_drawing_export_opts(
             path,
             view,
@@ -498,7 +426,7 @@ pub unsafe extern "C" fn rrcad_shape_export_svg(
     }) else {
         return;
     };
-    if let Err(e) = opts.export(shape, DrawingFormat::Svg) {
+    if let Err(e) = shape.export_drawing(&spec, DrawingFormat::Svg) {
         unsafe { set_err(error_out, &e) };
     }
 }
@@ -541,7 +469,7 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
 ) {
     unsafe { *error_out = std::ptr::null() };
     let shape = unsafe { &*(ptr as *const Shape) };
-    let Some(opts) = (unsafe {
+    let Some(spec) = (unsafe {
         parse_drawing_export_opts(
             path,
             view,
@@ -579,7 +507,7 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
     }) else {
         return;
     };
-    if let Err(e) = opts.export(shape, DrawingFormat::Dxf) {
+    if let Err(e) = shape.export_drawing(&spec, DrawingFormat::Dxf) {
         unsafe { set_err(error_out, &e) };
     }
 }

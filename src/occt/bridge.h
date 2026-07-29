@@ -441,74 +441,21 @@ void export_obj(const OcctShape& shape, rust::Str path, double linear_deflection
 
 // --- Phase 8 Tier 4: 2-D drawing output ---
 //
-// export_svg / export_dxf project the shape's visible edges onto a flat drawing
-// plane using HLRBRep_PolyAlgo (polygon-based hidden-line removal).
+// The whole request travels as a `DrawingSpec`: a cxx shared struct, generated
+// for both languages from the single declaration in `mod.rs`, so the Rust and
+// C++ sides of this boundary cannot drift apart. It replaced some thirty
+// scalar parameters that were repeated across four layers by hand. See
+// bridge.cpp for what the fields mean and how a drawing is composed.
 //
-// `view` selects the projection direction:
-//   "top"   — looking down the −Z axis; drawing plane is XY.
-//   "front" — looking along the −Y axis; drawing plane is XZ.
-//   "side"  — looking along the +X axis; drawing plane is YZ.
-//
-// SVG uses Y-down coordinates (standard for SVG/HTML). `scale` multiplies
-// projected drawing geometry; `1.0` preserves model units. `hidden` includes
-// hidden HLR edges as dashed secondary geometry. `center_marks` adds crosshair
-// marks for cylindrical faces aligned to the view axis. `dimensions` adds
-// overall width/height annotations. `callouts` adds diameter callouts for
-// cylindrical faces aligned to the view axis.
-// DXF uses Y-up coordinates (standard CAD convention). `scale`, `hidden`,
-// `center_marks`, and `callouts` have the same meaning as SVG scale / hidden /
-// centre marks / callouts. `dimensions` adds overall width/height labels.
-//
-// Section views: when `section_plane` is non-empty ("xy", "xz", or "yz") the
-// solid is first cut with that axis-aligned plane at `section_offset` along the
-// plane's normal. Material in front of the plane (on the +normal side) is
-// removed, whatever remains behind it is projected as usual, and the exposed
-// cut faces are drawn with their outline at visible-edge weight plus standard
-// 45-degree hatching (SVG: a `hatch` group; DXF: LINE entities on a `HATCH`
-// layer). An empty `section_plane` disables sectioning entirely.
-// Throws if the shape is not a solid, if the plane misses it, or if the
-// resulting cross-section has zero area.
-//
-// Detail views: when `detail_active` is true, the circular region centred on
-// (`detail_x`, `detail_y`) with radius `detail_radius` — all in *model* units on
-// the view's own drawing plane — is clipped out of the projection, magnified by
-// `detail_scale`, and drawn beside the parent view inside a border circle
-// captioned "DETAIL <label> (<n>:1)". The parent view gains a thin circle
-// marking the region. Only single views support this; asking for a detail on
-// the three-view "sheet" throws, since there is no one parent to magnify.
-// `ordinate` adds ordinate dimensions: a witness line from each axis-aligned
-// cylindrical feature's centre out to a baseline below and to the left of the
-// view, labelled with that feature's distance from the datum corner (the
-// lower-left of the projected geometry). Features sharing a coordinate collapse
-// to a single ordinate. SVG emits an `ordinates` group; DXF an `ORDINATE` layer.
-// `bom_rows` and `balloons` carry per-component data from the assembly layer,
-// which cannot travel as scalars because the row count is not known until the
-// assembly is walked. Both are delimited records: `bom_rows` is tab-separated
-// cells, newline-separated rows, the first row being the header; `balloons` is
-// "label\tx\ty" per line, with x/y in model units on the view's drawing plane.
-// The parts list is drawn below the drawing; balloons ring the geometry (the
-// top view on a three-view sheet) with leaders to each anchor. Empty strings
-// disable them.
-void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double scale, bool hidden,
-                bool center_marks, bool dimensions, bool title_block, bool callouts,
-                rust::Str datum, bool datum_anchor_valid, double datum_anchor_x,
-                double datum_anchor_y, double datum_anchor_z, rust::Str feature_control,
-                bool feature_control_anchor_valid, double feature_control_anchor_x,
-                double feature_control_anchor_y, double feature_control_anchor_z,
-                double tolerance_plus, double tolerance_minus, rust::Str section_plane,
-                double section_offset, bool detail_active, double detail_x, double detail_y,
-                double detail_radius, double detail_scale, rust::Str detail_label, bool ordinate,
-                rust::Str bom_rows, rust::Str balloons);
-void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double scale, bool hidden,
-                bool center_marks, bool dimensions, bool title_block, bool callouts,
-                rust::Str datum, bool datum_anchor_valid, double datum_anchor_x,
-                double datum_anchor_y, double datum_anchor_z, rust::Str feature_control,
-                bool feature_control_anchor_valid, double feature_control_anchor_x,
-                double feature_control_anchor_y, double feature_control_anchor_z,
-                double tolerance_plus, double tolerance_minus, rust::Str section_plane,
-                double section_offset, bool detail_active, double detail_x, double detail_y,
-                double detail_radius, double detail_scale, rust::Str detail_label, bool ordinate,
-                rust::Str bom_rows, rust::Str balloons);
+// These are forward declarations: the generated header that defines the
+// structs includes this one, so this one cannot include it back. Only
+// references are needed here, and bridge.cpp includes the definitions.
+struct DrawingAnchor;
+struct DrawingDetail;
+struct DrawingSpec;
+
+void export_svg(const OcctShape& shape, const DrawingSpec& spec);
+void export_dxf(const OcctShape& shape, const DrawingSpec& spec);
 
 // Flat cut-file export: the closed loops of one planar face at 1:1.
 // Unlike export_svg/export_dxf (HLR drawings of a 3-D shape), this emits only

@@ -2,6 +2,67 @@
 mod ffi {
     #![allow(clippy::too_many_arguments)] // OCCT bridge functions mirror C++ signatures with many scalar parameters
 
+    /// Where a GD&T annotation's leader lands, in drawing coordinates.
+    /// `valid` is false when the caller named no face to anchor to, in which
+    /// case the frame is drawn without a leader.
+    #[derive(Debug, Clone, Default)]
+    struct DrawingAnchor {
+        valid: bool,
+        x: f64,
+        y: f64,
+        z: f64,
+    }
+
+    /// A requested detail view: a magnified close-up of one circular region.
+    ///
+    /// `x` / `y` / `radius` are in model units on the view's own drawing plane
+    /// (top → X/Y, front → X/Z, side → Y/Z), so the region is stated with the
+    /// same numbers the part was modelled with, independent of drawing scale.
+    /// `scale` is the magnification relative to the parent view — the "4:1" of
+    /// a detail bubble. `active` is false when no detail was requested.
+    #[derive(Debug, Clone, Default)]
+    struct DrawingDetail {
+        active: bool,
+        x: f64,
+        y: f64,
+        radius: f64,
+        scale: f64,
+        label: String,
+    }
+
+    /// Everything one drawing export needs.
+    ///
+    /// `bom_rows` and `balloons` carry variable-length data as delimited
+    /// records — tab between fields, newline between rows — because the row
+    /// count is not known until the assembly is walked, and a shared struct
+    /// still has to have a fixed shape.
+    #[derive(Debug, Clone, Default)]
+    struct DrawingSpec {
+        path: String,
+        /// "top", "front", "side", or "sheet" for a three-view layout.
+        view: String,
+        scale: f64,
+        hidden: bool,
+        center_marks: bool,
+        dimensions: bool,
+        title_block: bool,
+        callouts: bool,
+        datum: String,
+        datum_anchor: DrawingAnchor,
+        feature_control: String,
+        feature_control_anchor: DrawingAnchor,
+        tolerance_plus: f64,
+        tolerance_minus: f64,
+        /// "" for no section, otherwise "xy" / "xz" / "yz".
+        section_plane: String,
+        /// Offset of the section plane along its own normal.
+        section_offset: f64,
+        detail: DrawingDetail,
+        ordinate: bool,
+        bom_rows: String,
+        balloons: String,
+    }
+
     unsafe extern "C++" {
         include!("bridge.h");
 
@@ -274,74 +335,14 @@ mod ffi {
         fn export_obj(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
 
         // Phase 8 Tier 4: 2-D drawing output.
-        fn export_svg(
-            shape: &OcctShape,
-            path: &str,
-            view: &str,
-            scale: f64,
-            hidden: bool,
-            center_marks: bool,
-            dimensions: bool,
-            title_block: bool,
-            callouts: bool,
-            datum: &str,
-            datum_anchor_valid: bool,
-            datum_anchor_x: f64,
-            datum_anchor_y: f64,
-            datum_anchor_z: f64,
-            feature_control: &str,
-            feature_control_anchor_valid: bool,
-            feature_control_anchor_x: f64,
-            feature_control_anchor_y: f64,
-            feature_control_anchor_z: f64,
-            tolerance_plus: f64,
-            tolerance_minus: f64,
-            section_plane: &str,
-            section_offset: f64,
-            detail_active: bool,
-            detail_x: f64,
-            detail_y: f64,
-            detail_radius: f64,
-            detail_scale: f64,
-            detail_label: &str,
-            ordinate: bool,
-            bom_rows: &str,
-            balloons: &str,
-        ) -> Result<()>;
-        fn export_dxf(
-            shape: &OcctShape,
-            path: &str,
-            view: &str,
-            scale: f64,
-            hidden: bool,
-            center_marks: bool,
-            dimensions: bool,
-            title_block: bool,
-            callouts: bool,
-            datum: &str,
-            datum_anchor_valid: bool,
-            datum_anchor_x: f64,
-            datum_anchor_y: f64,
-            datum_anchor_z: f64,
-            feature_control: &str,
-            feature_control_anchor_valid: bool,
-            feature_control_anchor_x: f64,
-            feature_control_anchor_y: f64,
-            feature_control_anchor_z: f64,
-            tolerance_plus: f64,
-            tolerance_minus: f64,
-            section_plane: &str,
-            section_offset: f64,
-            detail_active: bool,
-            detail_x: f64,
-            detail_y: f64,
-            detail_radius: f64,
-            detail_scale: f64,
-            detail_label: &str,
-            ordinate: bool,
-            bom_rows: &str,
-            balloons: &str,
-        ) -> Result<()>;
+        //
+        // Both take the whole request as one shared struct. The drawing
+        // options had grown to thirty-odd scalars repeated across four layers
+        // that had to stay in lockstep by hand; a shared struct is generated
+        // for both sides of this boundary from this one declaration, so a
+        // field added here cannot silently mismatch in C++.
+        fn export_svg(shape: &OcctShape, spec: &DrawingSpec) -> Result<()>;
+        fn export_dxf(shape: &OcctShape, spec: &DrawingSpec) -> Result<()>;
 
         // Flat cut-file export: the closed loops of one planar face at 1:1.
         fn export_face_outline(
@@ -398,7 +399,12 @@ mod construction_ops;
 mod construction_splines;
 mod construction_surface_ops;
 mod drawing_ops;
-pub(crate) use self::drawing_ops::DetailView;
+pub(crate) use self::drawing_ops::DrawingFormat;
+// The drawing request itself. cxx generates these shared structs for both
+// languages from the declaration above, so the Rust layers and the C++ writers
+// describe one drawing with one type rather than a parallel parameter list
+// each.
+pub(crate) use self::ffi::{DrawingAnchor, DrawingDetail, DrawingSpec};
 mod feature_node_rebuild;
 mod file_ops;
 mod primitive_boolean_ops;

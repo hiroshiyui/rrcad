@@ -252,6 +252,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `extern "C"` name, signature, or error string changed; roughly 1,750 lines
   of duplicated boilerplate were removed.
 
+- **The drawing export travels as one shared struct** (`src/occt/mod.rs`,
+  `src/occt/bridge.h`, `src/occt/bridge.cpp`, `src/occt/drawing_ops.rs`,
+  `src/ruby/native_io.rs`): the SVG and DXF exporters took a flat list of some
+  thirty scalars that six files had to keep in lockstep by hand, and every new
+  drawing option made it worse. The request is now a `DrawingSpec` cxx shared
+  struct, declared once and generated for both Rust and C++, so the two sides
+  of that boundary cannot drift apart; a new option is one field instead of six
+  edits. `export_svg` and `export_dxf` collapsed into a single
+  `export_drawing(spec, format)`, since the two writers always took an
+  identical request. The C ABI hop between `glue.c` and `native_io.rs` stays
+  flat deliberately — a struct there would mean a hand-matched memory layout in
+  two languages, which fails silently, where a mismatched argument list at
+  least fails at the call site. No behaviour change: every drawing option's
+  output was byte-compared against the previous build across twelve files.
+
 ### Fixed
 
 - **Annotation text can no longer corrupt the drawing it is written into**

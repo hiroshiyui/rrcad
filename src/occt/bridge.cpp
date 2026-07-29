@@ -1,5 +1,10 @@
 #include "bridge.h"
 
+// The cxx-generated header: it defines the DrawingSpec / DrawingDetail /
+// DrawingAnchor shared structs and declares the drawing exporters that take
+// them.  It includes bridge.h itself, so it has to come after it.
+#include "rrcad/src/occt/mod.rs.h"
+
 // --- OCCT: geometry ---
 #include <gp_Ax1.hxx>
 #include <gp_Dir.hxx>
@@ -5255,30 +5260,27 @@ struct DrawingExportSetup {
 // Common front matter for export_svg / export_dxf: copy the rust::Str inputs
 // into owned strings, validate the scale, and project both GD&T anchors into
 // the drawing plane of the requested view.
-static DrawingExportSetup prepare_drawing_export(
-    const char* fn_name, rust::Str path, rust::Str view, double scale, rust::Str datum,
-    rust::Str feature_control, double datum_anchor_x, double datum_anchor_y, double datum_anchor_z,
-    double feature_control_anchor_x, double feature_control_anchor_y,
-    double feature_control_anchor_z, rust::Str section_plane, double section_offset,
-    bool detail_active, double detail_x, double detail_y, double detail_radius, double detail_scale,
-    rust::Str detail_label, rust::Str bom_rows, rust::Str balloons) {
+static DrawingExportSetup prepare_drawing_export(const char* fn_name, const DrawingSpec& spec) {
+    const double scale = spec.scale;
     DrawingExportSetup s;
-    s.path = std::string(path.data(), path.size());
-    s.view = std::string(view.data(), view.size());
-    s.datum = std::string(datum.data(), datum.size());
-    s.feature_control = std::string(feature_control.data(), feature_control.size());
+    s.path = std::string(spec.path.data(), spec.path.size());
+    s.view = std::string(spec.view.data(), spec.view.size());
+    s.datum = std::string(spec.datum.data(), spec.datum.size());
+    s.feature_control = std::string(spec.feature_control.data(), spec.feature_control.size());
     if (!(scale > 0.0) || !std::isfinite(scale))
         throw std::runtime_error(std::string(fn_name) + ": scale must be positive and finite");
     s.sheet_mode = (s.view == "sheet");
     // In sheet mode the anchors are drawn relative to the top view.
     const std::string anchor_view = s.sheet_mode ? "top" : s.view;
-    s.anchor_2d = project_point_2d(anchor_view, datum_anchor_x, datum_anchor_y, datum_anchor_z);
-    const auto feature_anchor_2d = project_point_2d(
-        anchor_view, feature_control_anchor_x, feature_control_anchor_y, feature_control_anchor_z);
+    s.anchor_2d = project_point_2d(anchor_view, spec.datum_anchor.x, spec.datum_anchor.y,
+                                   spec.datum_anchor.z);
+    const auto feature_anchor_2d =
+        project_point_2d(anchor_view, spec.feature_control_anchor.x, spec.feature_control_anchor.y,
+                         spec.feature_control_anchor.z);
     s.feature_anchor_canvas_x = feature_anchor_2d.first * scale;
     s.feature_anchor_canvas_y = feature_anchor_2d.second * scale;
     // An empty section plane name means "no section": draw a plain projection.
-    const std::string section_plane_name(section_plane.data(), section_plane.size());
+    const std::string section_plane_name(spec.section_plane.data(), spec.section_plane.size());
     if (!section_plane_name.empty()) {
         int axis = 0;
         // Validate the plane name up front so a typo fails before any geometry
@@ -5286,13 +5288,13 @@ static DrawingExportSetup prepare_drawing_export(
         (void)section_plane_normal(section_plane_name, axis);
         // NaN means "no offset given" — the cut defaults to the shape's
         // mid-plane, resolved in compute_section_geometry.
-        if (!std::isfinite(section_offset) && !std::isnan(section_offset))
+        if (!std::isfinite(spec.section_offset) && !std::isnan(spec.section_offset))
             throw std::runtime_error(std::string(fn_name) + ": section offset must be finite");
         s.section.active = true;
         s.section.plane = section_plane_name;
-        s.section.offset = section_offset;
+        s.section.offset = spec.section_offset;
     }
-    if (detail_active) {
+    if (spec.detail.active) {
         // A detail view magnifies one region of one projection.  On a three-view
         // sheet there is no single parent to magnify, and silently picking one
         // would put the bubble on a view the caller did not name — so refuse.
@@ -5300,25 +5302,25 @@ static DrawingExportSetup prepare_drawing_export(
             throw std::runtime_error(std::string(fn_name) +
                                      ": detail views need a single view (top/front/side), not the "
                                      "three-view sheet — export the detail separately");
-        if (!std::isfinite(detail_x) || !std::isfinite(detail_y))
+        if (!std::isfinite(spec.detail.x) || !std::isfinite(spec.detail.y))
             throw std::runtime_error(std::string(fn_name) + ": detail centre must be finite");
-        if (!(detail_radius > 0.0) || !std::isfinite(detail_radius))
+        if (!(spec.detail.radius > 0.0) || !std::isfinite(spec.detail.radius))
             throw std::runtime_error(std::string(fn_name) +
                                      ": detail radius must be positive and finite");
-        if (!(detail_scale > 0.0) || !std::isfinite(detail_scale))
+        if (!(spec.detail.scale > 0.0) || !std::isfinite(spec.detail.scale))
             throw std::runtime_error(std::string(fn_name) +
                                      ": detail scale must be positive and finite");
         s.detail.active = true;
-        s.detail.x = detail_x;
-        s.detail.y = detail_y;
-        s.detail.radius = detail_radius;
-        s.detail.scale = detail_scale;
-        s.detail.label = std::string(detail_label.data(), detail_label.size());
+        s.detail.x = spec.detail.x;
+        s.detail.y = spec.detail.y;
+        s.detail.radius = spec.detail.radius;
+        s.detail.scale = spec.detail.scale;
+        s.detail.label = std::string(spec.detail.label.data(), spec.detail.label.size());
         if (s.detail.label.empty())
             s.detail.label = "A";
     }
-    s.bom_rows = parse_bom_rows(std::string(bom_rows.data(), bom_rows.size()));
-    s.balloons = parse_balloons(std::string(balloons.data(), balloons.size()), scale);
+    s.bom_rows = parse_bom_rows(std::string(spec.bom_rows.data(), spec.bom_rows.size()));
+    s.balloons = parse_balloons(std::string(spec.balloons.data(), spec.balloons.size()), scale);
     return s;
 }
 
@@ -5402,22 +5404,24 @@ extend_page_for_annotations(DrawingCanvasBounds page, const std::vector<DrawingB
 // ---------------------------------------------------------------------------
 // SVG export
 // ---------------------------------------------------------------------------
-void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double scale, bool hidden,
-                bool center_marks, bool dimensions, bool title_block, bool callouts,
-                rust::Str datum, bool datum_anchor_valid, double datum_anchor_x,
-                double datum_anchor_y, double datum_anchor_z, rust::Str feature_control,
-                bool feature_control_anchor_valid, double feature_control_anchor_x,
-                double feature_control_anchor_y, double feature_control_anchor_z,
-                double tolerance_plus, double tolerance_minus, rust::Str section_plane,
-                double section_offset, bool detail_active, double detail_x, double detail_y,
-                double detail_radius, double detail_scale, rust::Str detail_label, bool ordinate,
-                rust::Str bom_rows, rust::Str balloons) {
+void export_svg(const OcctShape& shape, const DrawingSpec& spec) {
     try {
-        const DrawingExportSetup setup = prepare_drawing_export(
-            "export_svg", path, view, scale, datum, feature_control, datum_anchor_x, datum_anchor_y,
-            datum_anchor_z, feature_control_anchor_x, feature_control_anchor_y,
-            feature_control_anchor_z, section_plane, section_offset, detail_active, detail_x,
-            detail_y, detail_radius, detail_scale, detail_label, bom_rows, balloons);
+        // The writers below were written against separate parameters and read
+        // better that way; unpack once here rather than sprinkling `spec.`
+        // through several hundred lines of output code.
+        const double scale = spec.scale;
+        const bool hidden = spec.hidden;
+        const bool center_marks = spec.center_marks;
+        const bool dimensions = spec.dimensions;
+        const bool title_block = spec.title_block;
+        const bool callouts = spec.callouts;
+        const bool ordinate = spec.ordinate;
+        const double tolerance_plus = spec.tolerance_plus;
+        const double tolerance_minus = spec.tolerance_minus;
+        const bool datum_anchor_valid = spec.datum_anchor.valid;
+        const bool feature_control_anchor_valid = spec.feature_control_anchor.valid;
+
+        const DrawingExportSetup setup = prepare_drawing_export("export_svg", spec);
         bool has_anchor = datum_anchor_valid;
         double anchor_canvas_x = 0.0;
         double anchor_canvas_y = 0.0;
@@ -5562,22 +5566,24 @@ void export_svg(const OcctShape& shape, rust::Str path, rust::Str view, double s
 // Each polyline segment is written as a LINE entity.  DXF uses Y-up
 // coordinates (standard math / CAD convention) so no Y-flip is applied.
 // ---------------------------------------------------------------------------
-void export_dxf(const OcctShape& shape, rust::Str path, rust::Str view, double scale, bool hidden,
-                bool center_marks, bool dimensions, bool title_block, bool callouts,
-                rust::Str datum, bool datum_anchor_valid, double datum_anchor_x,
-                double datum_anchor_y, double datum_anchor_z, rust::Str feature_control,
-                bool feature_control_anchor_valid, double feature_control_anchor_x,
-                double feature_control_anchor_y, double feature_control_anchor_z,
-                double tolerance_plus, double tolerance_minus, rust::Str section_plane,
-                double section_offset, bool detail_active, double detail_x, double detail_y,
-                double detail_radius, double detail_scale, rust::Str detail_label, bool ordinate,
-                rust::Str bom_rows, rust::Str balloons) {
+void export_dxf(const OcctShape& shape, const DrawingSpec& spec) {
     try {
-        const DrawingExportSetup setup = prepare_drawing_export(
-            "export_dxf", path, view, scale, datum, feature_control, datum_anchor_x, datum_anchor_y,
-            datum_anchor_z, feature_control_anchor_x, feature_control_anchor_y,
-            feature_control_anchor_z, section_plane, section_offset, detail_active, detail_x,
-            detail_y, detail_radius, detail_scale, detail_label, bom_rows, balloons);
+        // The writers below were written against separate parameters and read
+        // better that way; unpack once here rather than sprinkling `spec.`
+        // through several hundred lines of output code.
+        const double scale = spec.scale;
+        const bool hidden = spec.hidden;
+        const bool center_marks = spec.center_marks;
+        const bool dimensions = spec.dimensions;
+        const bool title_block = spec.title_block;
+        const bool callouts = spec.callouts;
+        const bool ordinate = spec.ordinate;
+        const double tolerance_plus = spec.tolerance_plus;
+        const double tolerance_minus = spec.tolerance_minus;
+        const bool datum_anchor_valid = spec.datum_anchor.valid;
+        const bool feature_control_anchor_valid = spec.feature_control_anchor.valid;
+
+        const DrawingExportSetup setup = prepare_drawing_export("export_dxf", spec);
         bool has_anchor = datum_anchor_valid;
         double anchor_canvas_x = 0.0;
         double anchor_canvas_y = 0.0;

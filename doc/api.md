@@ -395,8 +395,9 @@ let section = Shape::make_box(10.0, 10.0, 10.0)?.slice("xy", 5.0)?;
 | `.export_gltf(path: &str, linear_deflection: f64) -> Result<()>` | glTF 2.0 (text JSON + companion `.bin`). `linear_deflection` controls tessellation quality (e.g. `0.1` for 0.1 mm). |
 | `.export_glb(path: &str, linear_deflection: f64) -> Result<()>` | Binary glTF (GLB). Single self-contained file; used by the live preview server. |
 | `.export_obj(path: &str, linear_deflection: f64) -> Result<()>` | Wavefront OBJ text format via `RWObj_CafWriter` (`TKDEOBJ`). Writes a companion `.mtl` material file alongside the `.obj`. |
-| `.export_svg(path: &str, view: &str, scale: f64, hidden: bool, center_marks: bool, dimensions: bool, title_block: bool, callouts: bool, datum: &str, feature_control: &str, tolerance_plus: f64, tolerance_minus: f64) -> Result<()>` | SVG 2-D drawing. `view` is `"top"` (default), `"front"`, `"side"`, or `"sheet"` for a 3-view sheet; `scale` defaults to `1.0` and must be positive; `hidden` includes dashed hidden-line geometry; `center_marks` adds cylinder centre marks; `dimensions` adds overall width/height labels, and on `"sheet"` those labels are axis-aware (`X/Y/Z`). `title_block` adds a simple metadata block; `callouts` adds diameter callouts for cylindrical faces; `datum` accepts either a simple label or a hash with `label:` and `face:` / `selector:` to anchor the datum to a real face; `feature_control` accepts a string or a hash with `text:` / `frame:` / `value:` plus `datums:` for attached references; `Shape#gdt` overrides these keyword arguments when present. `tolerance_plus` and `tolerance_minus` control the label formatting, using `±` when equal and `+.../-...` when asymmetric. Uses `HLRBRep_PolyAlgo` + `HLRBRep_PolyHLRToShape`. Delegates to `.export_svg_with_anchor(...)`, which additionally takes datum / feature-control anchor points and `section_plane: &str` (`""`, `"xy"`, `"xz"`, `"yz"`) plus `section_offset: f64` for section views. |
-| `.export_dxf(path: &str, view: &str, scale: f64, hidden: bool, center_marks: bool, dimensions: bool, title_block: bool, callouts: bool, datum: &str, feature_control: &str, tolerance_plus: f64, tolerance_minus: f64) -> Result<()>` | DXF R12 ASCII drawing. Same `view`, `scale`, `hidden`, `center_marks`, `dimensions`, `title_block`, `callouts`, datum / feature-control frame, and tolerance options as `export_svg`; `view` also accepts `"sheet"` for a 3-view layout. Hidden entities are written on a `HIDDEN` layer, center marks on a `CENTER` layer, callouts on a `CALLOUT` layer, the datum frame on `GDT`, dimensions on a `DIMENSION` layer, and title block entities on `TITLEBLOCK`. In sheet mode, the dimension labels are axis-aware (`X/Y/Z`) and can include `±` or `+.../-...` notation. `Shape#gdt` overrides these keyword arguments when present. Delegates to `.export_dxf_with_anchor(...)`, which adds the anchor points and the same `section_plane` / `section_offset` parameters as the SVG side. |
+| `.export_drawing(spec: &DrawingSpec, format: DrawingFormat) -> Result<()>` | 2-D drawing via `HLRBRep_PolyAlgo` + `HLRBRep_PolyHLRToShape`. The whole request arrives as `DrawingSpec`, a cxx **shared struct** declared once in `src/occt/mod.rs` and generated for both Rust and C++, so the two sides of the boundary cannot drift apart. Fields: `path`, `view` (`"top"` default, `"front"`, `"side"`, `"sheet"`), `scale` (must be positive), `hidden`, `center_marks`, `dimensions`, `title_block`, `callouts`, `datum` + `datum_anchor`, `feature_control` + `feature_control_anchor` (each a `DrawingAnchor { valid, x, y, z }`), `tolerance_plus` / `tolerance_minus`, `section_plane` (`""` / `"xy"` / `"xz"` / `"yz"`) + `section_offset`, `detail` (a `DrawingDetail { active, x, y, radius, scale, label }`), `ordinate`, and `bom_rows` / `balloons` as delimited records. A `gdt()` spec stored on the shape overrides the datum and feature-control fields. `DrawingFormat` selects SVG or DXF; the two writers take an identical request. |
+| `.export_svg(path, view, scale, hidden, center_marks, dimensions, title_block, callouts, datum, feature_control, tolerance_plus, tolerance_minus) -> Result<()>` | Plain-parameter shorthand over `export_drawing` for a drawing with no section, detail, ordinates, or assembly annotations. |
+| `.export_dxf(path, view, scale, hidden, center_marks, dimensions, title_block, callouts, datum, feature_control, tolerance_plus, tolerance_minus) -> Result<()>` | The DXF counterpart of `export_svg`, same arguments, Y-up CAD coordinates. |
 
 ### Phase 8 Tier 5 — Advanced Composition
 
@@ -443,6 +444,25 @@ public:
 ```
 
 ### Bridge Function Signatures
+
+Shared structs — declared once in `src/occt/mod.rs`, generated for both
+languages by cxx. `DrawingSpec` replaced a flat list of some thirty scalars
+that four layers had to keep in lockstep by hand:
+
+```rust
+struct DrawingAnchor { valid: bool, x: f64, y: f64, z: f64 }
+struct DrawingDetail { active: bool, x: f64, y: f64, radius: f64, scale: f64, label: String }
+struct DrawingSpec {
+    path: String, view: String, scale: f64,
+    hidden: bool, center_marks: bool, dimensions: bool, title_block: bool, callouts: bool,
+    datum: String, datum_anchor: DrawingAnchor,
+    feature_control: String, feature_control_anchor: DrawingAnchor,
+    tolerance_plus: f64, tolerance_minus: f64,
+    section_plane: String, section_offset: f64,
+    detail: DrawingDetail,
+    ordinate: bool, bom_rows: String, balloons: String,
+}
+```
 
 ```rust
 // Primitives
@@ -588,6 +608,11 @@ fn export_stl (shape: &OcctShape, path: &str)                         -> Result<
 fn export_gltf(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
 fn export_glb (shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
 fn export_obj (shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
+
+// 2-D drawings. Both take the whole request as a shared struct, so the Rust
+// callers and the C++ writers are generated from one declaration.
+fn export_svg(shape: &OcctShape, spec: &DrawingSpec)                  -> Result<()>;
+fn export_dxf(shape: &OcctShape, spec: &DrawingSpec)                  -> Result<()>;
 
 // Phase 8 Tier 5 — Advanced composition
 type FragmentBuilder;

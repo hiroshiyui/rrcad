@@ -221,18 +221,24 @@ Cross-cutting work that does not belong to a phase.
 
 ### Open
 
-- [ ] The drawing export carries a flat parameter list — 32 scalars through
-      `glue.c` → `native_io.rs` → `drawing_ops.rs` → `bridge.cpp`, four layers
-      that must stay in lockstep. Detail views bundled their six values into a
-      `DetailView` struct on the Rust side; the rest should follow, ideally as
-      a `cxx` shared struct so both sides of the C++ boundary are generated
-      from one declaration. Each new drawing option makes this worse.
 - [ ] Feature-tree browsing and editing in the browser preview. The data model
       (`shape.feature_graph`, `shape.rebuild`) landed in Phase 10; only the UI
       is missing.
 
 ### Done
 
+- [x] The drawing export travels as one `DrawingSpec` shared struct instead of
+      a flat list of some thirty scalars repeated through `glue.c` →
+      `native_io.rs` → `drawing_ops.rs` → `mod.rs` → `bridge.h` → `bridge.cpp`.
+      cxx generates the struct for both languages from a single declaration, so
+      the two sides of the C++ boundary cannot drift apart, and a new drawing
+      option is now one field rather than six edits. The SVG and DXF writers
+      also collapsed into one `export_drawing(spec, format)` — they always took
+      an identical request. The C ABI hop stays flat on purpose: a struct there
+      would mean a hand-matched memory layout in two languages, which fails
+      silently, where a hand-matched argument list at least fails at the call.
+      Verified by byte-comparing every drawing option's output against the
+      previous build — twelve files, identical.
 - [x] Annotation text can no longer corrupt the file it is written into. An
       `&` or `<` in a datum label or feature-control frame produced an SVG no
       parser would open, and a newline in either desynchronised the DXF

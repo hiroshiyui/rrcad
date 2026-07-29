@@ -1,48 +1,118 @@
 use super::{ffi, Shape};
+use crate::occt::{DrawingAnchor, DrawingSpec};
 use crate::occt::shape_core::summarize;
 
-/// A requested detail view: a magnified close-up of one circular region of a
-/// drawing.
+/// Which of the two 2-D drawing formats an export targets.
 ///
-/// `x` / `y` / `radius` are in model units on the view's own drawing plane
-/// (top → X/Y, front → X/Z, side → Y/Z), so a caller states the region with the
-/// same numbers they modelled with, independent of the drawing scale. `scale`
-/// is the magnification relative to the parent view — the "4:1" of a detail
-/// bubble. Bundled into a struct because the six values travel together through
-/// every layer; the surrounding drawing parameters stay flat to match the C++
-/// FFI signature they mirror.
-#[derive(Debug, Clone)]
-pub struct DetailView {
-    pub x: f64,
-    pub y: f64,
-    pub radius: f64,
-    pub scale: f64,
-    pub label: String,
+/// The SVG and DXF writers take an identical request and differ only in what
+/// they emit, so the format is a parameter rather than two parallel entry
+/// points that have to be kept in step.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DrawingFormat {
+    Svg,
+    Dxf,
 }
 
-/// Unpack an optional detail request into the flat values the FFI takes.
-/// The inactive case must still supply well-formed placeholders, so it is
-/// written once here rather than at each call site.
-fn detail_ffi_args(detail: Option<&DetailView>) -> (bool, f64, f64, f64, f64, &str) {
-    match detail {
-        Some(d) => (true, d.x, d.y, d.radius, d.scale, d.label.as_str()),
-        None => (false, 0.0, 0.0, 0.0, 1.0, ""),
+impl DrawingFormat {
+    /// The name this format reports itself by in errors.
+    fn fn_name(self) -> &'static str {
+        match self {
+            DrawingFormat::Svg => "export_svg",
+            DrawingFormat::Dxf => "export_dxf",
+        }
     }
 }
 
 impl Shape {
-    /// Export to SVG using hidden-line removal (HLRBRep_PolyAlgo).
-    /// `view` is `"top"` (default), `"front"`, or `"side"`.
-    /// `scale` multiplies drawing geometry; `1.0` preserves model units.
-    /// `hidden` includes hidden HLR edges as dashed secondary geometry.
-    /// `center_marks` adds crosshair marks for cylindrical faces aligned to the view axis.
-    /// `dimensions` adds overall width and height annotations.
-    /// `callouts` adds diameter callouts for cylindrical faces aligned to the view axis.
-    /// `datum` and `feature_control` add a simple framed GD&T annotation block.
-    /// `section_plane` (`""` / `"xy"` / `"xz"` / `"yz"`) turns the drawing into a
-    /// section view cut at `section_offset` along that plane's normal; the cut
-    /// faces are drawn with 45 degree hatching.
-    #[allow(clippy::too_many_arguments)] // mirrors the flat scalar parameter list of the C++ FFI export
+    /// Write a 2-D drawing of this shape, using hidden-line removal
+    /// (`HLRBRep_PolyAlgo`) to project its visible edges.
+    ///
+    /// The whole request arrives as a [`DrawingSpec`], the shared struct
+    /// generated for both sides of the C++ boundary from one declaration in
+    /// `mod.rs`. It used to be some thirty scalars repeated through four
+    /// layers that had to stay in lockstep by hand.
+    ///
+    /// A `gdt()` spec stored on the shape overrides the datum and
+    /// feature-control fields, so a part carries its own tolerancing wherever
+    /// it is drawn from.
+    pub(crate) fn export_drawing(
+        &self,
+        spec: &DrawingSpec,
+        format: DrawingFormat,
+    ) -> Result<(), String> {
+        let (
+            datum,
+            datum_anchor_valid,
+            datum_anchor,
+            feature_control,
+            feature_control_anchor_valid,
+            feature_control_anchor,
+        ) = self.gdt_export_inputs(
+            &spec.datum,
+            spec.datum_anchor.valid,
+            spec.datum_anchor.x,
+            spec.datum_anchor.y,
+            spec.datum_anchor.z,
+            &spec.feature_control,
+            spec.feature_control_anchor.valid,
+            spec.feature_control_anchor.x,
+            spec.feature_control_anchor.y,
+            spec.feature_control_anchor.z,
+        );
+        let resolved = DrawingSpec {
+            datum: datum.clone(),
+            datum_anchor: DrawingAnchor {
+                valid: datum_anchor_valid,
+                x: datum_anchor[0],
+                y: datum_anchor[1],
+                z: datum_anchor[2],
+            },
+            feature_control: feature_control.clone(),
+            feature_control_anchor: DrawingAnchor {
+                valid: feature_control_anchor_valid,
+                x: feature_control_anchor[0],
+                y: feature_control_anchor[1],
+                z: feature_control_anchor[2],
+            },
+            ..spec.clone()
+        };
+
+        let result = match format {
+            DrawingFormat::Svg => ffi::export_svg(&self.inner, &resolved),
+            DrawingFormat::Dxf => ffi::export_dxf(&self.inner, &resolved),
+        };
+        result.map_err(|e| {
+            let name = format.fn_name();
+            self.fail_with_debug(
+                format!(
+                    "{name}({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, datum: {datum:?}, datum_anchor_valid: {datum_anchor_valid}, feature_control: {feature_control:?}, feature_control_anchor_valid: {feature_control_anchor_valid}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}, section_plane: {section_plane:?}, section_offset: {section_offset}) on {} failed: {e}",
+                    summarize(self),
+                    path = resolved.path,
+                    view = resolved.view,
+                    scale = resolved.scale,
+                    hidden = resolved.hidden,
+                    center_marks = resolved.center_marks,
+                    dimensions = resolved.dimensions,
+                    title_block = resolved.title_block,
+                    callouts = resolved.callouts,
+                    tolerance_plus = resolved.tolerance_plus,
+                    tolerance_minus = resolved.tolerance_minus,
+                    section_plane = resolved.section_plane,
+                    section_offset = resolved.section_offset,
+                ),
+                name,
+                &[("input", self)],
+            )
+        })
+    }
+
+    /// Export to SVG using hidden-line removal.
+    ///
+    /// The plain-parameter form, for the common drawing with no section,
+    /// detail, ordinates, or assembly annotations. `view` is `"top"`
+    /// (default), `"front"`, `"side"`, or `"sheet"`; `scale` multiplies
+    /// drawing geometry, with `1.0` preserving model units.
+    #[allow(clippy::too_many_arguments)] // the public shorthand; the full request is DrawingSpec
     pub fn export_svg(
         &self,
         path: &str,
@@ -58,145 +128,29 @@ impl Shape {
         tolerance_plus: f64,
         tolerance_minus: f64,
     ) -> Result<(), String> {
-        self.export_svg_with_anchor(
-            path,
-            view,
-            scale,
-            hidden,
-            center_marks,
-            dimensions,
-            title_block,
-            callouts,
-            datum,
-            false,
-            0.0,
-            0.0,
-            0.0,
-            feature_control,
-            false,
-            0.0,
-            0.0,
-            0.0,
-            tolerance_plus,
-            tolerance_minus,
-            "",
-            0.0,
-            None,
-            false,
-            "",
-            "",
+        self.export_drawing(
+            &DrawingSpec {
+                path: path.to_owned(),
+                view: view.to_owned(),
+                scale,
+                hidden,
+                center_marks,
+                dimensions,
+                title_block,
+                callouts,
+                datum: datum.to_owned(),
+                feature_control: feature_control.to_owned(),
+                tolerance_plus,
+                tolerance_minus,
+                ..DrawingSpec::default()
+            },
+            DrawingFormat::Svg,
         )
     }
 
-    #[allow(clippy::too_many_arguments)] // mirrors the flat scalar parameter list of the C++ FFI export
-    pub(crate) fn export_svg_with_anchor(
-        &self,
-        path: &str,
-        view: &str,
-        scale: f64,
-        hidden: bool,
-        center_marks: bool,
-        dimensions: bool,
-        title_block: bool,
-        callouts: bool,
-        datum: &str,
-        datum_anchor_valid: bool,
-        datum_anchor_x: f64,
-        datum_anchor_y: f64,
-        datum_anchor_z: f64,
-        feature_control: &str,
-        feature_control_anchor_valid: bool,
-        feature_control_anchor_x: f64,
-        feature_control_anchor_y: f64,
-        feature_control_anchor_z: f64,
-        tolerance_plus: f64,
-        tolerance_minus: f64,
-        section_plane: &str,
-        section_offset: f64,
-        detail: Option<&DetailView>,
-        ordinate: bool,
-        bom_rows: &str,
-        balloons: &str,
-    ) -> Result<(), String> {
-        let (
-            datum,
-            datum_anchor_valid,
-            datum_anchor,
-            feature_control,
-            feature_control_anchor_valid,
-            feature_control_anchor,
-        ) = self.gdt_export_inputs(
-            datum,
-            datum_anchor_valid,
-            datum_anchor_x,
-            datum_anchor_y,
-            datum_anchor_z,
-            feature_control,
-            feature_control_anchor_valid,
-            feature_control_anchor_x,
-            feature_control_anchor_y,
-            feature_control_anchor_z,
-        );
-        let (detail_active, detail_x, detail_y, detail_radius, detail_scale, detail_label) =
-            detail_ffi_args(detail);
-        ffi::export_svg(
-            &self.inner,
-            path,
-            view,
-            scale,
-            hidden,
-            center_marks,
-            dimensions,
-            title_block,
-            callouts,
-            &datum,
-            datum_anchor_valid,
-            datum_anchor[0],
-            datum_anchor[1],
-            datum_anchor[2],
-            &feature_control,
-            feature_control_anchor_valid,
-            feature_control_anchor[0],
-            feature_control_anchor[1],
-            feature_control_anchor[2],
-            tolerance_plus,
-            tolerance_minus,
-            section_plane,
-            section_offset,
-            detail_active,
-            detail_x,
-            detail_y,
-            detail_radius,
-            detail_scale,
-            detail_label,
-            ordinate,
-            bom_rows,
-            balloons,
-        )
-        .map_err(|e| {
-            self.fail_with_debug(
-                format!(
-                    "export_svg({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, datum: {datum:?}, datum_anchor_valid: {datum_anchor_valid}, feature_control: {feature_control:?}, feature_control_anchor_valid: {feature_control_anchor_valid}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}, section_plane: {section_plane:?}, section_offset: {section_offset}) on {} failed: {e}",
-                    summarize(self)
-                ),
-                "export_svg",
-                &[("input", self)],
-            )
-        })
-    }
-
-    /// Export to DXF R12 using hidden-line removal (HLRBRep_PolyAlgo).
-    /// `view` is `"top"` (default), `"front"`, or `"side"`.
-    /// `scale` multiplies drawing geometry; `1.0` preserves model units.
-    /// `hidden` includes hidden HLR edges on a `HIDDEN` layer.
-    /// `center_marks` adds crosshair marks on a `CENTER` layer.
-    /// `dimensions` adds overall width/height labels.
-    /// `callouts` adds diameter callouts on a `CALLOUT` layer.
-    /// `datum` and `feature_control` add a simple framed GD&T annotation block.
-    /// `section_plane` (`""` / `"xy"` / `"xz"` / `"yz"`) turns the drawing into a
-    /// section view cut at `section_offset` along that plane's normal; the cut
-    /// faces are drawn with 45 degree hatching.
-    #[allow(clippy::too_many_arguments)] // mirrors the flat scalar parameter list of the C++ FFI export
+    /// Export to DXF R12 ASCII. The DXF counterpart of [`Shape::export_svg`],
+    /// taking the same arguments and writing Y-up CAD coordinates.
+    #[allow(clippy::too_many_arguments)] // the public shorthand; the full request is DrawingSpec
     pub fn export_dxf(
         &self,
         path: &str,
@@ -212,131 +166,24 @@ impl Shape {
         tolerance_plus: f64,
         tolerance_minus: f64,
     ) -> Result<(), String> {
-        self.export_dxf_with_anchor(
-            path,
-            view,
-            scale,
-            hidden,
-            center_marks,
-            dimensions,
-            title_block,
-            callouts,
-            datum,
-            false,
-            0.0,
-            0.0,
-            0.0,
-            feature_control,
-            false,
-            0.0,
-            0.0,
-            0.0,
-            tolerance_plus,
-            tolerance_minus,
-            "",
-            0.0,
-            None,
-            false,
-            "",
-            "",
+        self.export_drawing(
+            &DrawingSpec {
+                path: path.to_owned(),
+                view: view.to_owned(),
+                scale,
+                hidden,
+                center_marks,
+                dimensions,
+                title_block,
+                callouts,
+                datum: datum.to_owned(),
+                feature_control: feature_control.to_owned(),
+                tolerance_plus,
+                tolerance_minus,
+                ..DrawingSpec::default()
+            },
+            DrawingFormat::Dxf,
         )
-    }
-
-    #[allow(clippy::too_many_arguments)] // mirrors the flat scalar parameter list of the C++ FFI export
-    pub(crate) fn export_dxf_with_anchor(
-        &self,
-        path: &str,
-        view: &str,
-        scale: f64,
-        hidden: bool,
-        center_marks: bool,
-        dimensions: bool,
-        title_block: bool,
-        callouts: bool,
-        datum: &str,
-        datum_anchor_valid: bool,
-        datum_anchor_x: f64,
-        datum_anchor_y: f64,
-        datum_anchor_z: f64,
-        feature_control: &str,
-        feature_control_anchor_valid: bool,
-        feature_control_anchor_x: f64,
-        feature_control_anchor_y: f64,
-        feature_control_anchor_z: f64,
-        tolerance_plus: f64,
-        tolerance_minus: f64,
-        section_plane: &str,
-        section_offset: f64,
-        detail: Option<&DetailView>,
-        ordinate: bool,
-        bom_rows: &str,
-        balloons: &str,
-    ) -> Result<(), String> {
-        let (
-            datum,
-            datum_anchor_valid,
-            datum_anchor,
-            feature_control,
-            feature_control_anchor_valid,
-            feature_control_anchor,
-        ) = self.gdt_export_inputs(
-            datum,
-            datum_anchor_valid,
-            datum_anchor_x,
-            datum_anchor_y,
-            datum_anchor_z,
-            feature_control,
-            feature_control_anchor_valid,
-            feature_control_anchor_x,
-            feature_control_anchor_y,
-            feature_control_anchor_z,
-        );
-        let (detail_active, detail_x, detail_y, detail_radius, detail_scale, detail_label) =
-            detail_ffi_args(detail);
-        ffi::export_dxf(
-            &self.inner,
-            path,
-            view,
-            scale,
-            hidden,
-            center_marks,
-            dimensions,
-            title_block,
-            callouts,
-            &datum,
-            datum_anchor_valid,
-            datum_anchor[0],
-            datum_anchor[1],
-            datum_anchor[2],
-            &feature_control,
-            feature_control_anchor_valid,
-            feature_control_anchor[0],
-            feature_control_anchor[1],
-            feature_control_anchor[2],
-            tolerance_plus,
-            tolerance_minus,
-            section_plane,
-            section_offset,
-            detail_active,
-            detail_x,
-            detail_y,
-            detail_radius,
-            detail_scale,
-            detail_label,
-            ordinate,
-            bom_rows,
-            balloons,
-        )
-        .map_err(|e| {
-            self.fail_with_debug(
-                format!(
-                    "export_dxf({path:?}, view: {view:?}, scale: {scale}, hidden: {hidden}, center_marks: {center_marks}, dimensions: {dimensions}, title_block: {title_block}, callouts: {callouts}, datum: {datum:?}, datum_anchor_valid: {datum_anchor_valid}, feature_control: {feature_control:?}, feature_control_anchor_valid: {feature_control_anchor_valid}, tolerance_plus: {tolerance_plus}, tolerance_minus: {tolerance_minus}, section_plane: {section_plane:?}, section_offset: {section_offset}) on {} failed: {e}",
-                    summarize(self)
-                ),
-                "export_dxf",
-                &[("input", self)],
-            )
-        })
     }
 }
 
@@ -369,6 +216,7 @@ impl Shape {
 
 #[cfg(test)]
 mod tests {
+    use super::{DrawingFormat, DrawingSpec};
     use crate::occt::Shape;
     use crate::test_util::unique_test_dir;
     use std::fs;
@@ -379,9 +227,16 @@ mod tests {
         fs::create_dir_all(&dir).expect("create temp dir");
         let path = dir.join("section.svg");
         let path = path.to_string_lossy().into_owned();
-        shape.export_svg_with_anchor(
-            &path, "top", 1.0, false, false, false, false, false, "", false, 0.0, 0.0, 0.0, "",
-            false, 0.0, 0.0, 0.0, 0.0, 0.0, plane, offset, None, false, "", "",
+        shape.export_drawing(
+            &DrawingSpec {
+                path: path.clone(),
+                view: "top".to_owned(),
+                scale: 1.0,
+                section_plane: plane.to_owned(),
+                section_offset: offset,
+                ..DrawingSpec::default()
+            },
+            DrawingFormat::Svg,
         )?;
         Ok(fs::read_to_string(&path).expect("read section SVG"))
     }
