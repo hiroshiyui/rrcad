@@ -68,6 +68,30 @@ macro_rules! shape_export {
 /// sentinel value. Any sentinel would have to be a number the caller might
 /// legitimately pass, and stealing one means `linear_deflection: 0` silently
 /// falls back to the default instead of being reported as the mistake it is.
+/// Resolve the caller's deflection request, reporting a bad one and returning
+/// `None` so the caller can bail. Shared by the generated mesh exporters and by
+/// `rrcad_shape_export_stl`, which is hand-written because only STL also
+/// carries an encoding flag.
+///
+/// # Safety
+/// `error_out` must be a valid pointer as described in `native.rs`.
+unsafe fn resolve_deflection(
+    has_deflection: i32,
+    linear_deflection: f64,
+    error_out: *mut *const c_char,
+) -> Option<f64> {
+    if has_deflection == 0 {
+        return Some(DEFAULT_LINEAR_DEFLECTION);
+    }
+    match validate_linear_deflection(linear_deflection) {
+        Ok(v) => Some(v),
+        Err(e) => {
+            unsafe { set_err(error_out, &e) };
+            None
+        }
+    }
+}
+
 macro_rules! shape_export_meshed {
     ($name:ident => $method:ident) => {
         #[unsafe(no_mangle)]
@@ -80,16 +104,10 @@ macro_rules! shape_export_meshed {
         ) {
             unsafe { *error_out = std::ptr::null() };
             let shape = unsafe { &*(ptr as *const Shape) };
-            let deflection = if has_deflection == 0 {
-                DEFAULT_LINEAR_DEFLECTION
-            } else {
-                match validate_linear_deflection(linear_deflection) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        unsafe { set_err(error_out, &e) };
-                        return;
-                    }
-                }
+            let Some(deflection) =
+                (unsafe { resolve_deflection(has_deflection, linear_deflection, error_out) })
+            else {
+                return;
             };
             let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
                 return;
@@ -106,11 +124,41 @@ shape_import!(rrcad_import_step => Shape::import_step);
 shape_import!(rrcad_import_stl => Shape::import_stl);
 
 shape_export!(rrcad_shape_export_step => export_step);
-shape_export_meshed!(rrcad_shape_export_stl => export_stl);
 shape_export_meshed!(rrcad_shape_export_gltf => export_gltf);
 shape_export_meshed!(rrcad_shape_export_glb => export_glb);
 shape_export_meshed!(rrcad_shape_export_obj => export_obj);
 shape_export_meshed!(rrcad_shape_export_3mf => export_3mf);
+
+/// STL export. Hand-written rather than generated because STL is the one mesh
+/// format with two encodings; `ascii` is non-zero only when the script asked
+/// for text explicitly. Everything else matches `shape_export_meshed!`.
+///
+/// # Safety
+/// See the module-level contract in `native.rs`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_export_stl(
+    ptr: *mut c_void,
+    path: *const c_char,
+    has_deflection: i32,
+    linear_deflection: f64,
+    ascii: i32,
+    error_out: *mut *const c_char,
+) {
+    unsafe { *error_out = std::ptr::null() };
+    let shape = unsafe { &*(ptr as *const Shape) };
+    let Some(deflection) =
+        (unsafe { resolve_deflection(has_deflection, linear_deflection, error_out) })
+    else {
+        return;
+    };
+    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
+        return;
+    };
+    let safe_str = safe.to_string_lossy();
+    if let Err(e) = shape.export_stl(&safe_str, deflection, ascii != 0) {
+        unsafe { set_err(error_out, &e) };
+    }
+}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rrcad_shape_gdt_apply(

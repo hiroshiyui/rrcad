@@ -58,8 +58,16 @@ impl Shape {
     }
 
     /// Export to STL. `linear_deflection` controls tessellation quality.
-    pub fn export_stl(&self, path: &str, linear_deflection: f64) -> Result<(), String> {
-        ffi::export_stl(&self.inner, path, linear_deflection).map_err(|e| {
+    ///
+    /// `ascii` selects the text encoding; the default everywhere above this
+    /// layer is binary, which is ~5x smaller and read by every slicer.
+    pub fn export_stl(
+        &self,
+        path: &str,
+        linear_deflection: f64,
+        ascii: bool,
+    ) -> Result<(), String> {
+        ffi::export_stl(&self.inner, path, linear_deflection, ascii).map_err(|e| {
             self.fail_with_debug(
                 format!("export_stl({path:?}) on {} failed: {e}", summarize(self)),
                 "export_stl",

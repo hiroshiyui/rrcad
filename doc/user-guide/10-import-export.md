@@ -27,7 +27,7 @@ Supported extensions: `.step`, `.stl`, `.3mf`, `.glb`, `.gltf`, `.obj`, `.svg`,
 |-----------|--------|----------|
 | `.step` | STEP AP203 | CAD interchange, manufacturing, CNC/CAM |
 | `.3mf` | 3MF | 3D printing slicers — carries units, colour, and separate bodies |
-| `.stl` | ASCII STL | 3D printing, when the receiving tool only reads STL |
+| `.stl` | Binary STL | 3D printing, when the receiving tool only reads STL |
 | `.glb` | Binary glTF 2.0 | Web visualization, game engines, live preview |
 | `.gltf` | Text glTF 2.0 | Human-readable; separate `.bin` companion |
 | `.obj` | Wavefront OBJ | 3D modeling software; companion `.mtl` created |
@@ -296,6 +296,29 @@ exporting each part to its own file for now.
 A shape with no surface at all — a bare wire, an empty compound — is refused
 rather than written as an empty package, which a slicer would open and show
 nothing for.
+
+## STL: binary or text
+
+STL comes in two encodings that describe exactly the same triangles. rrcad
+writes **binary** by default, because it is roughly a fifth of the size and
+every slicer reads it:
+
+```ruby
+part.export("part.stl")                 # binary
+part.export("part.stl", ascii: true)    # text
+```
+
+For a filleted cylinder at `linear_deflection: 0.02` — 4,808 triangles — the
+text file is 1,216,440 bytes and the binary one 240,484: the same mesh, 5.1x
+smaller. Binary spends a fixed 50 bytes per triangle; text spends whatever the
+decimal digits happen to need.
+
+Reach for `ascii: true` when you want to read or diff the file, or for a
+toolchain that cannot load binary. Everything else — slicers, mesh repair
+tools, `import_stl` — reads either.
+
+If you have a choice, prefer `.3mf` over both: it carries the units, the
+separate bodies, and the colour that neither STL encoding can express.
 
 ## Mesh tessellation quality
 

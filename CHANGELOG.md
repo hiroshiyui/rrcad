@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Binary STL output** (`src/occt/bridge.cpp`, `src/ruby/glue.c`): `.stl` was
+  the most-used export in the tool and the only one still written as text.
+  `StlAPI_Writer` defaults to ASCII and the writer never said otherwise, so
+  every part came out several times larger than it needed to be for no benefit
+  — a filleted cylinder at `linear_deflection: 0.02` (4,808 triangles) wrote
+  1,216,440 bytes where binary writes 240,484, the same mesh 5.1x smaller.
+  Binary spends a fixed 50 bytes per triangle; text spends whatever the decimal
+  digits need.
+
+  Binary is now the default. `export("part.stl", ascii: true)` opts back into
+  text for diffing or for a toolchain that cannot read binary. This changes the
+  bytes existing scripts produce, though not the geometry: every slicer, mesh
+  tool, and `import_stl` reads either encoding. 7 tests in
+  `tests/export_stl_binary.rs`, which check the format's self-describing
+  structure (header, `uint32` count, 50-byte stride all agreeing), that the
+  header does not begin with `solid` — the sniff a parser uses to tell the
+  encodings apart — and that the binary triangle count matches the count the
+  text encoding spells out for the same shape at the same deflection.
+
 - **Feature tree in the live preview** (`src/preview/mod.rs`,
   `src/preview/viewer.html`): the `metadata.json` sidecar now carries the
   shape's `feature_graph` parsed into nodes, and the viewer renders it as a

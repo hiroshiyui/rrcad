@@ -249,7 +249,7 @@ fn e2e_import_stl_roundtrip() {
     let stl = tmp("rrcad_e2e_import_stl.stl");
     rrcad::occt::Shape::make_sphere(5.0)
         .unwrap()
-        .export_stl(stl.to_str().unwrap(), 0.1)
+        .export_stl(stl.to_str().unwrap(), 0.1, false)
         .unwrap();
     assert!(stl.exists(), "STL file not created");
 
@@ -530,8 +530,21 @@ fn e2e_export_stl() {
     vm.eval(&format!("box(5.0, 5.0, 5.0).export(\"{}\")", out.display()))
         .expect("export .stl failed");
     assert!(out.exists());
-    let content = std::fs::read_to_string(&out).unwrap();
-    assert!(content.contains("solid") || !content.is_empty());
+    // `.stl` writes binary, so this reads bytes rather than text. The old
+    // assertion here read the file as a UTF-8 string and accepted it if it was
+    // merely non-empty; checking the format's own structure — 80-byte header,
+    // little-endian triangle count, 50 bytes per triangle — says the export is
+    // usable instead of only present. Encoding specifics live in
+    // tests/export_stl_binary.rs.
+    let bytes = std::fs::read(&out).unwrap();
+    assert!(bytes.len() > 84, "binary STL is at least a header + count");
+    let declared = u32::from_le_bytes(bytes[80..84].try_into().unwrap());
+    assert!(declared > 0, "a box should mesh to some triangles");
+    assert_eq!(
+        bytes.len(),
+        84 + 50 * declared as usize,
+        "declared triangle count should match the file length"
+    );
 }
 
 #[test]

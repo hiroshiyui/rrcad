@@ -182,8 +182,10 @@ extern void* rrcad_shape_vertices_get(void* ptr, const char* selector, int idx,
 /* The tessellating exporters take the mesh deflection, plus a flag saying
  * whether the script asked for one at all — see shape_export_meshed! in
  * native_io.rs for why "unset" is not folded into the value. */
+/* STL alone carries an encoding flag: `ascii` is non-zero only when the script
+ * asked for text with `ascii: true`. The default is binary. */
 extern void rrcad_shape_export_stl(void* ptr, const char* path, int has_deflection,
-                                   double linear_deflection, const char** error_out);
+                                   double linear_deflection, int ascii, const char** error_out);
 extern void rrcad_shape_export_gltf(void* ptr, const char* path, int has_deflection,
                                     double linear_deflection, const char** error_out);
 extern void rrcad_shape_export_glb(void* ptr, const char* path, int has_deflection,
@@ -682,6 +684,8 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
      * pass, so it travels as its own flag. */
     int has_deflection = 0;
     double linear_deflection = 0.0;
+    /* STL encoding. Binary unless the script asks for text with `ascii: true`. */
+    int stl_ascii = 0;
     if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
         mrb_value vv = opt_fetch(mrb, opts, "view", mrb_nil_value());
         if (mrb_symbol_p(vv)) {
@@ -703,6 +707,7 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
             linear_deflection = value_to_double(mrb, defl_v);
             has_deflection = 1;
         }
+        stl_ascii = opt_flag(mrb, opts, "ascii");
         hidden = opt_flag(mrb, opts, "hidden");
         center_marks = opt_flag(mrb, opts, "center_marks");
         dimensions = opt_flag(mrb, opts, "dimensions");
@@ -873,7 +878,7 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     const char* err = NULL;
 
     if (dot && (strcasecmp(dot, ".stl") == 0)) {
-        rrcad_shape_export_stl(ptr, path, has_deflection, linear_deflection, &err);
+        rrcad_shape_export_stl(ptr, path, has_deflection, linear_deflection, stl_ascii, &err);
     } else if (dot && (strcasecmp(dot, ".glb") == 0)) {
         rrcad_shape_export_glb(ptr, path, has_deflection, linear_deflection, &err);
     } else if (dot && (strcasecmp(dot, ".gltf") == 0)) {

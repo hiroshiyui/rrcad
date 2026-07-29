@@ -229,6 +229,12 @@ Folded in where they fit rather than scheduled:
       corrected from the sign of its volume, since a face that was never cut
       from a solid has no side that is meaningfully "inside".
       Tests: 9 in `tests/thicken.rs`.
+- [x] Binary STL — `.stl` is the most-used export and was the only one still
+      written as text, several times larger for no benefit (1,216,440 bytes vs
+      240,484 for the same 4,808-triangle mesh). Binary is now the default;
+      `export("part.stl", ascii: true)` opts back into text. Changes the bytes
+      existing scripts write, not the geometry.
+      Tests: 7 in `tests/export_stl_binary.rs`.
 
 ---
 

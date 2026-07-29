@@ -3079,13 +3079,17 @@ void ensure_mesh(const TopoDS_Shape& shape, double linear_deflection) {
 
 } // namespace
 
-void export_stl(const OcctShape& shape, rust::Str path, double linear_deflection) {
+void export_stl(const OcctShape& shape, rust::Str path, double linear_deflection, bool ascii) {
     try {
         // StlAPI_Writer requires a pre-meshed shape in OCCT 7.7+.
         ensure_mesh(shape.get(), linear_deflection);
 
         std::string path_str(path.data(), path.size());
         StlAPI_Writer writer;
+        // Binary by default: an ASCII facet costs ~250 bytes against binary's
+        // fixed 50, and every slicer reads binary. ASCII stays available for
+        // diffing and for the rare text-only toolchain.
+        writer.ASCIIMode() = ascii ? Standard_True : Standard_False;
         auto temp_path = atomic_export_temp_path(path_str);
         Standard_Boolean ok = writer.Write(shape.get(), temp_path.string().c_str());
         if (!ok)
