@@ -79,8 +79,9 @@ rrcad/
 │   │   ├── threemf.rs       # 3MF OPC ZIP writer (C++ emits the model XML)
 │   │   └── *_ops.rs         # construction, file, drawing, query, and surface helpers
 │   ├── preview/            # Live browser preview (Phase 3)
-│   │   ├── mod.rs          # PreviewState, PREVIEW global, start()
-│   │   ├── server.rs       # axum routes: /, /model.glb, /ws
+│   │   ├── mod.rs          # PreviewState, PREVIEW global, start(), metadata JSON
+│   │   ├── server.rs       # axum routes: /, /model.glb, /metadata.json,
+│   │   │                   #   /logo.png, /ws
 │   │   └── viewer.html     # Three.js viewer (embedded via include_str!)
 │   └── mcp/                # MCP server over stdio (Phase 9)
 │       └── mod.rs          # cad_eval, cad_export, cad_preview, cad_validate tools;
@@ -270,6 +271,28 @@ single file) share the same three-step pipeline that STEP/STL do not require:
 
 The live preview uses `export_glb` exclusively — a single `.glb` file is
 served at `GET /model.glb` without needing to coordinate a companion `.bin`.
+
+**Preview metadata sidecar.** Geometry the viewer cannot read off a mesh —
+shape type, BRep validity, volume, surface area, bounding box, named
+references, and the feature graph — is written next to the GLB as a `.json`
+file (`metadata_path_for_glb`) and served at `GET /metadata.json`. Each
+property is wrapped as `{"ok": true, "value": …}` or `{"ok": false, "error": …}`
+so one failing query does not cost the panel the rest. `feature_graph` is
+`Shape::feature_graph()`'s tab-separated snapshot parsed into
+`{id, parents, label, entry}` nodes, still in dependency order, which is what
+lets the viewer lay the tree out in a single pass. When adding a property,
+extend `metadata_json_for_shape_with_error` and read it in `loadMetadata` in
+`viewer.html`.
+
+**Testing viewer JavaScript.** `viewer.html` is a single embedded file with no
+build step, so its logic is tested by extracting individual functions from the
+HTML and running them under `node` against a stub DOM (see the feature-tree
+tests in `src/preview/mod.rs`). The tests skip themselves when `node` is not
+installed. Note that `preview::start` must create the Tokio runtime *before*
+binding the port: `bind_listener` ends in `TcpListener::from_std`, which panics
+if there is no reactor to register the socket with. A `#[tokio::test]` cannot
+catch that regression — it supplies the very runtime the real caller lacks — so
+that test is a plain `#[test]`.
 
 ---
 

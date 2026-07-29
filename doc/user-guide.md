@@ -39,7 +39,7 @@ New to rrcad? Read these in order:
 | 9 | [Inspection and CAM Checks](user-guide/09-inspection-and-cam.md) | Validate, history, centroid / inertia, manufacturability checks |
 | 10 | [Import and Export](user-guide/10-import-export.md) | Formats, SVG / DXF views, GLB tessellation, GD&T frames |
 | 11 | [Parametric Design and Batch Export](user-guide/11-parametric-and-batch.md) | `param`, CLI overrides, CSV design tables, multi-file projects |
-| 12 | [Live Preview and REPL](user-guide/12-live-preview-and-repl.md) | Browser viewer, viewer controls, interactive REPL |
+| 12 | [Live Preview and REPL](user-guide/12-live-preview-and-repl.md) | Browser viewer, viewer controls, feature tree, interactive REPL |
 | 13 | [MCP Server](user-guide/13-mcp-server.md) | JSON-RPC tools, resources, security |
 | 14 | [Recipes](user-guide/14-recipes.md) | Cross-cutting common patterns |
 | 15 | [Troubleshooting](user-guide/15-troubleshooting.md) | Reading errors, build failures, geometry diagnosis |

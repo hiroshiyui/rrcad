@@ -1016,6 +1016,7 @@ large,90,60,30
 |-------|-------------|
 | `GET /` | Three.js viewer HTML |
 | `GET /model.glb` | Current tessellated shape (binary glTF) |
+| `GET /metadata.json` | Properties the mesh cannot carry: shape type, BRep validity, volume, surface area, bounding box, named references, and the parsed `feature_graph`. Each query is `{"ok": true, "value": …}` or `{"ok": false, "error": …}`. Drives the Model and Features panels. |
 | `GET /logo.png` | rrcad logo (served from embedded bytes) |
 | `GET /ws` | WebSocket; server pushes `"reload"` when the model updates |
 
