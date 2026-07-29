@@ -254,6 +254,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Annotation text can no longer corrupt the drawing it is written into**
+  (`src/occt/bridge.cpp`): an `&` or `<` in a `datum:` or `feature_control:`
+  string produced an SVG that no parser would open — `feature_control:
+  "<0.05> A|B"` is an ordinary thing to write — and a newline in either
+  desynchronised the DXF group-code stream, since DXF values occupy exactly one
+  line and the following line is read as the next code. Both failed silently at
+  export: the file was written, weighed the right amount, and only broke when
+  something tried to read it. Every SVG text node now goes through `svg_text()`
+  and every DXF text value through `dxf_text()`, which flattens breaks to
+  spaces so the drawing keeps what the user wrote. Generated labels
+  (dimensions, diameter callouts, ordinates, the title block) go through them
+  too: deciding per call site whether a string can reach a user is the
+  judgement that produced the bug. 7 tests in `tests/drawing_text_safety.rs`.
+
 - **Corrected the documented meaning of `Shape#inertia`** (`src/occt/bridge.cpp`,
   `src/ruby/prelude.rb`, `doc/api.md`): the tensor's off-diagonal entries were
   documented as products of inertia (+∫xy dV) when OCCT in fact returns true

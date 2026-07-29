@@ -221,13 +221,7 @@ Cross-cutting work that does not belong to a phase.
 
 ### Open
 
-
-- [ ] SVG text escaping is applied only to the newer annotations (parts-list
-      cells, balloon numbers, detail captions). The older paths — datum labels,
-      feature-control frames, diameter callouts, title-block fields — still emit
-      user text raw, so an `&` or `<` in one produces a document no parser will
-      open. `svg_text()` in `bridge.cpp` is the helper to route them through.
-- [ ] The drawing export carries a flat parameter list — 29 scalars through
+- [ ] The drawing export carries a flat parameter list — 32 scalars through
       `glue.c` → `native_io.rs` → `drawing_ops.rs` → `bridge.cpp`, four layers
       that must stay in lockstep. Detail views bundled their six values into a
       `DetailView` struct on the Rust side; the rest should follow, ideally as
@@ -239,6 +233,15 @@ Cross-cutting work that does not belong to a phase.
 
 ### Done
 
+- [x] Annotation text can no longer corrupt the file it is written into. An
+      `&` or `<` in a datum label or feature-control frame produced an SVG no
+      parser would open, and a newline in either desynchronised the DXF
+      group-code stream, since DXF values are one per line and the next line is
+      read as a code. Both failed silently at export. Every SVG text node now
+      goes through `svg_text()` and every DXF text value through `dxf_text()`,
+      including the ones built from numbers — deciding per call site which
+      strings can reach a user is the judgement that produced the bug.
+      Tests: 7 in `tests/drawing_text_safety.rs`.
 - [x] `Assembly#export` accepts and forwards drawing options. It took only a
       path, so `view:`, `section:`, and every other option was silently dropped
       and an assembly could not produce a sheet. This also unblocks the

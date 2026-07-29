@@ -816,6 +816,13 @@ constraints are present.
 | `path_pattern(shape, path, n)` | Distribute `n` arc-length-evenly-spaced copies of `shape` along `path` (a Wire). Each copy is oriented so its local Z-axis aligns with the path tangent. |
 | `.sweep(path, guide: wire)` | Guided sweep: sweep `self` (profile Wire or Face) along `path` while keeping the profile orientation locked to the auxiliary `guide` Wire. Uses `BRepOffsetAPI_MakePipeShell::SetMode`. |
 
+Annotation text is made safe for the format it lands in. SVG text nodes are
+XML-escaped, so a `feature_control: "<0.05> A|B"` renders as written instead of
+producing a document no parser will open. DXF values occupy exactly one line
+each — the next line is read as a group code — so a newline in any label is
+flattened to a space rather than desynchronising the file.
+
+
 ---
 
 ### Assembly

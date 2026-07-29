@@ -4392,10 +4392,16 @@ static std::string compose_dim_label(const char* axis, double value, const std::
 
 // Escape text destined for an SVG text node.
 //
-// Parts-list cells carry user-chosen component names and materials, so an
-// ampersand or angle bracket would otherwise produce a document no parser will
-// open.  (The older annotation paths — datum labels, feature-control frames,
-// diameter callouts — still emit raw text; see Project Improvements.)
+// Several annotations carry text the user chose — parts-list cells, datum
+// labels, feature-control frames — where an ampersand or an angle bracket
+// would otherwise produce a document no parser will open.  A feature control
+// like "<0.05> A|B" is an ordinary thing to write and used to emit a broken
+// file.
+//
+// Every SVG text node goes through this, including the ones built from
+// numbers.  Escaping a generated string costs nothing, and the alternative is
+// asking each future caller to work out whether its text can reach a user,
+// which is the question this bug came from getting wrong.
 static std::string svg_text(const std::string& raw) {
     std::string out;
     out.reserve(raw.size());
@@ -4414,6 +4420,23 @@ static std::string svg_text(const std::string& raw) {
             out.push_back(c);
         }
     }
+    return out;
+}
+
+// Sanitise text destined for a DXF TEXT value (group code 1).
+//
+// DXF ASCII is line-oriented: every value occupies exactly one line, and the
+// line after it is read as the next group code.  A newline inside a datum
+// label therefore does not wrap the text, it shifts the rest of the file by
+// one line and the reader loses sync — the same failure as an unescaped
+// bracket in SVG, arriving by a different route.  Neither is worth failing the
+// export over, so the break is flattened to a space and the drawing still
+// carries what the user wrote.
+static std::string dxf_text(const std::string& raw) {
+    std::string out;
+    out.reserve(raw.size());
+    for (char c : raw)
+        out.push_back((c == '\n' || c == '\r') ? ' ' : c);
     return out;
 }
 
@@ -4541,7 +4564,8 @@ static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double
         const std::string tol = format_tolerance(tolerance_plus, tolerance_minus);
         f << "    <text x=\"" << d.hx << "\" y=\"" << (d.dim_y - DimensionLayout::label_offset)
           << "\" text-anchor=\"middle\" fill=\"#6b7280\">"
-          << compose_dim_label(axis_labels ? width_axis : nullptr, d.width, tol) << "</text>\n";
+          << svg_text(compose_dim_label(axis_labels ? width_axis : nullptr, d.width, tol))
+          << "</text>\n";
         f << "    <line x1=\"" << d.dim_x << "\" y1=\"" << d.ymin << "\" x2=\"" << d.dim_x
           << "\" y2=\"" << d.ymax << "\"/>\n";
         f << "    <line x1=\"" << (d.dim_x - tick) << "\" y1=\"" << (d.ymin + tick) << "\" x2=\""
@@ -4551,7 +4575,8 @@ static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double
         f << "    <text x=\"" << (d.dim_x - DimensionLayout::label_offset) << "\" y=\"" << d.hy
           << "\" text-anchor=\"middle\" fill=\"#6b7280\" transform=\"rotate(-90 "
           << (d.dim_x - DimensionLayout::label_offset) << " " << d.hy << ")\">"
-          << compose_dim_label(axis_labels ? height_axis : nullptr, d.height, tol) << "</text>\n";
+          << svg_text(compose_dim_label(axis_labels ? height_axis : nullptr, d.height, tol))
+          << "</text>\n";
         f << "  </g>\n";
     }
     if (callouts && !view.callouts.empty()) {
@@ -4571,7 +4596,7 @@ static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double
             f << "    <line x1=\"" << x << "\" y1=\"" << (-y) << "\" x2=\"" << lx << "\" y2=\""
               << (-ly) << "\"/>\n";
             f << "    <text x=\"" << (lx + 2.0) << "\" y=\"" << (-ly) << "\" fill=\"#b45309\">";
-            f << callout.text << "</text>\n";
+            f << svg_text(callout.text) << "</text>\n";
         }
         f << "  </g>\n";
     }
@@ -4602,13 +4627,14 @@ static void write_svg_view(std::ofstream& f, const DrawingViewData& view, double
                 // features sit a few millimetres apart.
                 f << "    <text x=\"" << x << "\" y=\"" << (-(base_y - 1.5))
                   << "\" text-anchor=\"end\" fill=\"#0f766e\" transform=\"rotate(-90 " << x << " "
-                  << (-(base_y - 1.5)) << ")\">" << ord.label << "</text>\n";
+                  << (-(base_y - 1.5)) << ")\">" << svg_text(ord.label) << "</text>\n";
             } else {
                 const double y = ord.at + offset_y;
                 f << "    <line x1=\"" << x0 << "\" y1=\"" << (-y) << "\" x2=\"" << base_x
                   << "\" y2=\"" << (-y) << "\"/>\n";
                 f << "    <text x=\"" << (base_x - 1.5) << "\" y=\"" << (-y)
-                  << "\" text-anchor=\"end\" fill=\"#0f766e\">" << ord.label << "</text>\n";
+                  << "\" text-anchor=\"end\" fill=\"#0f766e\">" << svg_text(ord.label)
+                  << "</text>\n";
             }
         }
         f << "  </g>\n";
@@ -4720,7 +4746,7 @@ static void write_dxf_view(std::ofstream& f, const DrawingViewData& view, double
             f << " 20\n" << y << "\n";
             f << " 30\n0.0\n";
             f << " 40\n" << DimensionLayout::font_size << "\n";
-            f << "  1\n" << text << "\n";
+            f << "  1\n" << dxf_text(text) << "\n";
             if (rotation != 0.0)
                 f << " 50\n" << rotation << "\n";
         };
@@ -4752,7 +4778,7 @@ static void write_dxf_view(std::ofstream& f, const DrawingViewData& view, double
             f << " 20\n" << y << "\n";
             f << " 30\n0.0\n";
             f << " 40\n3.0\n";
-            f << "  1\n" << text << "\n";
+            f << "  1\n" << dxf_text(text) << "\n";
         };
         for (const auto& callout : view.callouts) {
             const double x = callout.x + offset_x;
@@ -4802,7 +4828,7 @@ static void write_dxf_view(std::ofstream& f, const DrawingViewData& view, double
             f << " 11\n" << x << "\n";
             f << " 21\n" << y << "\n";
             f << " 31\n0.0\n";
-            f << "  1\n" << text << "\n";
+            f << "  1\n" << dxf_text(text) << "\n";
         };
         // Datum corner marker.
         write_line(x0 - 2.0, y0, x0 + 2.0, y0);
@@ -4837,7 +4863,7 @@ static void write_dxf_view(std::ofstream& f, const DrawingViewData& view, double
             f << " 20\n" << ty << "\n";
             f << " 30\n0.0\n";
             f << " 40\n3.0\n";
-            f << "  1\n" << text << "\n";
+            f << "  1\n" << dxf_text(text) << "\n";
         };
         if (!view.detail_label.empty())
             write_detail_text(x + view.detail_r * 0.71 + 1.5, y + view.detail_r * 0.71 + 1.5,
@@ -4932,7 +4958,7 @@ static void write_dxf_balloons(std::ofstream& f, const std::vector<DrawingBalloo
         f << " 10\n" << bx << "\n 20\n" << (by - 1.1) << "\n 30\n0.0\n";
         f << " 40\n3.0\n 72\n1\n";
         f << " 11\n" << bx << "\n 21\n" << (by - 1.1) << "\n 31\n0.0\n";
-        f << "  1\n" << b.label << "\n";
+        f << "  1\n" << dxf_text(b.label) << "\n";
     }
 }
 
@@ -4960,7 +4986,7 @@ static void write_dxf_bom_table(std::ofstream& f, const DrawingCanvasBounds& can
             f << "  0\nTEXT\n  8\nBOM\n";
             f << " 10\n" << (x + BOM_CELL_PAD * 0.5) << "\n 20\n" << text_y << "\n 30\n0.0\n";
             f << " 40\n" << BOM_FONT_SIZE << "\n";
-            f << "  1\n" << rows[r][c] << "\n";
+            f << "  1\n" << dxf_text(rows[r][c]) << "\n";
             x += widths[c];
         }
     }
@@ -4988,13 +5014,13 @@ static void write_svg_title_block(std::ofstream& f, const DrawingCanvasBounds& c
     f << "    <text x=\"" << (x0 + 2.0) << "\" y=\"" << (-(top_y - 1.0))
       << "\" fill=\"#111827\">rrcad</text>\n";
     f << "    <text x=\"" << (x0 + 2.0) << "\" y=\"" << (-(mid_y - 1.0)) << "\" fill=\"#111827\">"
-      << (sheet_mode ? sheet_name : view_name) << "</text>\n";
+      << svg_text(sheet_mode ? sheet_name : view_name) << "</text>\n";
     f << "    <text x=\"" << (x0 + 2.0) << "\" y=\"" << (-(y0 + 1.0))
       << "\" fill=\"#111827\">scale 1:" << (1.0 / scale) << "</text>\n";
     std::string tol = format_tolerance(tolerance_plus, tolerance_minus);
     if (!tol.empty()) {
         f << "    <text x=\"" << (x0 + 22.0) << "\" y=\"" << (-(y0 + 1.0))
-          << "\" fill=\"#111827\">tol " << tol << "</text>\n";
+          << "\" fill=\"#111827\">tol " << svg_text(tol) << "</text>\n";
     }
     f << "  </g>\n";
 }
@@ -5025,10 +5051,10 @@ static void write_svg_gdt_frame(std::ofstream& f, const DrawingCanvasBounds& can
     const std::string datum_text = datum.empty() ? feature_control : std::string("DATUM ") + datum;
     const std::string fc_text = feature_control;
     f << "    <text x=\"" << (x0 + 2.0) << "\" y=\"" << (-(y0 + (has_both ? 1.0 : 2.0)))
-      << "\" fill=\"#111827\">" << datum_text << "</text>\n";
+      << "\" fill=\"#111827\">" << svg_text(datum_text) << "</text>\n";
     if (has_both) {
         f << "    <text x=\"" << (x0 + 2.0) << "\" y=\"" << (-(y0 + 7.0)) << "\" fill=\"#111827\">"
-          << fc_text << "</text>\n";
+          << svg_text(fc_text) << "</text>\n";
     }
     if (datum_anchor_valid) {
         const double leader_x = x0 + block_w;
@@ -5078,7 +5104,7 @@ static void write_dxf_title_block(std::ofstream& f, const DrawingCanvasBounds& c
         f << " 20\n" << y << "\n";
         f << " 30\n0.0\n";
         f << " 40\n3.0\n";
-        f << "  1\n" << s << "\n";
+        f << "  1\n" << dxf_text(s) << "\n";
     };
 
     line(x0, y0, x0 + block_w, y0);
@@ -5127,7 +5153,7 @@ static void write_dxf_gdt_frame(std::ofstream& f, const DrawingCanvasBounds& can
         f << " 20\n" << y << "\n";
         f << " 30\n0.0\n";
         f << " 40\n3.0\n";
-        f << "  1\n" << s << "\n";
+        f << "  1\n" << dxf_text(s) << "\n";
     };
 
     line(x0, y0, x0 + block_w, y0);
