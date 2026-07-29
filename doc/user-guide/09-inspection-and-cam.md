@@ -41,6 +41,10 @@ graph = part.feature_graph
 puts graph.map { |node| "#{node[:id]}: #{node[:label]} <- #{node[:parents].inspect}" }
 ```
 
+The same graph is drawn as a **Features** panel in the live preview — see
+[Live Preview and REPL](12-live-preview-and-repl.md#the-feature-tree). The node
+numbers match, so a row in the browser can be tied back to a node here.
+
 ## CAM and 3D-printing checks
 
 Lightweight manufacturability helpers built on top of the inspection

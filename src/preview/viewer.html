@@ -18,9 +18,19 @@
       color: #4b5563; font: 12px/1.5 monospace;
       pointer-events: none;
     }
-    #properties {
+    /* The model properties and the feature tree stack in one left column so
+       the tree follows the properties panel however tall it grows. */
+    #left-panels {
       position: fixed; top: 34px; left: 8px;
       width: min(260px, calc(100vw - 16px));
+      max-height: calc(100vh - 60px);
+      display: flex; flex-direction: column;
+      gap: 6px;
+      z-index: 10;
+      /* Transparent everywhere except the rows that are actually clickable. */
+      pointer-events: none;
+    }
+    #properties {
       padding: 8px 10px;
       background: rgba(10,12,18,0.82);
       border: 1px solid rgba(255,255,255,0.08);
@@ -28,8 +38,6 @@
       color: #9ca3af;
       font: 11px/1.45 monospace;
       backdrop-filter: blur(10px);
-      pointer-events: none;
-      z-index: 10;
     }
     .prop-title {
       color: #e5e7eb;
@@ -55,6 +63,73 @@
     }
     .prop-row.error span:last-child {
       color: #fca5a5;
+    }
+
+    /* ── Feature tree ────────────────────────────────────────────────────── */
+    #features {
+      padding: 8px 10px;
+      background: rgba(10,12,18,0.82);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 6px;
+      color: #9ca3af;
+      font: 11px/1.45 monospace;
+      backdrop-filter: blur(10px);
+      pointer-events: auto;      /* rows are selectable */
+      display: flex; flex-direction: column;
+      min-height: 0;             /* let the list scroll instead of overflowing */
+    }
+    .feat-header {
+      display: flex; align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .feat-caret { transition: transform 0.12s; }
+    #features.collapsed .feat-caret { transform: rotate(-90deg); }
+    #features.collapsed #feature-body { display: none; }
+    .feat-count { margin-left: auto; color: #4b5563; }
+    #feature-body {
+      display: flex; flex-direction: column;
+      min-height: 0;
+    }
+    #feature-list {
+      overflow-y: auto;
+      max-height: 40vh;
+      margin: 0 -4px;
+    }
+    .feat-row {
+      display: flex; align-items: baseline;
+      gap: 6px;
+      padding: 1px 4px;
+      border-radius: 3px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .feat-row:hover { background: rgba(255,255,255,0.06); color: #e5e7eb; }
+    .feat-row.selected {
+      background: rgba(255,255,255,0.10);
+      color: #f9fafb;
+    }
+    .feat-label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    /* The last node is what `preview` actually rendered. */
+    .feat-row.result .feat-label { color: #d1d5db; }
+    .feat-row.selected .feat-label { color: #f9fafb; }
+    .feat-merge {
+      margin-left: auto;
+      padding-left: 6px;
+      color: #6b7280;
+      flex-shrink: 0;
+    }
+    .feat-empty { color: #4b5563; padding: 1px 4px; }
+    #feature-detail {
+      margin-top: 5px;
+      padding-top: 5px;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      color: #9ca3af;
+      overflow-wrap: anywhere;
     }
     #logo {
       position: fixed; bottom: 16px; right: 16px;
@@ -185,6 +260,19 @@
     body.scene-white .prop-title,
     body.scene-white .prop-row span:last-child { color: #111827; }
     body.scene-white .prop-row span:first-child { color: #6b7280; }
+    body.scene-white #features {
+      background: rgba(255,255,255,0.82);
+      border-color: rgba(0,0,0,0.10);
+      color: #4b5563;
+    }
+    body.scene-white .feat-row:hover  { background: rgba(0,0,0,0.06); color: #111827; }
+    body.scene-white .feat-row.selected {
+      background: rgba(0,0,0,0.10);
+      color: #111827;
+    }
+    body.scene-white .feat-row.result .feat-label,
+    body.scene-white .feat-row.selected .feat-label { color: #111827; }
+    body.scene-white #feature-detail { color: #4b5563; border-top-color: rgba(0,0,0,0.10); }
   </style>
   <script type="importmap">
   {
@@ -219,6 +307,7 @@
 <body>
 <div id="vignette"></div>
 <div id="status">rrcad preview — connecting…</div>
+<div id="left-panels">
 <div id="properties" aria-live="polite">
   <div class="prop-title">Model</div>
   <div class="prop-row"><span>Type</span><span id="prop-type">waiting</span></div>
@@ -230,6 +319,17 @@
   <div class="prop-row dim"><span>Hover</span><span id="prop-hover">off</span></div>
   <div class="prop-row dim"><span>Selector</span><span id="prop-selector">off</span></div>
   <div class="prop-row dim"><span>Issue</span><span id="prop-issue">ok</span></div>
+</div>
+<div id="features">
+  <div class="prop-title feat-header" id="feature-toggle"
+       role="button" tabindex="0" aria-expanded="true" aria-controls="feature-body">
+    <span class="feat-caret" aria-hidden="true">▾</span>Features<span class="feat-count" id="feature-count"></span>
+  </div>
+  <div id="feature-body">
+    <div id="feature-list" aria-label="Feature tree"></div>
+    <div id="feature-detail">waiting</div>
+  </div>
+</div>
 </div>
 <img id="logo" src="/logo.png" alt="rrcad">
 
@@ -929,6 +1029,142 @@ function queryValue(query) {
   return query.value;
 }
 
+// ── Feature tree ──────────────────────────────────────────────────────────
+// `metadata.feature_graph` is the shape's recorded modelling history: one node
+// per operation, in dependency order, each naming the nodes it was built from.
+// It is a DAG rather than a list — a boolean draws from two branches — so the
+// panel lays it out the way a CAD tree does: the chain that leads to the
+// previewed shape runs flush left, and the branches feeding into it indent.
+const featurePanel  = document.getElementById('features');
+const featureList   = document.getElementById('feature-list');
+const featureDetail = document.getElementById('feature-detail');
+const featureCount  = document.getElementById('feature-count');
+const featureToggle = document.getElementById('feature-toggle');
+let featureNodes = [];
+
+/// Map every node id to the indent level its row should be drawn at.
+function featureDepths(nodes) {
+  const byId  = new Map(nodes.map(node => [node.id, node]));
+  const depth = new Map();
+
+  // The spine: walk back from the previewed shape through first parents. This
+  // is the "main body" in CAD terms — the operand a boolean was applied *to*.
+  const spine = new Set();
+  let cursor = nodes.length ? nodes[nodes.length - 1] : null;
+  while (cursor && !spine.has(cursor.id)) {
+    spine.add(cursor.id);
+    depth.set(cursor.id, 0);
+    cursor = byId.get(cursor.parents[0]);
+  }
+
+  // Which node first consumes each other node — the branch it feeds into.
+  const consumer = new Map();
+  for (const node of nodes) {
+    for (const parent of node.parents) {
+      if (!consumer.has(parent)) consumer.set(parent, node.id);
+    }
+  }
+
+  // Everything off the spine indents one level past the branch it feeds, and
+  // the rest of that branch stays level with it. Iterating backwards works
+  // because a node always appears after the nodes it consumes.
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const node = nodes[i];
+    if (depth.has(node.id)) continue;
+    const child = consumer.get(node.id);
+    const childDepth = depth.has(child) ? depth.get(child) : 0;
+    depth.set(node.id, spine.has(child) ? childDepth + 1 : childDepth);
+  }
+  return depth;
+}
+
+function featureNodeById(id) {
+  return featureNodes.find(node => node.id === id) || null;
+}
+
+function setFeatureDetail(node) {
+  if (!node) {
+    featureDetail.textContent = featureNodes.length ? 'select a feature' : 'no features recorded';
+    return;
+  }
+  // `entry` is the recorded history line, which carries detail the short label
+  // drops (a boolean's operand kinds, for instance).
+  const from = node.parents.length
+    ? ' — from ' + node.parents.map(id => '#' + id).join(', ')
+    : '';
+  featureDetail.textContent = '#' + node.id + ' ' + node.entry + from;
+}
+
+function selectFeature(id) {
+  for (const row of featureList.children) {
+    row.classList.toggle('selected', row.dataset.id === String(id));
+  }
+  setFeatureDetail(featureNodeById(id));
+}
+
+function renderFeatureTree(nodes) {
+  featureNodes = Array.isArray(nodes)
+    ? nodes.filter(node => node && typeof node.id === 'number' && Array.isArray(node.parents))
+    : [];
+  featureList.textContent = '';
+  featureCount.textContent = featureNodes.length ? String(featureNodes.length) : '';
+
+  if (!featureNodes.length) {
+    const empty = document.createElement('div');
+    empty.className = 'feat-empty';
+    empty.textContent = 'no features recorded';
+    featureList.appendChild(empty);
+    setFeatureDetail(null);
+    return;
+  }
+
+  const depth = featureDepths(featureNodes);
+  const resultId = featureNodes[featureNodes.length - 1].id;
+
+  for (const node of featureNodes) {
+    const row = document.createElement('div');
+    row.className = 'feat-row';
+    row.dataset.id = String(node.id);
+    // Cap the indent: a deeply nested build would otherwise march the labels
+    // off the right edge of a 260px panel.
+    row.style.paddingLeft = (4 + Math.min(depth.get(node.id) || 0, 5) * 10) + 'px';
+    if (node.id === resultId) row.classList.add('result');
+    row.title = node.entry;
+
+    const label = document.createElement('span');
+    label.className = 'feat-label';
+    label.textContent = node.label;
+    row.appendChild(label);
+
+    // A merge node pulls in branches beyond its first parent; name them, so a
+    // row whose indent does not show where it came from still says so.
+    const merged = node.parents.slice(1);
+    if (merged.length) {
+      const marker = document.createElement('span');
+      marker.className = 'feat-merge';
+      marker.textContent = merged.map(id => '+#' + id).join(' ');
+      row.appendChild(marker);
+    }
+
+    row.addEventListener('click', () => selectFeature(node.id));
+    featureList.appendChild(row);
+  }
+
+  // Open on the previewed shape — the row the user is actually looking at.
+  selectFeature(resultId);
+}
+
+featureToggle.addEventListener('click', () => {
+  const collapsed = featurePanel.classList.toggle('collapsed');
+  featureToggle.setAttribute('aria-expanded', String(!collapsed));
+});
+featureToggle.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    featureToggle.click();
+  }
+});
+
 function setPropertiesUnavailable(text) {
   propType.textContent = text;
   propValid.textContent = text;
@@ -942,6 +1178,7 @@ function setPropertiesUnavailable(text) {
     error: null,
     bounding_box: null,
   };
+  renderFeatureTree([]);
 }
 
 async function loadMetadata(loadToken) {
@@ -970,6 +1207,7 @@ async function loadMetadata(loadToken) {
       error: metadata.error || null,
       bounding_box: metadata.bounding_box || null,
     };
+    renderFeatureTree(metadata.feature_graph);
     propIssue.textContent = inspectionData.error ? String(inspectionData.error) : 'ok';
     document.getElementById('prop-issue').parentElement.classList.toggle('error', !!inspectionData.error);
   } catch (err) {

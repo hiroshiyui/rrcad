@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Feature tree in the live preview** (`src/preview/mod.rs`,
+  `src/preview/viewer.html`): the `metadata.json` sidecar now carries the
+  shape's `feature_graph` parsed into nodes, and the viewer renders it as a
+  **Features** panel beneath the model properties. A feature graph is a DAG,
+  not a list — a boolean draws from two branches — so the panel lays it out the
+  way a CAD tree does: the chain leading to the previewed shape flush left, a
+  branch feeding into it indented beneath the step that consumes it, and the
+  merged-in node named on that row. A linear model therefore does not indent at
+  all. Clicking a row shows its full recorded entry, which carries detail the
+  short label drops. The panel is read-only: the script stays the place the
+  model is edited, and saving re-runs it and redraws the tree.
+
 - **`thicken`** (`src/occt/bridge.cpp`, `src/ruby/glue.c`): `surface.thicken(t)`
   gives a Face or Shell a wall and returns a solid — the counterpart to
   `shell`, which takes material out of one. It is how a lofted or filled
@@ -304,6 +316,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   output was byte-compared against the previous build across twelve files.
 
 ### Fixed
+
+- **`--preview` panicked instead of starting** (`src/preview/mod.rs`).
+  `preview::start` bound the port before creating the Tokio runtime, and
+  `bind_listener` ends in `TcpListener::from_std`, which panics outright with
+  "there is no reactor running" when there is no reactor to register the socket
+  with. The whole preview mode was dead on arrival. The runtime is now created
+  first and the bind happens inside its `enter()` guard. It went unnoticed
+  because every test that touched `bind_listener` was a `#[tokio::test]`, which
+  supplies exactly the runtime the real caller lacks — so the regression test is
+  a plain `#[test]` on purpose.
 
 - **`linear_deflection:` on `export` now does something.** It was documented
   for a long time and never read: every mesh came out at a fixed 0.1 mm, so

@@ -61,6 +61,32 @@ shows the error message instead of silently keeping the old state. In
 measurement mode, click two model points to draw a cyan segment and
 report their 3D distance in millimetres.
 
+### The feature tree
+
+Below the model panel, the **Features** panel lists the modelling history the
+shape carries — the same data `shape.feature_graph` returns, laid out the way a
+CAD tree is. The chain that leads to the previewed shape runs flush left; a
+branch feeding into it — the tool body of a boolean, say — is indented beneath
+the step that consumes it, and the merge is marked with the node it pulls in:
+
+```
+box(dx=80, dy=50, dz=30)
+fillet(radius=4)
+  cylinder(radius=3, height=40)
+  translate(dx=20, dy=25, dz=-5)
+cut()                                  +#6
+```
+
+Click a row to see its full recorded entry, which carries detail the short
+label leaves out — a boolean's operand kinds, for instance. Node numbers are the
+stable IDs from `feature_graph`, so a row can be matched to the corresponding
+entry in a script that inspects the graph. Click the **Features** heading to
+collapse the panel.
+
+The panel is read-only: it shows how the shape was built, but the script
+remains the place where the model is edited. Changing a parameter there and
+saving re-runs the whole script, and the tree redraws with it.
+
 For a preview-friendly starter script, see
 [`samples/06_live_preview.rb`](../../samples/06_live_preview.rb).
 

@@ -238,11 +238,28 @@ Cross-cutting work that does not belong to a phase.
 
 ### Open
 
-- [ ] Feature-tree browsing and editing in the browser preview. The data model
-      (`shape.feature_graph`, `shape.rebuild`) landed in Phase 10; only the UI
-      is missing.
+- [ ] Feature-tree *editing* in the browser preview. Browsing landed (see
+      below); editing is a different problem, and a larger one. The script is
+      the source of truth, so changing a parameter in the browser means either
+      rewriting the user's `.rb` file from the viewer — a source-transformation
+      problem, not a UI one — or keeping a live VM behind the preview server,
+      which the current design deliberately avoids (`--preview` re-runs the
+      whole script on save, and the MCP path builds a fresh VM per call). Worth
+      doing only with a decision on which of those two it is.
 
 ### Done
+
+- [x] Feature-tree browsing in the browser preview. `metadata.json` now carries
+      the parsed `feature_graph` — one node per operation, in dependency order —
+      and the viewer renders it as a **Features** panel under the model
+      properties. Because a feature graph is a DAG rather than a list, the panel
+      lays it out the way a CAD tree does: the chain leading to the previewed
+      shape flush left, branches feeding a boolean indented beneath the step
+      that consumes them, and the merged-in node named on the row. Clicking a
+      row shows its full recorded history entry. Read-only by design — see the
+      open editing item above.
+      Tests: 4 in `src/preview/mod.rs`, including the tree layout exercised
+      directly under node.
 
 - [x] The drawing export travels as one `DrawingSpec` shared struct instead of
       a flat list of some thirty scalars repeated through `glue.c` →
