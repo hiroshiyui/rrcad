@@ -3,7 +3,7 @@
 A Ruby DSL-driven 3D CAD language. Rust as the glue layer, mRuby as the
 scripting engine, OCCT as the geometry kernel.
 
-The most recent phase is at the top; the earlier history follows.
+Cross-cutting work comes first; the phase history follows, oldest to newest.
 
 ## Status at a glance
 
@@ -26,228 +26,6 @@ Every phase is complete and nothing is scheduled. Work considered and set aside
 is recorded under [Deferred and not planned](#deferred-and-not-planned), with
 the reasoning, so a decision can be revisited rather than re-litigated. A
 Phase 12 has not been scoped.
-
----
-
-## Phase 11 — Professional CAD Depth
-
-Phases 0–10 brought rrcad to parity with scripted CAD tools. Phase 11 targets
-the gap between "scripted geometry engine" and "tool a mechanical engineer
-would choose": the operations people reach for constantly, and the deliverables
-a design is expected to produce.
-
-**Complete.** All four tracks, plus multi-file projects, flat cut-file export,
-and the opportunistic list that was folded in alongside them.
-
-### Track A — Sketcher depth
-
-The constraint solver and profile types exist, but the sketcher was missing the
-operations used most in practice. **Complete.**
-
-- [x] **Corner `fillet` / `chamfer`** inside `sketch do … end`. Shapes the 2-D
-      profile itself, so a rounded outline survives every later pad, pocket, or
-      boolean — unlike `Shape#fillet`, which rounds an existing solid.
-      Tests: `tests/phase11_sketch_corners.rs` (11).
-- [x] **`trim` / `extend`** on sketch segments. One endpoint slides along the
-      segment while the other anchors it, either `by:` a distance or `to:` the
-      intersection with another segment's infinite line. Edits apply in
-      declaration order after the solver runs, in a side table rather than by
-      mutating solved points, so corner modifiers see the moved corner and
-      `to_profile` stays idempotent.
-      Tests: `tests/phase11_sketch_edits.rs` (21).
-- [x] **Profile `offset`** — `offset` inside `sketch do … end`, plus a fixed
-      `Shape#offset_2d`. The offsetter returns bare wires, so an offset profile
-      used to extrude into an open shell instead of a solid; the wires are now
-      rebuilt into a planar face, largest as the outer boundary and the rest as
-      holes. Profiles with holes offset in both directions, with a per-wire
-      fallback (and sign flip) for the faces OCCT cannot offset whole, such as
-      an all-circular annulus.
-      Tests: `tests/phase11_profile_offset.rs` (18).
-- [x] **Sketch-level linear and polar patterns** — `linear_pattern`,
-      `polar_pattern`, and `grid_pattern` inside `sketch do … end` replicate
-      the finished profile into one compound profile, so a single `extrude`,
-      `pad`, or `pocket` covers every copy. Polar patterns turn about a sketch
-      point, an `[x, y]` pair, or the origin, over a partial or full sweep.
-      The builder methods shadow the top-level functions of the same name and
-      delegate to them when passed a Shape, so both forms work in a block.
-      Tests: `tests/phase11_sketch_patterns.rs` (23).
-- [x] **Spline segments in sketch profiles** — `spline a, b, through: [...]`
-      draws a curved segment through interior points that may themselves be
-      solver-driven sketch points. A new `make_profile_2d` bridge function
-      builds the outline as a chain of edges, so the curve stays an
-      interpolated BSpline instead of being flattened into a polyline. Corner
-      modifiers and `trim` / `extend` measure along straight runs, so they
-      reject spline segments and say why.
-      Tests: `tests/phase11_sketch_splines.rs` (20).
-
-### Track B — Assembly intelligence
-
-The assembly layer had a real constraint solver but produced none of the
-deliverables an assembly exists for. All three build on primitives that already
-existed (`common`, `distance_to`, `mass_estimate`). **Complete.**
-
-Placement methods now take optional `name:` / `component:` / `material:` /
-`density:` metadata, and `Assembly#components` enumerates placed and solved
-parts uniformly, which is what the three reports are built on.
-
-- [x] **Interference / clash detection** between parts, with clearance
-      reporting — `Assembly#interferences(clearance:, ignore_contact:)` and
-      `#clash?`. Pairwise `common` for overlap volume, `distance_to` for gaps.
-      A flush mate is not a clash, and deliberate contact is excluded from the
-      clearance check by default.
-- [x] **Bill-of-materials generation** with quantity rollup — `Assembly#bom`
-      rolls components up by their `component:` key; `#bom_text` renders an
-      aligned table. A built-in material→density table means `material:`
-      alone yields believable masses.
-- [x] **Assembly-level mass, volume, and centre-of-mass rollup** —
-      `Assembly#mass_properties`, mass-weighted, with a per-part breakdown.
-
-Follow-ons, driven by working through a quadcopter as a test case:
-
-- [x] **`mass:` override** for parts you buy rather than model. Deriving mass
-      from `volume × density` is wrong for a bought part whose geometry is
-      only an envelope — and on a real vehicle those parts dominate the total.
-      The envelope stays, so it keeps clash-checking; only the mass comes from
-      the datasheet. A stated mass on a zero-volume shape acts as a point
-      mass, which covers wiring and adhesive without a separate concept.
-- [x] **Inertia rollup** — `mass_properties` returns the tensor about the
-      centre of mass (or any `about:` point) by parallel-axis transfer.
-      Validated against the tensor OCCT computes for the equivalent fused
-      solid, which agrees to machine precision on all six components.
-      Tests: 64 in `tests/phase11_assembly_reports.rs`.
-
-### Multi-file projects
-
-- [x] **`require_relative`** — a project of any size outgrows one file, and
-      copy-pasted constants are how two parts drift out of sync. Resolves
-      against the requiring file's directory (not the CWD), evaluates each
-      file once so cycles terminate, and reports its load set so `--preview`
-      watches the whole project. Disabled in MCP mode by two independent
-      guards. Tests: 18 in `tests/multi_file_projects.rs`, 6 in
-      `src/ruby/loader.rs`, 3 in `src/cli.rs`, 2 in `src/mcp/security.rs`.
-
-### Track C — Drawing completeness
-
-SVG/DXF output already had hidden lines, GD&T frames, title blocks, and 3-view
-sheets. **Complete.**
-
-- [x] **Section views** with standard 45° hatching, built on `BRepAlgoAPI_Cut`
-      against a half-space (the same axis-aligned planes `Shape#slice`
-      supports). Even-odd hatch clipping leaves interior holes unhatched. An
-      omitted `offset:` cuts the part's mid-plane. SVG emits `hatch` and
-      `section` groups; DXF uses a dedicated `HATCH` layer.
-      Tests: 7 co-located in `src/occt/drawing_ops.rs` and `src/ruby/native_io.rs`.
-- [x] **Detail views** — `detail: { at:, radius:, scale:, label: }` clips a
-      circular region out of the projection, magnifies it, and draws it beside
-      the parent view inside a captioned border circle; the parent gains a
-      marker circle. The region is stated in model units on the view's own
-      drawing plane, and edges are cut analytically on the boundary rather than
-      at the nearest tessellation vertex. SVG uses a `detail` group, DXF a
-      `DETAIL` layer. Refused on `view: :sheet`, which has no single parent.
-      Tests: 21 in `tests/detail_views.rs`.
-- [x] **Auto-dimensioning of principal features** — `ordinate: true` measures
-      every axis-aligned cylindrical feature from a datum corner (the lower-left
-      of the projected geometry), the form a plate full of holes actually gets
-      on a drawing. Labels stay in model units regardless of the drawing scale,
-      and features sharing a coordinate collapse to one ordinate. SVG uses an
-      `ordinates` group, DXF an `ORDINATE` layer with right-aligned text.
-      Tests: 16 in `tests/auto_dimensioning.rs`.
-- [x] **BOM tables with balloon callouts** — `asm.export(path, bom: true,
-      balloons: true)` draws the bill of materials below the drawing and marks
-      each component with a numbered balloon whose leader lands on it, keyed to
-      the table's item numbers. Per-component data crosses the FFI as delimited
-      records, since the row count is not known until the assembly is walked.
-      Balloons ring the geometry ordered by each part's bearing, so leaders do
-      not cross; on a three-view sheet they attach to the top view.
-      SVG uses `bom` / `balloons` groups, DXF `BOM` / `BALLOON` layers.
-      Tests: 15 in `tests/bom_sheets.rs`.
-
-### Flat cut-file export
-
-- [x] **`Shape#export_outline`** — `export("x.dxf")` writes an HLR *drawing*
-      of a whole solid, which is the wrong deliverable for a cutter. This
-      writes the closed loops of one planar face at 1:1 and nothing else,
-      with circular edges as true `CIRCLE` / `ARC` entities rather than chord
-      approximations, holes on their own layer, and the outline shifted to the
-      origin for nesting. Taken in the face's own plane, so a tilted face keeps
-      true size. `.dxf` and `.svg`. Track D's flat patterns go out through this
-      same writer.
-      Tests: 16 in `tests/cut_file_export.rs`.
-
-### Track D — Sheet metal
-
-A new modelling domain, largely independent of the other tracks. **Complete.**
-
-Sheet metal is built from a recipe rather than sculpted, because the folded
-solid and the flat blank are two views of one part and the blank cannot be
-recovered from finished geometry — unfolding needs to know where each bend
-line ran and how tight it is. `SheetMetal` records the bends and derives both,
-so the two deliverables cannot drift apart. It lives entirely in
-`prelude.rb`, on the existing primitives and booleans; no new FFI surface.
-
-- [x] **Base and edge flanges** — `sheet_metal(thickness:, radius:) { |s| … }`
-      with `s.base(w, h)` and `s.flange(side, length:, angle:, radius:)` off
-      `:xmin` / `:xmax` / `:ymin` / `:ymax`. Each flange is built in a local
-      frame where it grows along +x from a bend line along +y, then placed on
-      its side, so one construction serves all four. The bend is a tube sector
-      swept about the bend line — true cylindrical faces, no chord
-      approximation — and the wall is laid out flat and folded about that same
-      line, which is what the press brake does and what keeps the two agreeing.
-      `length:` is the leg past the bend, not the overall height. Angles run
-      to 180°, giving a hem.
-- [x] **Bend relief and K-factor bend allowance** — a flange narrowed with
-      `from:` / `to:` gets a notch at each end of the bend line by default,
-      `:rectangular` or `:obround`, cut into the solid and the blank alike.
-      Allowance is `angle × (radius + k × thickness)`, the neutral-axis arc.
-      Two flanges that would meet at a shared corner are refused at the call:
-      they touch at a point with no material joining them, the blank pinches to
-      nothing, and the folded solid looks entirely plausible meanwhile.
-- [x] **Unfolded flat patterns** — `flat` develops the blank as one planar
-      face by tracing the outline counter-clockwise, and `export_flat` writes
-      it through `export_outline`, so obround reliefs keep true arcs.
-      Holes are deliberately not developed: one in a bend zone moves and
-      distorts, and guessing where it lands is worse than not guessing.
-      Tests: 30 in `tests/sheet_metal.rs`, against hand-computed geometry
-      rather than against each other.
-
-### Opportunistic additions
-
-Folded in where they fit rather than scheduled:
-
-- [x] 3MF export — carries units, colour, and multi-body properly, unlike STL.
-      `export("part.3mf")`. OCCT has no 3MF writer, so the work is split: C++
-      tessellates and emits the model XML, Rust wraps it in the OPC ZIP
-      (`src/occt/threemf.rs`). Colour is still one per shape, because that is
-      where `Shape#color` puts it; per-body colour needs the tag on the
-      topology.
-- [x] `pattern_along_path` — already present, under the name `path_pattern`
-      (`path_pattern(shape, path, n)`). Distributes n arc-length-even copies
-      along a Wire or Edge, each oriented to the path tangent. Kept in the list
-      by an oversight rather than left undone.
-- [x] `knit` — already present, under the name `sew`
-      (`sew([face1, face2, …], tolerance:)`). Same oversight.
-- [x] `thicken` — `surface.thicken(t)` gives a Face or Shell a wall and returns
-      a solid, the counterpart to `shell` hollowing one out. Uses
-      `BRepOffsetAPI_MakeThickSolid::MakeThickSolidBySimple`; the *ByJoin*
-      variant `shell` uses is the hollowing algorithm and hands back a
-      zero-volume shape for an open surface. The result's orientation is
-      corrected from the sign of its volume, since a face that was never cut
-      from a solid has no side that is meaningfully "inside".
-      Tests: 9 in `tests/thicken.rs`.
-- [x] Binary STL — `.stl` is the most-used export and was the only one still
-      written as text, several times larger for no benefit (1,216,440 bytes vs
-      240,484 for the same 4,808-triangle mesh). Binary is now the default;
-      `export("part.stl", ascii: true)` opts back into text. Changes the bytes
-      existing scripts write, not the geometry.
-      Tests: 7 in `tests/export_stl_binary.rs`.
-- [x] `volume` on an open surface — a Shell with a free boundary encloses
-      nothing, but OCCT integrates over it anyway and returned a plausible,
-      meaningless number (517.9 for a ruled surface between two loops), which
-      became a fictional mass in `mass_estimate` and the assembly rollup. Now
-      `0.0`, matching Face and Wire. The guard is narrow on purpose: keying off
-      `closed?` would reject spheres, booleans and imported meshes, all of
-      which OCCT reports as not closed while measuring correctly.
-      Tests: 8 in `tests/volume_of_surfaces.rs`.
 
 ---
 
@@ -592,6 +370,226 @@ min_draft_deg:)`, and `hole_axes(part, orientation:, tolerance_deg:)`, over the
 `Shape#normal` and `Shape#cylinder_axis` primitives.
 `unsupported_islands(part, …)` scans slices layer-by-layer for disconnected
 footprints that do not overlap the previous layer.
+
+### Phase 11 — Professional CAD Depth
+
+Phases 0–10 brought rrcad to parity with scripted CAD tools. Phase 11 targets
+the gap between "scripted geometry engine" and "tool a mechanical engineer
+would choose": the operations people reach for constantly, and the deliverables
+a design is expected to produce.
+
+**Complete.** All four tracks, plus multi-file projects, flat cut-file export,
+and the opportunistic list that was folded in alongside them.
+
+#### Track A — Sketcher depth
+
+The constraint solver and profile types exist, but the sketcher was missing the
+operations used most in practice. **Complete.**
+
+- **Corner `fillet` / `chamfer`** inside `sketch do … end`. Shapes the 2-D
+  profile itself, so a rounded outline survives every later pad, pocket, or
+  boolean — unlike `Shape#fillet`, which rounds an existing solid.
+  Tests: `tests/phase11_sketch_corners.rs` (11).
+- **`trim` / `extend`** on sketch segments. One endpoint slides along the
+  segment while the other anchors it, either `by:` a distance or `to:` the
+  intersection with another segment's infinite line. Edits apply in
+  declaration order after the solver runs, in a side table rather than by
+  mutating solved points, so corner modifiers see the moved corner and
+  `to_profile` stays idempotent.
+  Tests: `tests/phase11_sketch_edits.rs` (21).
+- **Profile `offset`** — `offset` inside `sketch do … end`, plus a fixed
+  `Shape#offset_2d`. The offsetter returns bare wires, so an offset profile
+  used to extrude into an open shell instead of a solid; the wires are now
+  rebuilt into a planar face, largest as the outer boundary and the rest as
+  holes. Profiles with holes offset in both directions, with a per-wire
+  fallback (and sign flip) for the faces OCCT cannot offset whole, such as
+  an all-circular annulus.
+  Tests: `tests/phase11_profile_offset.rs` (18).
+- **Sketch-level linear and polar patterns** — `linear_pattern`,
+  `polar_pattern`, and `grid_pattern` inside `sketch do … end` replicate
+  the finished profile into one compound profile, so a single `extrude`,
+  `pad`, or `pocket` covers every copy. Polar patterns turn about a sketch
+  point, an `[x, y]` pair, or the origin, over a partial or full sweep.
+  The builder methods shadow the top-level functions of the same name and
+  delegate to them when passed a Shape, so both forms work in a block.
+  Tests: `tests/phase11_sketch_patterns.rs` (23).
+- **Spline segments in sketch profiles** — `spline a, b, through: [...]`
+  draws a curved segment through interior points that may themselves be
+  solver-driven sketch points. A new `make_profile_2d` bridge function
+  builds the outline as a chain of edges, so the curve stays an
+  interpolated BSpline instead of being flattened into a polyline. Corner
+  modifiers and `trim` / `extend` measure along straight runs, so they
+  reject spline segments and say why.
+  Tests: `tests/phase11_sketch_splines.rs` (20).
+
+#### Track B — Assembly intelligence
+
+The assembly layer had a real constraint solver but produced none of the
+deliverables an assembly exists for. All three build on primitives that already
+existed (`common`, `distance_to`, `mass_estimate`). **Complete.**
+
+Placement methods now take optional `name:` / `component:` / `material:` /
+`density:` metadata, and `Assembly#components` enumerates placed and solved
+parts uniformly, which is what the three reports are built on.
+
+- **Interference / clash detection** between parts, with clearance
+  reporting — `Assembly#interferences(clearance:, ignore_contact:)` and
+  `#clash?`. Pairwise `common` for overlap volume, `distance_to` for gaps.
+  A flush mate is not a clash, and deliberate contact is excluded from the
+  clearance check by default.
+- **Bill-of-materials generation** with quantity rollup — `Assembly#bom`
+  rolls components up by their `component:` key; `#bom_text` renders an
+  aligned table. A built-in material→density table means `material:`
+  alone yields believable masses.
+- **Assembly-level mass, volume, and centre-of-mass rollup** —
+  `Assembly#mass_properties`, mass-weighted, with a per-part breakdown.
+
+Follow-ons, driven by working through a quadcopter as a test case:
+
+- **`mass:` override** for parts you buy rather than model. Deriving mass
+  from `volume × density` is wrong for a bought part whose geometry is
+  only an envelope — and on a real vehicle those parts dominate the total.
+  The envelope stays, so it keeps clash-checking; only the mass comes from
+  the datasheet. A stated mass on a zero-volume shape acts as a point
+  mass, which covers wiring and adhesive without a separate concept.
+- **Inertia rollup** — `mass_properties` returns the tensor about the
+  centre of mass (or any `about:` point) by parallel-axis transfer.
+  Validated against the tensor OCCT computes for the equivalent fused
+  solid, which agrees to machine precision on all six components.
+  Tests: 64 in `tests/phase11_assembly_reports.rs`.
+
+#### Multi-file projects
+
+- **`require_relative`** — a project of any size outgrows one file, and
+  copy-pasted constants are how two parts drift out of sync. Resolves
+  against the requiring file's directory (not the CWD), evaluates each
+  file once so cycles terminate, and reports its load set so `--preview`
+  watches the whole project. Disabled in MCP mode by two independent
+  guards. Tests: 18 in `tests/multi_file_projects.rs`, 6 in
+  `src/ruby/loader.rs`, 3 in `src/cli.rs`, 2 in `src/mcp/security.rs`.
+
+#### Track C — Drawing completeness
+
+SVG/DXF output already had hidden lines, GD&T frames, title blocks, and 3-view
+sheets. **Complete.**
+
+- **Section views** with standard 45° hatching, built on `BRepAlgoAPI_Cut`
+  against a half-space (the same axis-aligned planes `Shape#slice`
+  supports). Even-odd hatch clipping leaves interior holes unhatched. An
+  omitted `offset:` cuts the part's mid-plane. SVG emits `hatch` and
+  `section` groups; DXF uses a dedicated `HATCH` layer.
+  Tests: 7 co-located in `src/occt/drawing_ops.rs` and `src/ruby/native_io.rs`.
+- **Detail views** — `detail: { at:, radius:, scale:, label: }` clips a
+  circular region out of the projection, magnifies it, and draws it beside
+  the parent view inside a captioned border circle; the parent gains a
+  marker circle. The region is stated in model units on the view's own
+  drawing plane, and edges are cut analytically on the boundary rather than
+  at the nearest tessellation vertex. SVG uses a `detail` group, DXF a
+  `DETAIL` layer. Refused on `view: :sheet`, which has no single parent.
+  Tests: 21 in `tests/detail_views.rs`.
+- **Auto-dimensioning of principal features** — `ordinate: true` measures
+  every axis-aligned cylindrical feature from a datum corner (the lower-left
+  of the projected geometry), the form a plate full of holes actually gets
+  on a drawing. Labels stay in model units regardless of the drawing scale,
+  and features sharing a coordinate collapse to one ordinate. SVG uses an
+  `ordinates` group, DXF an `ORDINATE` layer with right-aligned text.
+  Tests: 16 in `tests/auto_dimensioning.rs`.
+- **BOM tables with balloon callouts** — `asm.export(path, bom: true,
+  balloons: true)` draws the bill of materials below the drawing and marks
+  each component with a numbered balloon whose leader lands on it, keyed to
+  the table's item numbers. Per-component data crosses the FFI as delimited
+  records, since the row count is not known until the assembly is walked.
+  Balloons ring the geometry ordered by each part's bearing, so leaders do
+  not cross; on a three-view sheet they attach to the top view.
+  SVG uses `bom` / `balloons` groups, DXF `BOM` / `BALLOON` layers.
+  Tests: 15 in `tests/bom_sheets.rs`.
+
+#### Flat cut-file export
+
+- **`Shape#export_outline`** — `export("x.dxf")` writes an HLR *drawing*
+  of a whole solid, which is the wrong deliverable for a cutter. This
+  writes the closed loops of one planar face at 1:1 and nothing else,
+  with circular edges as true `CIRCLE` / `ARC` entities rather than chord
+  approximations, holes on their own layer, and the outline shifted to the
+  origin for nesting. Taken in the face's own plane, so a tilted face keeps
+  true size. `.dxf` and `.svg`. Track D's flat patterns go out through this
+  same writer.
+  Tests: 16 in `tests/cut_file_export.rs`.
+
+#### Track D — Sheet metal
+
+A new modelling domain, largely independent of the other tracks. **Complete.**
+
+Sheet metal is built from a recipe rather than sculpted, because the folded
+solid and the flat blank are two views of one part and the blank cannot be
+recovered from finished geometry — unfolding needs to know where each bend
+line ran and how tight it is. `SheetMetal` records the bends and derives both,
+so the two deliverables cannot drift apart. It lives entirely in
+`prelude.rb`, on the existing primitives and booleans; no new FFI surface.
+
+- **Base and edge flanges** — `sheet_metal(thickness:, radius:) { |s| … }`
+  with `s.base(w, h)` and `s.flange(side, length:, angle:, radius:)` off
+  `:xmin` / `:xmax` / `:ymin` / `:ymax`. Each flange is built in a local
+  frame where it grows along +x from a bend line along +y, then placed on
+  its side, so one construction serves all four. The bend is a tube sector
+  swept about the bend line — true cylindrical faces, no chord
+  approximation — and the wall is laid out flat and folded about that same
+  line, which is what the press brake does and what keeps the two agreeing.
+  `length:` is the leg past the bend, not the overall height. Angles run
+  to 180°, giving a hem.
+- **Bend relief and K-factor bend allowance** — a flange narrowed with
+  `from:` / `to:` gets a notch at each end of the bend line by default,
+  `:rectangular` or `:obround`, cut into the solid and the blank alike.
+  Allowance is `angle × (radius + k × thickness)`, the neutral-axis arc.
+  Two flanges that would meet at a shared corner are refused at the call:
+  they touch at a point with no material joining them, the blank pinches to
+  nothing, and the folded solid looks entirely plausible meanwhile.
+- **Unfolded flat patterns** — `flat` develops the blank as one planar
+  face by tracing the outline counter-clockwise, and `export_flat` writes
+  it through `export_outline`, so obround reliefs keep true arcs.
+  Holes are deliberately not developed: one in a bend zone moves and
+  distorts, and guessing where it lands is worse than not guessing.
+  Tests: 30 in `tests/sheet_metal.rs`, against hand-computed geometry
+  rather than against each other.
+
+#### Opportunistic additions
+
+Folded in where they fit rather than scheduled:
+
+- 3MF export — carries units, colour, and multi-body properly, unlike STL.
+  `export("part.3mf")`. OCCT has no 3MF writer, so the work is split: C++
+  tessellates and emits the model XML, Rust wraps it in the OPC ZIP
+  (`src/occt/threemf.rs`). Colour is still one per shape, because that is
+  where `Shape#color` puts it; per-body colour needs the tag on the
+  topology.
+- `pattern_along_path` — already present, under the name `path_pattern`
+  (`path_pattern(shape, path, n)`). Distributes n arc-length-even copies
+  along a Wire or Edge, each oriented to the path tangent. Kept in the list
+  by an oversight rather than left undone.
+- `knit` — already present, under the name `sew`
+  (`sew([face1, face2, …], tolerance:)`). Same oversight.
+- `thicken` — `surface.thicken(t)` gives a Face or Shell a wall and returns
+  a solid, the counterpart to `shell` hollowing one out. Uses
+  `BRepOffsetAPI_MakeThickSolid::MakeThickSolidBySimple`; the *ByJoin*
+  variant `shell` uses is the hollowing algorithm and hands back a
+  zero-volume shape for an open surface. The result's orientation is
+  corrected from the sign of its volume, since a face that was never cut
+  from a solid has no side that is meaningfully "inside".
+  Tests: 9 in `tests/thicken.rs`.
+- Binary STL — `.stl` is the most-used export and was the only one still
+  written as text, several times larger for no benefit (1,216,440 bytes vs
+  240,484 for the same 4,808-triangle mesh). Binary is now the default;
+  `export("part.stl", ascii: true)` opts back into text. Changes the bytes
+  existing scripts write, not the geometry.
+  Tests: 7 in `tests/export_stl_binary.rs`.
+- `volume` on an open surface — a Shell with a free boundary encloses
+  nothing, but OCCT integrates over it anyway and returned a plausible,
+  meaningless number (517.9 for a ruled surface between two loops), which
+  became a fictional mass in `mass_estimate` and the assembly rollup. Now
+  `0.0`, matching Face and Wire. The guard is narrow on purpose: keying off
+  `closed?` would reject spheres, booleans and imported meshes, all of
+  which OCCT reports as not closed while measuring correctly.
+  Tests: 8 in `tests/volume_of_surfaces.rs`.
 
 ---
 
