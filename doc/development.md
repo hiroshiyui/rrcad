@@ -464,6 +464,8 @@ is still active.
 | `tests/thicken.rs` | `thicken`: plate volume from a flat face, tube volume from a curved one, which side the wall grows on, that the result is a real solid in a boolean and is not inverted, refusals, feature-graph rebuild |
 | `tests/export_deflection.rs` | `linear_deflection:` on `export`: triangle count against mesh quality, the documented default, re-meshing on re-export, every mesh format honouring it, flat faces unaffected, refusals |
 | `tests/export_3mf.rs` | 3MF export: OPC package skeleton, declared units, one object per solid, colour; the mesh is checked closed (edge parity) and outward-wound (signed volume vs the kernel's own volume), not merely present |
+| `tests/export_stl_binary.rs` | Binary STL: header / `uint32` count / 50-byte stride all agreeing, the header not starting with `solid` (the sniff that picks an encoding), the binary triangle count matching what the ASCII encoding spells out, `ascii: true` opting back into text, round-trip volume |
+| `tests/volume_of_surfaces.rs` | `volume` on non-solids: an open Shell reports `0.0` rather than a plausible integral. Most of the file pins what the guard must *not* catch — sphere, boolean result, imported mesh, sewn solid, flat face — since `closed?` is false for several shapes with correct volumes |
 | `tests/auto_dimensioning.rs` | `ordinate:` dimensions: measured values, datum corner, scale invariance, per-view axes, DXF layer and text alignment |
 | `tests/detail_views.rs` | `detail:` on drawings: marker placement, magnification ratio, clipping on the border, captions, DXF layer, rejections |
 | `tests/export_confinement.rs` | Import/export path confinement: working-directory rule, symlink escapes, missing directories |

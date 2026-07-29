@@ -3,7 +3,7 @@
 A Ruby DSL-driven 3D CAD language. Rust as the glue layer, mRuby as the
 scripting engine, OCCT as the geometry kernel.
 
-Current work is at the top; the completed history follows.
+The most recent phase is at the top; the earlier history follows.
 
 ## Status at a glance
 
@@ -20,19 +20,24 @@ Current work is at the top; the completed history follows.
 | [8](#phase-8--part-design-manufacturing--composition) | Part Design, manufacturing, 2-D drawings | ✓ Complete |
 | [9](#phase-9--model-context-protocol-mcp-server) | MCP server for AI agents | ✓ Complete |
 | [10](#phase-10--usability-and-robust-parametric-cad) | Sketch constraints, feature tree, GD&T | ✓ Complete |
-| [11](#phase-11--professional-cad-depth-current) | Professional CAD depth | ◐ In progress |
+| [11](#phase-11--professional-cad-depth) | Professional CAD depth | ✓ Complete |
+
+Every phase is complete and nothing is scheduled. Work considered and set aside
+is recorded under [Deferred and not planned](#deferred-and-not-planned), with
+the reasoning, so a decision can be revisited rather than re-litigated. A
+Phase 12 has not been scoped.
 
 ---
 
-## Phase 11 — Professional CAD Depth (current)
+## Phase 11 — Professional CAD Depth
 
 Phases 0–10 brought rrcad to parity with scripted CAD tools. Phase 11 targets
 the gap between "scripted geometry engine" and "tool a mechanical engineer
 would choose": the operations people reach for constantly, and the deliverables
 a design is expected to produce.
 
-All four tracks are complete. What remains under this phase is the
-opportunistic list below, which is not scheduled.
+**Complete.** All four tracks, plus multi-file projects, flat cut-file export,
+and the opportunistic list that was folded in alongside them.
 
 ### Track A — Sketcher depth
 
@@ -109,7 +114,7 @@ Follow-ons, driven by working through a quadcopter as a test case:
       centre of mass (or any `about:` point) by parallel-axis transfer.
       Validated against the tensor OCCT computes for the equivalent fused
       solid, which agrees to machine precision on all six components.
-      Tests: 59 in `tests/phase11_assembly_reports.rs`.
+      Tests: 64 in `tests/phase11_assembly_reports.rs`.
 
 ### Multi-file projects
 
@@ -483,7 +488,7 @@ The `cad_preview` TOCTOU port race was eliminated by keeping the bound
 `tokio::net::TcpListener` alive and handing it straight to
 `serve_with_listener()`.
 
-Tests: unit tests in `src/mcp/`, `tests/mcp_tools.rs` (13),
+Tests: unit tests in `src/mcp/`, `tests/mcp_tools.rs` (15),
 `tests/mcp_stress.rs` (10 stress/concurrency).
 
 ### Phase 10 — Usability and Robust Parametric CAD
