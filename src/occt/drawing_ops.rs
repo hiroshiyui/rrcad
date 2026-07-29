@@ -1,6 +1,6 @@
-use super::{ffi, Shape};
-use crate::occt::{DrawingAnchor, DrawingSpec};
+use super::{Shape, ffi};
 use crate::occt::shape_core::summarize;
+use crate::occt::{DrawingAnchor, DrawingSpec};
 
 /// Which of the two 2-D drawing formats an export targets.
 ///

@@ -6,8 +6,8 @@ use super::native_helpers::{
     DEFAULT_LINEAR_DEFLECTION, cstr_arg, resolve_path, set_err, shape_result_to_ptr, split_csv_list,
 };
 use crate::occt::{
-    DrawingAnchor, DrawingDetail, DrawingFormat, DrawingSpec, GdtDatumSpec,
-    GdtFeatureControlSpec, GdtRenderSpec, GdtStandard, Shape,
+    DrawingAnchor, DrawingDetail, DrawingFormat, DrawingSpec, GdtDatumSpec, GdtFeatureControlSpec,
+    GdtRenderSpec, GdtStandard, Shape,
 };
 
 // ---------------------------------------------------------------------------
@@ -512,7 +512,6 @@ pub unsafe extern "C" fn rrcad_shape_export_dxf(
         unsafe { set_err(error_out, &e) };
     }
 }
-
 
 /// `face.export_outline(path, format:, deflection:)` — flat cut-file export.
 ///

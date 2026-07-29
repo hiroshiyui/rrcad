@@ -826,18 +826,19 @@ fn watch_script_loop(
     // separately from files so that re-watching after a reload only has to
     // diff directories, which change far less often than the file set.
     let mut watched: Vec<std::path::PathBuf> = Vec::new();
-    let sync_watches =
-        |watcher: &mut notify::RecommendedWatcher, watched: &mut Vec<std::path::PathBuf>, deps: &[std::path::PathBuf]| {
-            for dir in watch_dirs(deps) {
-                if watched.contains(&dir) {
-                    continue;
-                }
-                match watcher.watch(&dir, RecursiveMode::NonRecursive) {
-                    Ok(()) => watched.push(dir),
-                    Err(e) => eprintln!("error: failed to watch '{}': {e}", dir.display()),
-                }
+    let sync_watches = |watcher: &mut notify::RecommendedWatcher,
+                        watched: &mut Vec<std::path::PathBuf>,
+                        deps: &[std::path::PathBuf]| {
+        for dir in watch_dirs(deps) {
+            if watched.contains(&dir) {
+                continue;
             }
-        };
+            match watcher.watch(&dir, RecursiveMode::NonRecursive) {
+                Ok(()) => watched.push(dir),
+                Err(e) => eprintln!("error: failed to watch '{}': {e}", dir.display()),
+            }
+        }
+    };
     sync_watches(&mut watcher, &mut watched, &deps);
     if watched.is_empty() {
         eprintln!("error: failed to watch any directory for '{script_path}'");

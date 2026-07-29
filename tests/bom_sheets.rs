@@ -317,12 +317,12 @@ fn a_balloons_leader_lands_on_the_component_it_numbers() {
     ))
     .iter()
     .map(|name| match name.as_str() {
-            "m6_screw" => (15.0, 15.0),
-            "plate" => (60.0, 40.0),
-            "post" => (28.0, 58.0),
-            other => panic!("unexpected component {other}"),
-        })
-        .collect();
+        "m6_screw" => (15.0, 15.0),
+        "plate" => (60.0, 40.0),
+        "post" => (28.0, 58.0),
+        other => panic!("unexpected component {other}"),
+    })
+    .collect();
 
     assert_eq!(found.len(), expected.len(), "anchor count");
     for (i, (want, got)) in expected.iter().zip(&found).enumerate() {
