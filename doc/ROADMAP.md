@@ -252,14 +252,8 @@ Cross-cutting work that does not belong to a phase.
 
 ### Open
 
-- [ ] Feature-tree *editing* in the browser preview. Browsing landed (see
-      below); editing is a different problem, and a larger one. The script is
-      the source of truth, so changing a parameter in the browser means either
-      rewriting the user's `.rb` file from the viewer — a source-transformation
-      problem, not a UI one — or keeping a live VM behind the preview server,
-      which the current design deliberately avoids (`--preview` re-runs the
-      whole script on save, and the MCP path builds a fresh VM per call). Worth
-      doing only with a decision on which of those two it is.
+None. See [Deferred and not planned](#deferred-and-not-planned) for work that
+was considered and set aside.
 
 ### Done
 
@@ -270,8 +264,8 @@ Cross-cutting work that does not belong to a phase.
       lays it out the way a CAD tree does: the chain leading to the previewed
       shape flush left, branches feeding a boolean indented beneath the step
       that consumes them, and the merged-in node named on the row. Clicking a
-      row shows its full recorded history entry. Read-only by design — see the
-      open editing item above.
+      row shows its full recorded history entry. Read-only by design; editing
+      from the viewer is [cancelled](#deferred-and-not-planned).
       Tests: 4 in `src/preview/mod.rs`, including the tree layout exercised
       directly under node.
 
@@ -516,8 +510,9 @@ profiles from points and lines, with constraint propagation for `fixed`,
 **Feature history / parametric model tree.** Shapes carry a readable modelling
 history (`shape.history`) and a regeneratable feature graph with stable node IDs
 and dependency edges (`shape.feature_graph`). `shape.rebuild` replays the tree
-from the recorded parents. The browsing/editing UI remains open — see
-[Project Improvements](#project-improvements).
+from the recorded parents. The browser preview renders the tree as a read-only
+**Features** panel — see [Project Improvements](#project-improvements); editing
+from the viewer is [cancelled](#deferred-and-not-planned).
 
 **Named faces, edges, and datums.** `name_face(:mounting_face, :top)`,
 `name_edge(:boss_edges, :vertical)`, and `datum(:fixture_plane, datum_plane(…))`
@@ -608,6 +603,15 @@ footprints that do not overlap the previous layer.
   flange, no non-rectangular base, and holes are not developed through a bend.
   A hole in a bend zone moves and distorts as the metal wraps; producing a
   blank with it in the wrong place is worse than producing one without it.
+- **Feature-tree editing in the browser preview** — cancelled. Browsing landed
+  (see [Project Improvements](#project-improvements)); editing is a different
+  and much larger problem. The `.rb` script is the source of truth, so changing
+  a parameter from the viewer means either rewriting the user's file — a
+  source-transformation problem, not a UI one — or keeping a live VM behind the
+  preview server, which the current design deliberately avoids: `--preview`
+  re-runs the whole script on save, and the MCP path builds a fresh VM per
+  call. Editing the script and saving already round-trips in well under a
+  second, so the payoff would not cover either cost.
 
 ---
 
