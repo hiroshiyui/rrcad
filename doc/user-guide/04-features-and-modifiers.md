@@ -92,8 +92,9 @@ which has area but no volume — and gives it a wall, returning a solid. That is
 how a lofted or filled surface becomes a part you can machine or print.
 
 ```ruby
-skin  = fill_surface(outline)   # a Face: no thickness, no volume
-panel = skin.thicken(1.5)       # a 1.5 mm solid
+outline = spline_3d([[0, 0, 0], [40, 0, 3], [40, 30, 0], [0, 30, 3], [0, 0, 0]])
+skin    = fill_surface(outline)   # a Face: no thickness, no volume
+panel   = skin.thicken(1.5)       # a 1.5 mm solid
 ```
 
 The wall grows along the surface normal; a negative thickness builds on the

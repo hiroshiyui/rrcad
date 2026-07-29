@@ -35,10 +35,25 @@ Patterns return a compound shape you can subtract from a body in a single
 **Typical use** — a faired blend between two profile wires:
 
 ```ruby
-wire_top    = circle(10).translate(0, 0, 20)
-wire_bottom = rect(30, 30)
-skin = ruled_surface(wire_top, wire_bottom)
+bottom = spline_3d([[-15, -15, 0], [15, -15, 0], [15, 15, 0], [-15, 15, 0], [-15, -15, 0]])
+top    = spline_3d([[-7, -7, 20], [7, -7, 20], [7, 7, 20], [-7, 7, 20], [-7, -7, 20]])
+skin   = ruled_surface(bottom, top)
 ```
+
+Both arguments must be **Wires**. `circle(10)` and `rect(30, 30)` return Faces,
+not Wires, so passing them raises `ruled_surface: first argument must be a
+Wire` — build the loops with `spline_3d` (or another wire-producing call)
+instead.
+
+A surface has area but no volume, so it is not yet a part. `.thicken` gives it
+a wall and returns a solid:
+
+```ruby
+panel = skin.thicken(1.5)     # a 1.5 mm shell you can print
+```
+
+See [Features and Modifiers](04-features-and-modifiers.md#shell-thicken-and-offset)
+for which side the wall grows on.
 
 **Typical use** — section a part at Z=10 to inspect a wall thickness:
 
