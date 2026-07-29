@@ -329,6 +329,9 @@ so a sketch profile exports directly:
 circle(12).export_outline("washer.dxf")
 ```
 
+A folded sheet-metal part reaches this writer through
+[`export_flat`](05-part-design.md#sheet-metal), which develops the blank first.
+
 A solid has many faces, and rather than guess, `export_outline` asks you to
 pick one. A curved face is refused outright: a cut file needs a flat one.
 

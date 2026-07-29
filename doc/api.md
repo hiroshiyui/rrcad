@@ -689,6 +689,7 @@ The DSL is auto-loaded by `MrubyVm::new()` via `src/ruby/prelude.rb`. No
 | `param(:name, default: val, range: lo..hi)` | Same with range validation; raises `ArgumentError` if the value is outside the range. Typed unit defaults and ranges work as expected. |
 | `solid { ... }` | Block returning its last expression |
 | `assembly("name") { \|a\| ... }` | Named assembly. See `Assembly` below. |
+| `sheet_metal(thickness:, radius:, k_factor:) { \|s\| ... }` | Folded sheet-metal part. See `Sheet metal` below. |
 | `preview(shape)` | Tessellate and push to live browser preview. No-op when not in `--preview` mode. |
 | `require_relative(path)` | Evaluate another script file, resolved against the directory of the *requiring* file. `.rb` suffix optional. Returns `true` when evaluated, `false` when already loaded — so a file loads at most once and require cycles terminate. Unavailable in MCP mode and in the absence of a script directory. Plain `require` does not exist (no load path); it raises and redirects here. |
 | `sketch(diagnostics: false, strict: false) { ... }` | Constraint sketch. Returns the profile Face the block describes, or the block's own return value if it is already a Shape. See [Constraint sketching](#constraint-sketching). |
@@ -892,6 +893,55 @@ free text; every report echoes the density it actually used.
 primitive used by `angle_mate`: rotate the shape by `angle_deg` around an
 axis through `point` (3-element array) pointing in `axis_dir` (3-element
 array). Implemented as `translate(−p) → rotate → translate(+p)`.
+
+### Sheet metal
+
+`SheetMetal` is a folded part built from a recipe of bends rather than from
+finished geometry, because the flat blank cannot be recovered from the folded
+solid — unfolding needs to know where each bend line ran and how tight it is.
+Both deliverables are derived from the same record.
+
+```ruby
+part = sheet_metal(thickness: 2, radius: 2, k_factor: 0.44) do |s|
+  s.base 100, 60
+  s.flange :xmax, length: 25
+  s.flange :ymin, length: 15, angle: 45, from: 10, to: 50
+end
+part.export("bracket.step")       # folded solid
+part.export_flat("bracket.dxf")   # blank, 1:1
+```
+
+| Method | Description |
+|--------|-------------|
+| `sheet_metal(thickness:, radius: nil, k_factor: 0.44) { \|s\| ... }` | Create a part. `radius:` is the **inner** bend radius and defaults to the thickness. `k_factor:` places the neutral axis as a fraction of the thickness; it must lie strictly between 0 and 1. |
+| `s.base(width, height)` | The flat plate, in the XY plane with its lower-left corner at the origin and its thickness in +z. Required before any flange, and settable once. |
+| `s.flange(side, length:, angle: 90.0, radius: nil, from: nil, to: nil, relief: nil, relief_width: nil, relief_depth: nil)` | Fold a wall up from `:xmin` / `:xmax` / `:ymin` / `:ymax`. `length:` is the straight leg **past** the bend, not the overall height. `angle:` must be over 0 and at most 180. `from:` / `to:` narrow the flange, measured along the global axis the side runs in (x for `:ymin` / `:ymax`, y for `:xmin` / `:xmax`). One flange per side. |
+| `part.to_shape` | The folded solid. |
+| `part.export(path, opts = nil)` | `to_shape` then `Shape#export`; takes the same options, drawings included. |
+| `part.flat` | The developed blank as a planar face in the XY plane. Outline only — holes are not developed. |
+| `part.export_flat(path, deflection: 0.05)` | Write the blank as a 1:1 cut file (`.dxf` / `.svg`) through `export_outline`. |
+| `part.flat_size` | `[width, height]` of the blank's bounding box — the sheet it has to nest on. |
+| `part.bends` | One row per fold: `{side:, angle:, radius:, length:, from:, to:, allowance:, relief:}`. |
+
+Bend allowance is `angle_rad × (radius + k_factor × thickness)` — the arc
+length of the neutral axis — and is added to the blank on every fold, along
+with the straight leg.
+
+A flange narrowed with `from:` / `to:` gets **bend relief** by default: a notch
+at each end of the bend line, `relief_width:` wide (default: one thickness) and
+`relief_depth:` deep (default: `radius + thickness`), cut into both the folded
+solid and the blank. `relief:` is `:rectangular` (the default when the flange is
+partial), `:obround` — which ends the notch in a half-round that reaches the cut
+file as a true arc, and whose radius is *included* in the stated depth — or
+`:none`. A notch is skipped at any end where the flange already reaches the
+corner; asking for relief on a full-width flange raises, since there is nothing
+to relieve.
+
+Refused at the call that creates them: two flanges on neighbouring sides that
+both run into their shared corner (they would meet at a point with no material
+joining them and the blank would pinch to nothing), a second flange on a side,
+a span that runs off the end of a side, a notch with no room beside it or
+deeper than the plate, and an angle outside `(0, 180]`.
 
 ---
 

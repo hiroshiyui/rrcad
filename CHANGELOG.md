@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Sheet metal** (Phase 11 Track D, `src/ruby/prelude.rb`):
+  `sheet_metal(thickness:, radius:, k_factor:) { |s| ... }` builds a folded
+  part from a recipe of bends — `s.base(w, h)` for the plate and
+  `s.flange(side, length:, angle:, radius:, from:, to:)` for walls folded up
+  off `:xmin` / `:xmax` / `:ymin` / `:ymax`. `to_shape` gives the folded solid;
+  `flat` develops the blank and `export_flat` writes it as a 1:1 cut file
+  through `export_outline`. The recipe is recorded rather than the geometry
+  alone because the blank cannot be recovered from a folded solid: unfolding
+  needs to know where each bend line ran and how tight it is. Bend allowance is
+  `angle × (radius + k_factor × thickness)`, the neutral-axis arc, and `bends`
+  reports what each fold consumed. A flange narrowed with `from:` / `to:` gets
+  bend relief automatically — `:rectangular` or `:obround` — notched into the
+  solid and the blank alike. Two flanges that would run into a shared corner
+  are refused at the call, since they would meet at a point with no material
+  joining them and the blank would pinch to nothing while the folded solid
+  still looked right. `length:` is the leg past the bend, not the overall
+  height, so opening the radius does not silently shorten the wall. Holes are
+  not developed, by choice: a hole in a bend zone moves and distorts. Entirely
+  in the prelude, on existing primitives — no new FFI surface. 30 tests in
+  `tests/sheet_metal.rs`, checked against hand-computed trigonometry rather
+  than against each other. New sample `samples/11_sheet_metal_tray.rb`.
+
 - **Parts lists and balloon callouts on assembly drawings** (Phase 11 Track C,
   `src/occt/bridge.cpp`, `src/ruby/prelude.rb`): `asm.export("panel.svg",
   view: :sheet, bom: true, balloons: true)` draws the bill of materials as a

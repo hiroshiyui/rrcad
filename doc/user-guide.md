@@ -32,7 +32,7 @@ New to rrcad? Read these in order:
 | 2 | [Modeling Basics](user-guide/02-modeling-basics.md) | Units, primitives, transforms, booleans |
 | 3 | [Sketches and Profiles](user-guide/03-sketches-and-profiles.md) | 2D faces, splines, constraint sketches |
 | 4 | [Features and Modifiers](user-guide/04-features-and-modifiers.md) | Extrude, revolve, sweep, fillet, chamfer, shell, offset |
-| 5 | [Part Design](user-guide/05-part-design.md) | Pad / pocket, datum planes, holes, threads, fastener bodies |
+| 5 | [Part Design](user-guide/05-part-design.md) | Pad / pocket, datum planes, holes, threads, fastener bodies, sheet metal |
 | 6 | [Topology and Selectors](user-guide/06-topology-and-selectors.md) | Face / edge selectors, named topology, GD&T |
 | 7 | [Patterns and Surfaces](user-guide/07-patterns-and-surfaces.md) | Linear / polar / grid patterns, ruled / fill surfaces, slice |
 | 8 | [Assemblies](user-guide/08-assemblies.md) | Assembly DSL, mate / distance / axis / angle constraints, color |

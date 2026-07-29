@@ -31,6 +31,9 @@ the gap between "scripted geometry engine" and "tool a mechanical engineer
 would choose": the operations people reach for constantly, and the deliverables
 a design is expected to produce.
 
+All four tracks are complete. What remains under this phase is the
+opportunistic list below, which is not scheduled.
+
 ### Track A — Sketcher depth
 
 The constraint solver and profile types exist, but the sketcher was missing the
@@ -162,18 +165,45 @@ sheets. **Complete.**
       with circular edges as true `CIRCLE` / `ARC` entities rather than chord
       approximations, holes on their own layer, and the outline shifted to the
       origin for nesting. Taken in the face's own plane, so a tilted face keeps
-      true size. `.dxf` and `.svg`. This is also the writer Track D's
-      flat-pattern output will reuse.
+      true size. `.dxf` and `.svg`. Track D's flat patterns go out through this
+      same writer.
       Tests: 16 in `tests/cut_file_export.rs`.
 
 ### Track D — Sheet metal
 
-A new modelling domain, largely independent of the other tracks.
+A new modelling domain, largely independent of the other tracks. **Complete.**
 
-- [ ] Base flanges; edge flanges with bend radius and angle.
-- [ ] Bend relief and K-factor bend allowance.
-- [ ] Unfolded flat-pattern generation, exportable to DXF for laser cutting.
-      The DXF writer for this already exists — see `export_outline` above.
+Sheet metal is built from a recipe rather than sculpted, because the folded
+solid and the flat blank are two views of one part and the blank cannot be
+recovered from finished geometry — unfolding needs to know where each bend
+line ran and how tight it is. `SheetMetal` records the bends and derives both,
+so the two deliverables cannot drift apart. It lives entirely in
+`prelude.rb`, on the existing primitives and booleans; no new FFI surface.
+
+- [x] **Base and edge flanges** — `sheet_metal(thickness:, radius:) { |s| … }`
+      with `s.base(w, h)` and `s.flange(side, length:, angle:, radius:)` off
+      `:xmin` / `:xmax` / `:ymin` / `:ymax`. Each flange is built in a local
+      frame where it grows along +x from a bend line along +y, then placed on
+      its side, so one construction serves all four. The bend is a tube sector
+      swept about the bend line — true cylindrical faces, no chord
+      approximation — and the wall is laid out flat and folded about that same
+      line, which is what the press brake does and what keeps the two agreeing.
+      `length:` is the leg past the bend, not the overall height. Angles run
+      to 180°, giving a hem.
+- [x] **Bend relief and K-factor bend allowance** — a flange narrowed with
+      `from:` / `to:` gets a notch at each end of the bend line by default,
+      `:rectangular` or `:obround`, cut into the solid and the blank alike.
+      Allowance is `angle × (radius + k × thickness)`, the neutral-axis arc.
+      Two flanges that would meet at a shared corner are refused at the call:
+      they touch at a point with no material joining them, the blank pinches to
+      nothing, and the folded solid looks entirely plausible meanwhile.
+- [x] **Unfolded flat patterns** — `flat` develops the blank as one planar
+      face by tracing the outline counter-clockwise, and `export_flat` writes
+      it through `export_outline`, so obround reliefs keep true arcs.
+      Holes are deliberately not developed: one in a bend zone moves and
+      distorts, and guessing where it lands is worse than not guessing.
+      Tests: 30 in `tests/sheet_metal.rs`, against hand-computed geometry
+      rather than against each other.
 
 ### Opportunistic additions
 
@@ -517,6 +547,10 @@ footprints that do not overlap the previous layer.
 - **Section arrows, "A-A" labels, half/offset/revolved sections** — annotation
   and advanced section types beyond the Track C geometry work.
 - **Pretty-printing** — `pp` is an alias of `p`; there is no pretty-printer.
+- **Sheet metal beyond one plate and its edges** — no flange folded off another
+  flange, no non-rectangular base, and holes are not developed through a bend.
+  A hole in a bend zone moves and distorts as the metal wraps; producing a
+  blank with it in the wrong place is worse than producing one without it.
 
 ---
 

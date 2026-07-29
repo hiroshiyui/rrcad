@@ -435,6 +435,7 @@ is still active.
 | `tests/multi_file_projects.rs` | `require_relative`: relative resolution, evaluate-once, cycles, error attribution, dependency reporting |
 | `tests/cut_file_export.rs` | `Shape#export_outline`: flat cut files — CIRCLE/ARC fidelity, true size, layers, errors |
 | `tests/bom_sheets.rs` | `bom:` / `balloons:` on assembly drawings: table contents, balloon-to-component anchoring, delimiter and markup safety, DXF layers |
+| `tests/sheet_metal.rs` | `sheet_metal`: flange geometry against hand-computed trigonometry, bend allowance and k-factor, bend relief in both the solid and the blank, blank outline closure, refusals |
 | `tests/auto_dimensioning.rs` | `ordinate:` dimensions: measured values, datum corner, scale invariance, per-view axes, DXF layer and text alignment |
 | `tests/detail_views.rs` | `detail:` on drawings: marker placement, magnification ratio, clipping on the border, captions, DXF layer, rejections |
 | `tests/export_confinement.rs` | Import/export path confinement: working-directory rule, symlink escapes, missing directories |

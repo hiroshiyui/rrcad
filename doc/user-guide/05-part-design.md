@@ -3,7 +3,9 @@
 The part-design DSL captures the workflow CAD packages call "sketch on a
 face, then pad or pocket": add material on an existing face, or cut into
 it. This chapter also covers reference geometry (datum planes), helical
-features (threads), and ready-made fastener bodies for assemblies.
+features (threads), ready-made fastener bodies for assemblies, and sheet
+metal — folded parts, which are built from a recipe of bends so that the
+folded solid and the flat blank can both be derived from it.
 
 ## Pad and pocket
 
@@ -88,6 +90,141 @@ a hole — use these helpers. They are also handy in assemblies.
 
 See [`samples/09_fastener_stack.rb`](../../samples/09_fastener_stack.rb)
 for a small hardware-body example using `washer()` and `nut()`.
+
+## Sheet metal
+
+A sheet-metal part is one sheet of constant thickness, folded. That constraint
+is what earns it its own builder: the folded solid and the flat blank the
+laser cuts are two views of the same part, and the blank cannot be recovered
+from finished geometry. Unfolding has to know where each bend line ran and how
+tight the bend is — only the recipe knows that, so the recipe is what you
+write.
+
+```ruby
+part = sheet_metal(thickness: 2, radius: 2, k_factor: 0.44) do |s|
+  s.base 100, 60
+  s.flange :xmax, length: 25
+  s.flange :xmin, length: 15, angle: 45
+end
+
+part.export("bracket.step")      # folded
+part.export_flat("bracket.dxf")  # blank, 1:1, ready to cut
+```
+
+`base` is the flat plate. It lies in the XY plane with its lower-left corner
+at the origin and its thickness running up in +z; flanges fold upward off one
+of its four sides, named `:xmin`, `:xmax`, `:ymin`, `:ymax`.
+
+Two dimensions are easy to mistake for each other:
+
+- `radius:` is the **inner** bend radius — the one the tool leaves on the
+  inside of the fold, not the part's outside corner. It defaults to the
+  thickness, which is the usual shop starting point.
+- `length:` is the straight leg **past** the bend, not the overall height. A
+  90° flange therefore stands `thickness + radius + length` tall, and opening
+  the radius does not silently shorten the wall.
+
+`angle:` is how far the material turns: 90 gives a wall square to the base,
+180 a hem folded back over it. Anything over 180 is refused.
+
+### The blank
+
+`flat` develops the part, and `export_flat` writes it as a 1:1 cut file —
+`.dxf` or `.svg`, through the same writer as
+[`export_outline`](10-import-export.md#cut-files-for-laser-and-cnc), so
+circular edges come out as true `CIRCLE` / `ARC` entities.
+
+The blank is longer than the plate by the **bend allowance**: the arc length
+of the neutral axis, the line through the thickness that neither stretches nor
+compresses. That is `angle × (radius + k × thickness)`, and `k_factor:` is
+where that axis sits, as a fraction of the thickness. 0.44 is a fair default
+for mild steel; get the real figure from whoever bends the part, because it is
+the difference between a part that fits and one that is a millimetre short on
+every fold.
+
+```ruby
+part.flat_size.map { |v| v.round(2) }   # => [146.79, 60.0]
+```
+
+For the bracket above: 100 mm of plate, plus 4.52 + 25 for the square fold,
+plus 2.26 + 15 for the 45° one. Neither the leg alone (140) nor the outside
+girth (154) is the right answer.
+
+`bends` reports what each fold consumed, for a press-brake setup sheet:
+
+```ruby
+part.bends.each do |b|
+  puts "#{b[:side]}  #{b[:angle]} deg  r#{b[:radius]}  leg #{b[:length]}  " \
+       "allowance #{b[:allowance].round(3)}"
+end
+```
+
+```
+xmax  90.0 deg  r2.0  leg 25.0  allowance 4.524
+xmin  45.0 deg  r2.0  leg 15.0  allowance 2.262
+```
+
+Each row also carries `from:`, `to:`, and the `relief:` style that was used.
+
+### Partial flanges and bend relief
+
+`from:` / `to:` narrow a flange to part of a side, measured along the global
+axis that side runs in — x for `:ymin` / `:ymax`, y for `:xmin` / `:xmax`.
+
+A flange that stops short of the corner tears the plate where the fold ends,
+so a narrowed flange gets **bend relief** automatically: a notch at each end of
+the bend line, one thickness wide and `radius + thickness` deep by default.
+
+```ruby
+s.flange :ymin, length: 15, from: 10, to: 50                      # relieved
+s.flange :ymin, length: 15, from: 10, to: 50, relief: :obround    # rounded end
+s.flange :ymin, length: 15, from: 10, to: 50, relief: :none       # no notch
+```
+
+`:obround` ends the notch in a half-round, which is what you want if the part
+is going to be cycled — a square internal corner is where a crack starts. It
+reaches the cut file as a real arc, not a chord approximation. `relief_width:`
+and `relief_depth:` override the defaults; the depth includes the round end
+rather than adding to it, so switching styles does not move the clearance.
+
+A notch is skipped at any end where the flange already runs to the corner, and
+a flange that spans its whole side cannot be relieved at all — there are no
+bend ends to relieve, so asking for it raises rather than quietly doing
+nothing.
+
+### A tray
+
+Four flanges, each inset from the corners so the reliefs have room:
+
+```ruby
+tray = sheet_metal(thickness: 1.5, radius: 1.5) do |s|
+  s.base 120, 80
+  [:xmin, :xmax].each { |e| s.flange e, length: 25, from: 6, to: 74 }
+  [:ymin, :ymax].each { |e| s.flange e, length: 25, from: 6, to: 114 }
+end
+
+tray.flat_size          # => [176.8, 136.8]  — the sheet it has to nest on
+tray.export("tray.step")
+tray.export_flat("tray.dxf")
+preview tray.to_shape
+```
+
+Two flanges on neighbouring sides that both run into their shared corner are
+refused. They would meet there at a single point with no material joining
+them, and the blank would pinch to nothing — a folded solid that looks
+entirely plausible right up until someone tries to cut it. Inset one of them
+and let its relief notch carry the corner.
+
+### What this does not do
+
+- **Holes are not developed.** `flat` gives the outline. A hole in a bend zone
+  moves and distorts as the metal wraps, and guessing where it lands is worse
+  than not guessing. Cut holes into `flat` yourself where they sit on flat
+  runs: `tray.flat.cut(circle(2).translate(30, 20, 0)).export_outline("x.dxf")`.
+- **One flange per side, folding from the base only.** There is no flange on a
+  flange, and no non-rectangular base.
+- `to_shape` gives the folded `Shape`, so anything in this guide that takes a
+  shape — booleans, `mass_properties`, drawings, `preview` — works on it.
 
 ## Worked example: bracket with mounting holes and a boss
 

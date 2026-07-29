@@ -3826,6 +3826,505 @@ class Assembly
 end
 
 # ---------------------------------------------------------------------------
+# Sheet metal — Phase 11 Track D
+# ---------------------------------------------------------------------------
+
+# A folded sheet-metal part: one flat plate of constant thickness with walls
+# bent up from its edges.
+#
+# This is its own builder rather than a pile of boxes and cylinders because a
+# sheet-metal part has two deliverables that have to agree — the folded 3-D
+# form and the flat blank the laser cuts — and the blank cannot be recovered
+# from finished geometry. Unfolding needs to know where each bend line ran,
+# how tight the bend is, and how far the material stretches around it. Only
+# the recipe knows that, so the builder records the bends and derives both.
+#
+#   part = sheet_metal(thickness: 2, radius: 2) do |s|
+#     s.base 100, 60
+#     s.flange :xmax, length: 25
+#     s.flange :ymin, length: 15, angle: 45, from: 10, to: 50
+#   end
+#   part.export("tray.step")        # folded
+#   part.export_flat("tray.dxf")    # blank, 1:1, ready to cut
+#
+# The plate lies in the XY plane with its lower-left corner at the origin and
+# its thickness running up in +z; flanges fold upward, out of the plate.
+class SheetMetal
+  # The sides a flange can fold from, in the order the flat outline is traced
+  # — counter-clockwise from the origin corner.
+  SIDES = [:ymin, :xmax, :ymax, :xmin].freeze
+
+  # Neighbouring sides and which end of each runs into their shared corner.
+  # Used to reject two flanges that would meet at that corner.
+  CORNERS = [
+    [:ymin, :lo, :xmin, :lo],
+    [:ymin, :hi, :xmax, :lo],
+    [:xmax, :hi, :ymax, :hi],
+    [:ymax, :lo, :xmin, :hi]
+  ].freeze
+
+  RELIEFS = [:rectangular, :obround, :none].freeze
+
+  EPS = 1.0e-9
+
+  attr_reader :thickness, :radius, :k_factor
+
+  # thickness — material thickness.
+  # radius    — default *inner* bend radius, the one the tool leaves on the
+  #             inside of the fold, not the part's outside corner. Defaults to
+  #             the thickness, which is the usual shop starting point.
+  # k_factor  — where the neutral axis sits across the thickness, as a
+  #             fraction of it. 0.44 is a fair default for mild steel; get the
+  #             real figure from whoever bends the part.
+  def initialize(thickness:, radius: nil, k_factor: 0.44)
+    @thickness = positive!(thickness, "thickness")
+    @radius = radius.nil? ? @thickness : positive!(radius, "radius")
+    @k_factor = numeric!(k_factor, "k_factor")
+    unless @k_factor > 0.0 && @k_factor < 1.0
+      raise ArgumentError,
+            "sheet_metal: k_factor must be between 0 and 1 (got #{k_factor.inspect})"
+    end
+    @width = nil
+    @height = nil
+    @flanges = {}
+  end
+
+  # base(width, height) — the flat plate every flange folds from.
+  def base(width, height)
+    raise ArgumentError, "sheet_metal: base has already been set" unless @width.nil?
+    @width = positive!(width, "base width")
+    @height = positive!(height, "base height")
+    self
+  end
+
+  # flange(side, length:, ...) — fold a wall up from one side of the base.
+  #
+  # +length+ is the straight leg *past* the bend, not the overall height, so
+  # it does not shift when the radius changes. +angle+ is how far the material
+  # turns: 90 gives a wall square to the base, 180 a folded-back hem.
+  #
+  # +from:+ / +to:+ narrow the flange to part of the side, measured along the
+  # global axis that side runs in — x for :ymin / :ymax, y for :xmin / :xmax.
+  # A narrowed flange gets bend relief by default: a notch at each end of the
+  # bend line, so the base does not tear where the fold stops.
+  #
+  #   s.flange :xmax, length: 25
+  #   s.flange :ymin, length: 15, angle: 45, radius: 3
+  #   s.flange :xmin, length: 20, from: 10, to: 50, relief: :obround
+  def flange(side, length:, angle: 90.0, radius: nil, from: nil, to: nil,
+             relief: nil, relief_width: nil, relief_depth: nil)
+    raise ArgumentError, "sheet_metal: call base(width, height) before flange" if @width.nil?
+    unless SIDES.include?(side)
+      raise ArgumentError,
+            "sheet_metal: flange side must be one of #{SIDES.inspect} (got #{side.inspect})"
+    end
+    if @flanges.key?(side)
+      raise ArgumentError,
+            "sheet_metal: side #{side.inspect} already carries a flange — one per side"
+    end
+
+    len = positive!(length, "flange length")
+    ang = numeric!(angle, "flange angle")
+    unless ang > 0.0 && ang <= 180.0
+      raise ArgumentError,
+            "sheet_metal: flange angle must be over 0 and at most 180 degrees " \
+            "(got #{angle.inspect})"
+    end
+    rad = radius.nil? ? @radius : positive!(radius, "flange radius")
+
+    side_len = side_length(side)
+    lo = from.nil? ? 0.0 : numeric!(from, "flange from")
+    hi = to.nil? ? side_len : numeric!(to, "flange to")
+    if lo < -EPS || hi > side_len + EPS || hi - lo < EPS
+      raise ArgumentError,
+            "sheet_metal: flange on #{side.inspect} spans #{lo} to #{hi}, which does not fit " \
+            "the #{side_len} mm side"
+    end
+
+    f = {
+      side: side, length: len, angle: ang, radius: rad, from: lo, to: hi,
+      relief_lo: lo > EPS, relief_hi: hi < side_len - EPS,
+      allowance: ang * Math::PI / 180.0 * (rad + @k_factor * @thickness)
+    }
+    f[:relief] = resolve_relief(f, relief, side_len)
+    f[:relief_width] = relief_width.nil? ? @thickness : positive!(relief_width, "relief_width")
+    f[:relief_depth] = relief_depth.nil? ? rad + @thickness : positive!(relief_depth,
+                                                                       "relief_depth")
+    validate_relief!(f, side_len)
+    f[:span] = local_span(side, lo, hi, side_len)
+
+    check_corner_clearance!(side, lo, hi)
+    @flanges[side] = f
+    self
+  end
+
+  # to_shape — the folded part, as one fused solid.
+  def to_shape
+    ensure_base!
+    shape = base_solid
+    @flanges.each_value { |f| shape = shape.fuse(place(flange_solid(f), f[:side])) }
+    shape
+  end
+
+  # export(path, opts) — write the folded part. Takes everything
+  # Shape#export does, drawings included.
+  def export(path, opts = nil)
+    shape = to_shape
+    # Shape#export takes its options as an optional trailing Hash; an explicit
+    # nil would fail its argument spec, so drop the argument instead.
+    return shape.export(path) if opts.nil? || opts.empty?
+    shape.export(path, opts)
+  end
+
+  # flat — the developed blank, as a planar face in the XY plane.
+  #
+  # Straight runs keep their true length; each bend contributes its bend
+  # allowance, the arc length of the neutral axis, which is the line through
+  # the thickness that neither stretches nor compresses. Relief notches are
+  # cut in. What comes out is the shape to actually cut.
+  #
+  # The blank carries the outline only. Holes are not developed — a hole in a
+  # bend zone moves and distorts, and guessing where it lands is worse than
+  # not guessing. Cut holes into `flat` yourself if they sit on flat runs.
+  def flat
+    ensure_base!
+    face = polygon(flat_outline)
+    obround_cuts.each { |c| face = face.cut(c) }
+    face
+  end
+
+  # export_flat(path) — write the blank as a 1:1 cut file (`.dxf` or `.svg`).
+  def export_flat(path, deflection: 0.05)
+    flat.export_outline(path, deflection: deflection)
+  end
+
+  # flat_size — [width, height] of the blank's bounding box, the sheet size
+  # the part has to be nested on.
+  def flat_size
+    bb = flat.bounding_box
+    [bb[:dx], bb[:dy]]
+  end
+
+  # bends — one row per fold, for a bend table or a press-brake setup sheet.
+  def bends
+    @flanges.each_value.map do |f|
+      { side: f[:side], angle: f[:angle], radius: f[:radius], length: f[:length],
+        from: f[:from], to: f[:to], allowance: f[:allowance], relief: f[:relief] }
+    end
+  end
+
+  def inspect
+    return "#<SheetMetal (no base)>" if @width.nil?
+    "#<SheetMetal #{@width}x#{@height}x#{@thickness}, #{@flanges.length} flange(s)>"
+  end
+
+  alias to_s inspect
+
+  # --- Validation ---------------------------------------------------------
+
+  def numeric!(value, name)
+    unless value.is_a?(Numeric) || value.is_a?(RRCADUnits::UnitValue)
+      raise ArgumentError, "sheet_metal: #{name} must be a number (got #{value.inspect})"
+    end
+    RRCADUnits.scalar(value)
+  end
+
+  def positive!(value, name)
+    v = numeric!(value, name)
+    raise ArgumentError, "sheet_metal: #{name} must be positive (got #{value.inspect})" if v <= 0.0
+    v
+  end
+
+  def ensure_base!
+    raise RuntimeError, "sheet_metal: no base — call base(width, height) first" if @width.nil?
+  end
+
+  # A flange that spans its whole side has no bend ends to relieve; one that
+  # stops short gets a notch by default, because that is where the metal tears.
+  def resolve_relief(f, requested, _side_len)
+    partial = f[:relief_lo] || f[:relief_hi]
+    kind = requested.nil? ? (partial ? :rectangular : :none) : requested
+    unless RELIEFS.include?(kind)
+      raise ArgumentError,
+            "sheet_metal: relief must be one of #{RELIEFS.inspect} (got #{requested.inspect})"
+    end
+    if kind != :none && !partial
+      raise ArgumentError,
+            "sheet_metal: the flange on #{f[:side].inspect} runs the full side, so it has no " \
+            "bend ends to relieve — narrow it with from:/to:, or pass relief: :none"
+    end
+    kind
+  end
+
+  # The notch has to fit: it sits beside the flange, so it needs material
+  # there, and it cuts back into the plate, so the plate must be deep enough.
+  def validate_relief!(f, side_len)
+    return if f[:relief] == :none
+    rw = f[:relief_width]
+    dp = f[:relief_depth]
+    if f[:relief_lo] && f[:from] < rw - EPS
+      raise ArgumentError,
+            "sheet_metal: the relief notch on #{f[:side].inspect} is #{rw} mm wide but the " \
+            "flange starts only #{f[:from]} mm from the corner"
+    end
+    if f[:relief_hi] && f[:to] > side_len - rw + EPS
+      raise ArgumentError,
+            "sheet_metal: the relief notch on #{f[:side].inspect} is #{rw} mm wide but the " \
+            "flange ends only #{side_len - f[:to]} mm from the corner"
+    end
+    depth_room = plate_depth(f[:side])
+    if dp >= depth_room - EPS
+      raise ArgumentError,
+            "sheet_metal: a #{dp} mm relief notch would cut clean through the #{depth_room} mm " \
+            "plate at #{f[:side].inspect}"
+    end
+    return unless f[:relief] == :obround && dp <= rw / 2.0 + EPS
+    raise ArgumentError,
+          "sheet_metal: an obround relief ends in a #{rw / 2.0} mm radius, so relief_depth " \
+          "must exceed that (got #{dp})"
+  end
+
+  # Two flanges on neighbouring sides that both run into their shared corner
+  # meet there at a single point with no material joining them, and the blank
+  # pinches to nothing. Catch it at the call that creates it, since the folded
+  # solid looks plausible and only the flat gives it away.
+  def check_corner_clearance!(side, lo, hi)
+    CORNERS.each do |a, a_end, b, b_end|
+      other, other_end, this_end = if a == side
+        [b, b_end, a_end]
+      elsif b == side
+        [a, a_end, b_end]
+      else
+        next
+      end
+      f = @flanges[other]
+      next if f.nil?
+      next unless reaches_end?(lo, hi, side_length(side), this_end)
+      next unless reaches_end?(f[:from], f[:to], side_length(other), other_end)
+      raise ArgumentError,
+            "sheet_metal: the flanges on #{side.inspect} and #{other.inspect} both run into " \
+            "their shared corner, where they would meet at a point with no material joining " \
+            "them — inset one with from:/to: and let its relief notch carry the corner"
+    end
+  end
+
+  def reaches_end?(lo, hi, side_len, which)
+    which == :lo ? lo <= EPS : hi >= side_len - EPS
+  end
+
+  # --- Side geometry ------------------------------------------------------
+
+  # How long the side is, and how deep the plate is behind it.
+  def side_length(side)
+    side == :xmin || side == :xmax ? @height : @width
+  end
+
+  def plate_depth(side)
+    side == :xmin || side == :xmax ? @width : @height
+  end
+
+  # Each flange is built in a local frame where it grows along +x from a bend
+  # line running along +y at x = 0, with the plate behind it at x <= 0. This
+  # returns the rotation about z and the translation that put that frame onto
+  # the given side of the plate.
+  def side_frame(side)
+    case side
+    when :xmax then [0.0, [@width, 0.0, 0.0]]
+    when :ymax then [90.0, [@width, @height, 0.0]]
+    when :xmin then [180.0, [0.0, @height, 0.0]]
+    else [270.0, [0.0, 0.0, 0.0]]
+    end
+  end
+
+  def place(shape, side)
+    rot, origin = side_frame(side)
+    shape = shape.rotate(0.0, 0.0, 1.0, rot) unless rot == 0.0
+    shape.translate(origin[0], origin[1], origin[2])
+  end
+
+  # On :ymax and :xmin, keeping the local frame right-handed makes its +y run
+  # against the global axis that from:/to: are stated in. The flat outline is
+  # traced counter-clockwise, so it walks those two sides backwards for the
+  # same reason — one question, asked twice.
+  def reversed_side?(side)
+    side == :ymax || side == :xmin
+  end
+
+  # from:/to: along the side's global axis → the span in the local frame.
+  def local_span(side, lo, hi, side_len)
+    reversed_side?(side) ? [side_len - hi, side_len - lo] : [lo, hi]
+  end
+
+  # A point on the flat, from a distance +p+ along the side and an offset +d+
+  # outward from it (negative cuts back into the plate).
+  def side_point(side, p, d)
+    case side
+    when :ymin then [p, -d]
+    when :xmax then [@width + d, p]
+    when :ymax then [p, @height + d]
+    else [-d, p]
+    end
+  end
+
+  # --- 3-D geometry -------------------------------------------------------
+
+  # The base plate, with a notch cut wherever a flange stops short of a corner.
+  def base_solid
+    plate = box(@width, @height, @thickness)
+    @flanges.each_value do |f|
+      relief_cutters(f).each { |c| plate = plate.cut(place(c, f[:side])) }
+    end
+    plate
+  end
+
+  # Bend plus wall, in the flange's local frame.
+  def flange_solid(f)
+    t = @thickness
+    r = f[:radius]
+    s0, s1 = f[:span]
+    span = s1 - s0
+    # Centre of the bend, on the inside of the fold: the inner surface is the
+    # top of the plate, so the arc's centre sits one radius above it.
+    cz = t + r
+
+    # The bend is a tube sector swept about the bend line. It is built in the
+    # revolve frame — profile in the xz plane, axis +z, because `revolve`
+    # always turns about the global z axis — and then mapped onto that line:
+    # the sweep's start direction becomes -z (flush with the plate) and it
+    # turns toward +x, which is where the flange goes.
+    bend = rect(t, span).translate(r, 0.0, 0.0).rotate(1.0, 0.0, 0.0, 90.0)
+                        .revolve(f[:angle])
+                        .rotate(0.0, 0.0, 1.0, -90.0).rotate(1.0, 0.0, 0.0, 90.0)
+                        .translate(0.0, s1, cz)
+
+    # The wall is laid out as if the sheet ran on flat past the bend line and
+    # was then folded about it — which is what the press brake does, so the
+    # wall lands exactly on the end of the bend without any trigonometry here.
+    wall = box(f[:length], span, t).translate(0.0, s0, 0.0)
+                                   .rotate_about([0.0, 0.0, cz], [0.0, -1.0, 0.0], f[:angle])
+    bend.fuse(wall)
+  end
+
+  # Relief notches for one flange, in its local frame.
+  def relief_cutters(f)
+    return [] if f[:relief] == :none
+    s0, s1 = f[:span]
+    lo_local, hi_local = if reversed_side?(f[:side])
+      [f[:relief_hi], f[:relief_lo]]
+    else
+      [f[:relief_lo], f[:relief_hi]]
+    end
+    cutters = []
+    cutters.concat(notch_cutter(f, s0 - f[:relief_width])) if lo_local
+    cutters.concat(notch_cutter(f, s1)) if hi_local
+    cutters
+  end
+
+  # One notch, cutting back from the bend line at x = 0 into the plate behind
+  # it. Over-sized in z so the boolean has clean parting faces.
+  def notch_cutter(f, s_start)
+    rw = f[:relief_width]
+    dp = notch_depth(f)
+    t = @thickness
+    parts = [box(dp, rw, 3.0 * t).translate(-dp, s_start, -t)]
+    if f[:relief] == :obround
+      parts << cylinder(rw / 2.0, 3.0 * t).translate(-dp, s_start + rw / 2.0, -t)
+    end
+    parts
+  end
+
+  # An obround notch is a rectangle with a round end, so the rectangle stops
+  # short by its own radius and the round is added separately.
+  def notch_depth(f)
+    f[:relief] == :obround ? f[:relief_depth] - f[:relief_width] / 2.0 : f[:relief_depth]
+  end
+
+  def relief_at?(f, which)
+    return false if f[:relief] == :none
+    which == :lo ? f[:relief_lo] : f[:relief_hi]
+  end
+
+  # --- Flat pattern -------------------------------------------------------
+
+  # Trace the blank counter-clockwise from the origin corner, one side at a
+  # time.
+  def flat_outline
+    pts = []
+    SIDES.each { |side| pts.concat(side_outline(side)) }
+    dedupe_ring(pts)
+  end
+
+  # One side of the blank: the plain edge, the flange's developed extension
+  # where there is one, and a notch at each end of the bend line. Built along
+  # the side's own axis, then turned around if the trace walks it backwards.
+  def side_outline(side)
+    len = side_length(side)
+    f = @flanges[side]
+    pts = [[0.0, 0.0]]
+    unless f.nil?
+      a = f[:from]
+      b = f[:to]
+      # Straight leg plus bend allowance: how much blank the fold consumes.
+      ext = f[:allowance] + f[:length]
+      rw = f[:relief_width]
+      dp = notch_depth(f)
+      if relief_at?(f, :lo)
+        pts << [a - rw, 0.0] << [a - rw, -dp] << [a, -dp]
+      else
+        pts << [a, 0.0]
+      end
+      pts << [a, ext] << [b, ext]
+      if relief_at?(f, :hi)
+        pts << [b, -dp] << [b + rw, -dp] << [b + rw, 0.0]
+      else
+        pts << [b, 0.0]
+      end
+    end
+    pts << [len, 0.0]
+    pts = pts.reverse if reversed_side?(side)
+    pts.map { |pd| side_point(side, pd[0], pd[1]) }
+  end
+
+  # The round ends of obround notches, which the polygon cannot carry — cut
+  # as real circles so the blank keeps true arcs in the cut file.
+  def obround_cuts
+    cuts = []
+    @flanges.each_value do |f|
+      next unless f[:relief] == :obround
+      r = f[:relief_width] / 2.0
+      d = -(f[:relief_depth] - r)
+      cuts << circle_at_side(f[:side], f[:from] - r, d, r) if relief_at?(f, :lo)
+      cuts << circle_at_side(f[:side], f[:to] + r, d, r) if relief_at?(f, :hi)
+    end
+    cuts
+  end
+
+  def circle_at_side(side, p, d, r)
+    x, y = side_point(side, p, d)
+    circle(r).translate(x, y, 0.0)
+  end
+
+  # A flange that runs to a corner ends exactly where the next side starts, so
+  # consecutive duplicates appear; the ring closes implicitly.
+  def dedupe_ring(pts)
+    out = []
+    pts.each { |p| out << p unless !out.empty? && same_point?(out[-1], p) }
+    out.pop if out.length > 1 && same_point?(out[0], out[-1])
+    out
+  end
+
+  def same_point?(a, b)
+    (a[0] - b[0]).abs < 1.0e-9 && (a[1] - b[1]).abs < 1.0e-9
+  end
+
+  private :numeric!, :positive!, :ensure_base!, :resolve_relief, :validate_relief!,
+          :check_corner_clearance!, :reaches_end?, :side_length, :plate_depth, :side_frame,
+          :place, :reversed_side?, :local_span, :side_point, :base_solid, :flange_solid,
+          :relief_cutters, :notch_cutter, :notch_depth, :relief_at?, :flat_outline,
+          :side_outline, :obround_cuts, :circle_at_side, :dedupe_ring, :same_point?
+end
+
+# ---------------------------------------------------------------------------
 # Top-level DSL methods
 # ---------------------------------------------------------------------------
 module Kernel
@@ -4807,6 +5306,21 @@ module Kernel
     raise NotImplementedError,
           "rrcad has no load path — use require_relative to include a file " \
           "relative to the current one"
+  end
+
+  # `sheet_metal(thickness: 2) do |s| ... end` — creates a SheetMetal part.
+  #
+  #   part = sheet_metal(thickness: 1.5, radius: 2, k_factor: 0.44) do |s|
+  #     s.base 120, 80
+  #     s.flange :xmax, length: 25
+  #     s.flange :ymin, length: 15, from: 10, to: 70
+  #   end
+  #   part.export("bracket.step")
+  #   part.export_flat("bracket.dxf")
+  def sheet_metal(thickness:, radius: nil, k_factor: 0.44)
+    sm = SheetMetal.new(thickness: thickness, radius: radius, k_factor: k_factor)
+    yield sm if block_given?
+    sm
   end
 
   # `assembly "name" do |asm| ... end` — creates an Assembly.
