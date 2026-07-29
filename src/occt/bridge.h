@@ -432,7 +432,7 @@ std::unique_ptr<OcctShape> shape_slice(const OcctShape& shape, rust::Str plane, 
 
 // --- Export ---
 void export_step(const OcctShape& shape, rust::Str path);
-void export_stl(const OcctShape& shape, rust::Str path);
+void export_stl(const OcctShape& shape, rust::Str path, double linear_deflection);
 void export_gltf(const OcctShape& shape, rust::Str path, double linear_deflection);
 // Binary glTF (GLB) — single-file format, suitable for HTTP serving.
 void export_glb(const OcctShape& shape, rust::Str path, double linear_deflection);

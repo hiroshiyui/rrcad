@@ -179,11 +179,19 @@ extern void* rrcad_shape_vertices_get(void* ptr, const char* selector, int idx,
                                       const char** error_out);
 
 /* Phase 4 — additional exports (stl, gltf, glb, obj) */
-extern void rrcad_shape_export_stl(void* ptr, const char* path, const char** error_out);
-extern void rrcad_shape_export_gltf(void* ptr, const char* path, const char** error_out);
-extern void rrcad_shape_export_glb(void* ptr, const char* path, const char** error_out);
-extern void rrcad_shape_export_obj(void* ptr, const char* path, const char** error_out);
-extern void rrcad_shape_export_3mf(void* ptr, const char* path, const char** error_out);
+/* The tessellating exporters take the mesh deflection, plus a flag saying
+ * whether the script asked for one at all — see shape_export_meshed! in
+ * native_io.rs for why "unset" is not folded into the value. */
+extern void rrcad_shape_export_stl(void* ptr, const char* path, int has_deflection,
+                                   double linear_deflection, const char** error_out);
+extern void rrcad_shape_export_gltf(void* ptr, const char* path, int has_deflection,
+                                    double linear_deflection, const char** error_out);
+extern void rrcad_shape_export_glb(void* ptr, const char* path, int has_deflection,
+                                   double linear_deflection, const char** error_out);
+extern void rrcad_shape_export_obj(void* ptr, const char* path, int has_deflection,
+                                   double linear_deflection, const char** error_out);
+extern void rrcad_shape_export_3mf(void* ptr, const char* path, int has_deflection,
+                                   double linear_deflection, const char** error_out);
 
 /* Phase 8 Tier 4 — SVG / DXF 2-D drawing output */
 extern void rrcad_shape_export_svg(
@@ -668,6 +676,11 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     mrb_value bom_rows_buf = mrb_nil_value();
     const char* balloons = "";
     mrb_value balloons_buf = mrb_nil_value();
+    /* Mesh tessellation quality, used only by the mesh formats. Absent means
+     * "use the default", which is not the same as any value the caller could
+     * pass, so it travels as its own flag. */
+    int has_deflection = 0;
+    double linear_deflection = 0.0;
     if (!mrb_nil_p(opts) && mrb_hash_p(opts)) {
         mrb_value vv = opt_fetch(mrb, opts, "view", mrb_nil_value());
         if (mrb_symbol_p(vv)) {
@@ -678,6 +691,17 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
             view = mrb_string_value_cstr(mrb, &view_buf);
         }
         scale = opt_double(mrb, opts, "scale", 1.0);
+        /* `deflection:` is accepted alongside `linear_deflection:` because
+         * export_outline already spells it the short way, and an unrecognised
+         * key here would be silently ignored — which is the failure this
+         * option is being fixed from. */
+        mrb_value defl_v = opt_fetch(mrb, opts, "linear_deflection", mrb_nil_value());
+        if (mrb_nil_p(defl_v))
+            defl_v = opt_fetch(mrb, opts, "deflection", mrb_nil_value());
+        if (!mrb_nil_p(defl_v)) {
+            linear_deflection = value_to_double(mrb, defl_v);
+            has_deflection = 1;
+        }
         hidden = opt_flag(mrb, opts, "hidden");
         center_marks = opt_flag(mrb, opts, "center_marks");
         dimensions = opt_flag(mrb, opts, "dimensions");
@@ -848,15 +872,15 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     const char* err = NULL;
 
     if (dot && (strcasecmp(dot, ".stl") == 0)) {
-        rrcad_shape_export_stl(ptr, path, &err);
+        rrcad_shape_export_stl(ptr, path, has_deflection, linear_deflection, &err);
     } else if (dot && (strcasecmp(dot, ".glb") == 0)) {
-        rrcad_shape_export_glb(ptr, path, &err);
+        rrcad_shape_export_glb(ptr, path, has_deflection, linear_deflection, &err);
     } else if (dot && (strcasecmp(dot, ".gltf") == 0)) {
-        rrcad_shape_export_gltf(ptr, path, &err);
+        rrcad_shape_export_gltf(ptr, path, has_deflection, linear_deflection, &err);
     } else if (dot && (strcasecmp(dot, ".obj") == 0)) {
-        rrcad_shape_export_obj(ptr, path, &err);
+        rrcad_shape_export_obj(ptr, path, has_deflection, linear_deflection, &err);
     } else if (dot && (strcasecmp(dot, ".3mf") == 0)) {
-        rrcad_shape_export_3mf(ptr, path, &err);
+        rrcad_shape_export_3mf(ptr, path, has_deflection, linear_deflection, &err);
     } else if (dot && (strcasecmp(dot, ".svg") == 0)) {
         rrcad_shape_export_svg(
             ptr, path, view, scale, hidden, center_marks, dimensions, title_block, callouts, datum,

@@ -108,9 +108,34 @@ pub(crate) unsafe fn shape_result_to_ptr(
     }
 }
 
-/// Default linear deflection for mesh tessellation (export_gltf, export_glb,
-/// export_obj).
+/// Default linear deflection for mesh tessellation, used when a script does not
+/// ask for one. 0.1 mm is fine for a mechanical part of a few tens of mm.
 pub(crate) const DEFAULT_LINEAR_DEFLECTION: f64 = 0.1;
+
+/// Reject a tessellation deflection that would not produce a usable mesh.
+///
+/// Zero or negative asks the mesher for infinite detail and gets undefined
+/// behaviour from OCCT instead of an error. Non-finite comes from arithmetic
+/// that already went wrong upstream. Both are worth catching here rather than
+/// letting the export fail later with a message about the kernel.
+///
+/// There is deliberately no upper or lower bound beyond that: what counts as
+/// too coarse depends entirely on the part, and a legitimately tiny part needs
+/// a legitimately tiny deflection.
+pub(crate) fn validate_linear_deflection(value: f64) -> Result<f64, String> {
+    if !value.is_finite() {
+        return Err(format!(
+            "linear_deflection must be a finite number, got {value}"
+        ));
+    }
+    if value <= 0.0 {
+        return Err(format!(
+            "linear_deflection must be greater than 0, got {value} \
+             (it is the largest gap allowed between the mesh and the true surface, in mm)"
+        ));
+    }
+    Ok(value)
+}
 
 /// Decode the raw C `path` pointer and validate it with `safe_path`.
 pub(crate) unsafe fn resolve_path(

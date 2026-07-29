@@ -329,7 +329,7 @@ mod ffi {
 
         // --- Export ---
         fn export_step(shape: &OcctShape, path: &str) -> Result<()>;
-        fn export_stl(shape: &OcctShape, path: &str) -> Result<()>;
+        fn export_stl(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
         fn export_gltf(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
         fn export_glb(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
         fn export_obj(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;

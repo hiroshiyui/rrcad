@@ -57,9 +57,9 @@ impl Shape {
         })
     }
 
-    /// Export to STL. Tessellates the shape with OCCT's default deflection.
-    pub fn export_stl(&self, path: &str) -> Result<(), String> {
-        ffi::export_stl(&self.inner, path).map_err(|e| {
+    /// Export to STL. `linear_deflection` controls tessellation quality.
+    pub fn export_stl(&self, path: &str, linear_deflection: f64) -> Result<(), String> {
+        ffi::export_stl(&self.inner, path, linear_deflection).map_err(|e| {
             self.fail_with_debug(
                 format!("export_stl({path:?}) on {} failed: {e}", summarize(self)),
                 "export_stl",

@@ -2986,13 +2986,55 @@ void export_step(const OcctShape& shape, rust::Str path) {
     }
 }
 
-void export_stl(const OcctShape& shape, rust::Str path) {
+namespace {
+
+// Tessellate `shape` at `linear_deflection`, discarding any mesh it is already
+// carrying at a different quality.
+//
+// OCCT stores the triangulation on the shape itself, and
+// BRepMesh_IncrementalMesh keeps an existing one when it considers it good
+// enough. That makes a second export of the same shape at a finer deflection
+// silently hand back the first, coarser mesh:
+//
+//   part.export("coarse.stl", linear_deflection: 2.0)
+//   part.export("fine.stl",   linear_deflection: 0.01)   # was still coarse
+//
+// which is the same silent no-op the option was added to remove. Comparing
+// against the deflection each face was built to, and cleaning when it differs,
+// keeps the file honest while still skipping the work when nothing changed —
+// the common case of writing one shape to STEP, STL and GLB in one script.
+void ensure_mesh(const TopoDS_Shape& shape, double linear_deflection) {
+    bool stale = false;
+    bool meshed = false;
+    for (TopExp_Explorer ex(shape, TopAbs_FACE); ex.More(); ex.Next()) {
+        TopLoc_Location loc;
+        Handle(Poly_Triangulation) tri = BRep_Tool::Triangulation(TopoDS::Face(ex.Current()), loc);
+        if (tri.IsNull())
+            continue;
+        meshed = true;
+        // Poly_Triangulation records the deflection it was built to. Compare
+        // relatively: the absolute figure spans several orders of magnitude
+        // across the parts people model.
+        const double stored = tri->Deflection();
+        if (std::abs(stored - linear_deflection) > 1.0e-9 * std::max(stored, linear_deflection)) {
+            stale = true;
+            break;
+        }
+    }
+    if (meshed && stale)
+        BRepTools::Clean(shape);
+
+    BRepMesh_IncrementalMesh mesher(shape, linear_deflection, /*isRelative=*/Standard_False,
+                                    /*angularDeflection=*/0.5, /*isParallel=*/Standard_True);
+    mesher.Perform();
+}
+
+} // namespace
+
+void export_stl(const OcctShape& shape, rust::Str path, double linear_deflection) {
     try {
-        // Tessellate before writing — StlAPI_Writer requires a pre-meshed shape
-        // in OCCT 7.7+.  isParallel=true uses the TBB thread pool (OCCT 7.4+).
-        BRepMesh_IncrementalMesh mesher(shape.get(), 0.1, /*isRelative=*/Standard_False,
-                                        /*angularDeflection=*/0.5, /*isParallel=*/Standard_True);
-        mesher.Perform();
+        // StlAPI_Writer requires a pre-meshed shape in OCCT 7.7+.
+        ensure_mesh(shape.get(), linear_deflection);
 
         std::string path_str(path.data(), path.size());
         StlAPI_Writer writer;
@@ -3011,11 +3053,7 @@ void export_stl(const OcctShape& shape, rust::Str path) {
 // Shared setup for glTF / GLB export: tessellate, create XDE document, add shape.
 static Handle(TDocStd_Document)
     make_xde_doc(const OcctShape& shape, double linear_deflection, const char* label) {
-    // isParallel=true uses the TBB thread pool — dominant cost on complex shapes.
-    BRepMesh_IncrementalMesh mesher(shape.get(), linear_deflection,
-                                    /*isRelative=*/Standard_False,
-                                    /*angularDeflection=*/0.5, /*isParallel=*/Standard_True);
-    mesher.Perform();
+    ensure_mesh(shape.get(), linear_deflection);
 
     Handle(XCAFApp_Application) app = XCAFApp_Application::GetApplication();
     Handle(TDocStd_Document) doc;
@@ -3268,10 +3306,7 @@ std::string srgb_hex(float r, float g, float b) {
 
 rust::String shape_3mf_model(const OcctShape& shape, double linear_deflection) {
     try {
-        BRepMesh_IncrementalMesh mesher(shape.get(), linear_deflection,
-                                        /*isRelative=*/Standard_False,
-                                        /*angularDeflection=*/0.5, /*isParallel=*/Standard_True);
-        mesher.Perform();
+        ensure_mesh(shape.get(), linear_deflection);
 
         // One <object> per solid. A shape with no solids — a shell, a face, a
         // sheet-metal blank — still has surface worth exporting, so it goes

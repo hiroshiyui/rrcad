@@ -287,11 +287,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **The user guide documented a `linear_deflection:` option on `export` that
-  does nothing.** `Shape#export` never read it — the mesh exporters have always
-  used a fixed 0.1 mm deflection — so the "coarse (quick preview)" example
-  produced a file byte-identical to the fine one. The documentation now says
-  what the code does; making the option real is separate work.
+- **`linear_deflection:` on `export` now does something.** It was documented
+  for a long time and never read: every mesh came out at a fixed 0.1 mm, so
+  `linear_deflection: 0.01` and `linear_deflection: 2.0` produced byte-identical
+  files and nothing said so. It now controls tessellation for every mesh format
+  (`.3mf`, `.stl`, `.glb`, `.gltf`, `.obj`), defaults to 0.1 mm, accepts
+  `deflection:` as a shorter spelling, and is refused if it is not greater than
+  zero — zero asks for infinite detail, which OCCT does not report as an error.
+  Ignored by STEP and the drawing formats, so one value can cover a batch of
+  exports. "Not asked for" crosses the FFI as its own flag rather than as a
+  sentinel value, so `linear_deflection: 0` is reported as the mistake it is
+  instead of silently falling back to the default.
+
+- **Exporting one shape twice at different mesh qualities gave the first mesh
+  both times** (`src/occt/bridge.cpp`). OCCT stores the triangulation on the
+  shape and `BRepMesh_IncrementalMesh` keeps one it considers good enough, so
+  after a coarse export a finer one silently returned the coarse mesh. The
+  exporters now compare against the deflection each face was built to and
+  discard the mesh when it differs, while still skipping the work when nothing
+  changed — the common case of writing one shape to STEP, STL and GLB in one
+  script.
 
 - **Annotation text can no longer corrupt the drawing it is written into**
   (`src/occt/bridge.cpp`): an `&` or `<` in a `datum:` or `feature_control:`

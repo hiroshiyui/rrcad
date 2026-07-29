@@ -3,7 +3,8 @@
 use std::ffi::{c_char, c_void};
 
 use super::native_helpers::{
-    DEFAULT_LINEAR_DEFLECTION, cstr_arg, resolve_path, set_err, shape_result_to_ptr, split_csv_list,
+    DEFAULT_LINEAR_DEFLECTION, cstr_arg, resolve_path, set_err, shape_result_to_ptr,
+    split_csv_list, validate_linear_deflection,
 };
 use crate::occt::{
     DrawingAnchor, DrawingDetail, DrawingFormat, DrawingSpec, GdtDatumSpec, GdtFeatureControlSpec,
@@ -37,11 +38,8 @@ macro_rules! shape_import {
 }
 
 /// Wrap a `&Shape` method that writes the shape to a validated path.
-///
-/// The tessellating exporters (glTF / GLB / OBJ) take one extra argument, the
-/// mesh deflection, which is supplied as the optional trailing expression.
 macro_rules! shape_export {
-    ($name:ident => $method:ident $(, $extra:expr)?) => {
+    ($name:ident => $method:ident) => {
         #[unsafe(no_mangle)]
         pub unsafe extern "C" fn $name(
             ptr: *mut c_void,
@@ -54,7 +52,50 @@ macro_rules! shape_export {
                 return;
             };
             let safe_str = safe.to_string_lossy();
-            if let Err(e) = shape.$method(&safe_str $(, $extra)?) {
+            if let Err(e) = shape.$method(&safe_str) {
+                unsafe { set_err(error_out, &e) };
+            }
+        }
+    };
+}
+
+/// Wrap a `&Shape` method that tessellates before writing.
+///
+/// These take the mesh deflection from the caller rather than a constant, so a
+/// script can trade file size against fidelity.
+///
+/// "Not asked for" travels as its own `has_deflection` flag rather than as a
+/// sentinel value. Any sentinel would have to be a number the caller might
+/// legitimately pass, and stealing one means `linear_deflection: 0` silently
+/// falls back to the default instead of being reported as the mistake it is.
+macro_rules! shape_export_meshed {
+    ($name:ident => $method:ident) => {
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn $name(
+            ptr: *mut c_void,
+            path: *const c_char,
+            has_deflection: i32,
+            linear_deflection: f64,
+            error_out: *mut *const c_char,
+        ) {
+            unsafe { *error_out = std::ptr::null() };
+            let shape = unsafe { &*(ptr as *const Shape) };
+            let deflection = if has_deflection == 0 {
+                DEFAULT_LINEAR_DEFLECTION
+            } else {
+                match validate_linear_deflection(linear_deflection) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        unsafe { set_err(error_out, &e) };
+                        return;
+                    }
+                }
+            };
+            let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
+                return;
+            };
+            let safe_str = safe.to_string_lossy();
+            if let Err(e) = shape.$method(&safe_str, deflection) {
                 unsafe { set_err(error_out, &e) };
             }
         }
@@ -65,11 +106,11 @@ shape_import!(rrcad_import_step => Shape::import_step);
 shape_import!(rrcad_import_stl => Shape::import_stl);
 
 shape_export!(rrcad_shape_export_step => export_step);
-shape_export!(rrcad_shape_export_stl => export_stl);
-shape_export!(rrcad_shape_export_gltf => export_gltf, DEFAULT_LINEAR_DEFLECTION);
-shape_export!(rrcad_shape_export_glb => export_glb, DEFAULT_LINEAR_DEFLECTION);
-shape_export!(rrcad_shape_export_obj => export_obj, DEFAULT_LINEAR_DEFLECTION);
-shape_export!(rrcad_shape_export_3mf => export_3mf, DEFAULT_LINEAR_DEFLECTION);
+shape_export_meshed!(rrcad_shape_export_stl => export_stl);
+shape_export_meshed!(rrcad_shape_export_gltf => export_gltf);
+shape_export_meshed!(rrcad_shape_export_glb => export_glb);
+shape_export_meshed!(rrcad_shape_export_obj => export_obj);
+shape_export_meshed!(rrcad_shape_export_3mf => export_3mf);
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rrcad_shape_gdt_apply(

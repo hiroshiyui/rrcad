@@ -249,7 +249,7 @@ fn e2e_import_stl_roundtrip() {
     let stl = tmp("rrcad_e2e_import_stl.stl");
     rrcad::occt::Shape::make_sphere(5.0)
         .unwrap()
-        .export_stl(stl.to_str().unwrap())
+        .export_stl(stl.to_str().unwrap(), 0.1)
         .unwrap();
     assert!(stl.exists(), "STL file not created");
 

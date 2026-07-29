@@ -299,10 +299,31 @@ nothing for.
 
 ## Mesh tessellation quality
 
-Mesh formats (`.3mf`, `.stl`, `.glb`, `.gltf`, `.obj`) require a tessellation
-step, which is fixed at a linear deflection of 0.1 mm. This is fine for
-printing and for preview; it is not yet adjustable per export. Passing a
-`linear_deflection:` option is accepted and ignored.
+Mesh formats (`.3mf`, `.stl`, `.glb`, `.gltf`, `.obj`) approximate curved
+surfaces with flat triangles. `linear_deflection:` is the largest gap allowed
+between the mesh and the true surface, in millimetres — smaller means a closer
+fit and a bigger file.
+
+```ruby
+part.export("model.3mf", linear_deflection: 0.01)   # fine (a printed part)
+part.export("model.glb")                            # 0.1 mm, the default
+part.export("model.glb", linear_deflection: 0.5)    # coarse (a quick preview)
+```
+
+The default is 0.1 mm, which suits a mechanical part a few tens of millimetres
+across. A useful rule for anything else is `size / 1000`, where `size` is the
+largest dimension. `deflection:` is accepted as a shorter spelling.
+
+It must be greater than zero: zero asks for infinite detail, and the export is
+refused rather than left to fail obscurely later.
+
+Flat faces are unaffected — a plane needs no refinement at any deflection, so a
+box exports as twelve triangles whatever you ask for. Only curvature costs
+triangles.
+
+The setting does not apply to `.step`, which carries exact geometry and no
+mesh; passing it there is harmless, so one deflection can cover a batch of
+exports in different formats.
 
 ## Worked example: STEP + 3MF + drawing in one script
 
@@ -311,8 +332,8 @@ printing and for preview; it is not yet adjustable per export. Passing a
 part = box(50, 30, 10).fillet(2)
 
 part.export("part.step")                                          # for CNC
-part.export("part.3mf")                                           # for printing
-part.export("part.glb")                                           # for web preview
+part.export("part.3mf",   linear_deflection: 0.05)                # for printing
+part.export("part.glb",   linear_deflection: 0.2)                 # for web preview
 part.export("drawing.svg", view: :sheet, title_block: true,
                            dimensions: true, hidden: true)        # for the shop
 ```

@@ -378,7 +378,7 @@ fn export_stl_file_created() {
     let path = tmp("rrcad_test_export.stl");
     Shape::make_sphere(5.0)
         .unwrap()
-        .export_stl(&path)
+        .export_stl(&path, 0.1)
         .expect("export_stl failed");
     assert!(std::path::Path::new(&path).exists());
     assert!(fs::metadata(&path).unwrap().len() > 0, "STL file is empty");

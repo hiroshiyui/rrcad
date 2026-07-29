@@ -157,9 +157,10 @@ writer will fail.
 
 Also check that the output directory exists.
 
-Tessellation runs at a fixed linear deflection of 0.1 mm — a reasonable value
-for mechanical parts — and is not adjustable from a script. A
-`linear_deflection:` option passed to `export` is accepted and ignored.
+Also check that `linear_deflection:` is positive and not extremely small
+(e.g. `1e-10`), which asks for a mesh with more triangles than memory allows.
+It defaults to 0.1 mm; a reasonable value for anything else is `size / 1000`,
+where `size` is the largest dimension.
 
 ---
 
