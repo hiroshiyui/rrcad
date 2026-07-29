@@ -21,11 +21,13 @@ Cross-cutting work comes first; the phase history follows, oldest to newest.
 | [9](#phase-9--model-context-protocol-mcp-server) | MCP server for AI agents | ✓ Complete |
 | [10](#phase-10--usability-and-robust-parametric-cad) | Sketch constraints, feature tree, GD&T | ✓ Complete |
 | [11](#phase-11--professional-cad-depth) | Professional CAD depth | ✓ Complete |
+| [12](#phase-12--quadcopter-readiness) | Quadcopter readiness | ○ Planned |
 
-Every phase is complete and nothing is scheduled. Work considered and set aside
-is recorded under [Deferred and not planned](#deferred-and-not-planned), with
-the reasoning, so a decision can be revisited rather than re-litigated. A
-Phase 12 has not been scoped.
+Phases 0–11 are complete. Phase 12 collects the gaps found by scoping a real
+quadcopter drone design against the current feature set. Work considered and
+set aside is recorded under
+[Deferred and not planned](#deferred-and-not-planned), with the reasoning, so
+a decision can be revisited rather than re-litigated.
 
 ---
 
@@ -590,6 +592,55 @@ Folded in where they fit rather than scheduled:
   `closed?` would reject spheres, booleans and imported meshes, all of
   which OCCT reports as not closed while measuring correctly.
   Tests: 8 in `tests/volume_of_surfaces.rs`.
+
+---
+
+## Planned phases
+
+### Phase 12 — Quadcopter Readiness
+
+Phase 11's assembly reports were validated by working through a quadcopter,
+and the same exercise is what scopes this phase: the parts of a real drone —
+frame plates, arms, motor mounts, canopy, propellers — that the current
+feature set cannot model comfortably, or cannot deliver in the form the next
+tool in the chain needs. Ordered so the pure-Ruby items land first.
+
+- [ ] **Airfoil profile primitive** — the one quadcopter part that cannot be
+      modelled today is a propeller. A blade is a loft of airfoil sections
+      with varying chord and twist along the radius; `loft` already accepts
+      pre-rotated, pre-placed 3-D profiles, but there is no way to *make* an
+      airfoil section short of hand-feeding dozens of points into
+      `spline_2d`. Add `airfoil(naca: "2412", chord: 20)` — the NACA 4-digit
+      formula is a few dozen lines of pure Ruby — plus loading Selig-format
+      `.dat` coordinate files for published sections. Unlocks propellers and
+      an aerodynamic canopy.
+- [ ] **Per-section twist and scale in `sweep_sections`** — the sweep places
+      origin-centred profiles at the spine points but cannot rotate or scale
+      them per station, so a blade or tapered arm today means manual loft
+      bookkeeping. Accept `twist:` / `scale:` arrays (or pre-oriented
+      profiles) and make it one call.
+- [ ] **Nut-pocket helpers** — the hardware library (`clearance_hole`,
+      `tap_drill`, `heat_set_insert`, `bearing_bore`) stops short of two
+      staples of printed frames: hex recesses for captive metric nuts and
+      pockets for standoffs. Same table-driven pure-Ruby pattern as
+      `heat_set_insert`: `nut_pocket(:m3)`, with locknut variants.
+- [ ] **`shell` with face selection** — `.shell(thickness)` always removes
+      the topmost face. A canopy or battery tray needs to choose which
+      face(s) to open — `.shell(1.6, open: part.faces("front"))`. OCCT's
+      `BRepOffsetAPI_MakeThickSolid` already takes a face list, so the work
+      is plumbing the selection through the bridge.
+- [ ] **Text emboss / engrave** — no `text()` exists anywhere. Frame plates
+      want part labels, version numbers, and motor-rotation arrows — CW/CCW
+      markings are genuinely functional on a quad. OCCT provides
+      `Font_BRepTextBuilder`; emboss is extrude + fuse, engrave is extrude +
+      cut.
+- [ ] **Structured (non-fused) assembly STEP export** — `Assembly#export`
+      fuses everything into one solid, so reopening the design in
+      FreeCAD/Fusion — or handing it to whoever machines the plates — loses
+      the motors, arms, and plates as separate components. Write STEP with
+      product structure via XCAF (`STEPCAFControl_Writer`), which the GLB
+      exporter already neighbours through CAF. Also fixes per-part colour in
+      assembly GLB previews.
 
 ---
 
