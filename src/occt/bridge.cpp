@@ -185,12 +185,18 @@
 #include <XCAFDoc_ShapeTool.hxx>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <filesystem>
+#include <locale>
 #include <stdexcept>
 #include <string>
 #include <unistd.h>
+#include <unordered_map>
 #include <vector>
 
 namespace rrcad {
@@ -3102,6 +3108,250 @@ void export_obj(const OcctShape& shape, rust::Str path, double linear_deflection
         auto final_mtl = std::filesystem::path(path_str);
         final_mtl.replace_extension(".mtl");
         rename_export_artifact(temp_mtl, final_mtl);
+    } catch (const Standard_Failure& e) {
+        throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
+    } catch (const std::exception&) {
+        throw;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 3MF export
+// ---------------------------------------------------------------------------
+//
+// A 3MF file is an OPC package: a ZIP holding an XML model part. OCCT has no
+// 3MF writer and nothing in this file can produce a ZIP, so the work is split
+// along the line each side is good at — this function tessellates the shape
+// and returns the `3D/3dmodel.model` XML, and the Rust side packages it (see
+// `Shape::export_3mf` in src/occt/file_ops.rs).
+//
+// What 3MF carries that STL does not:
+//   * units — declared once on <model>, so a slicer never has to guess that
+//     the numbers are millimetres
+//   * bodies — each solid becomes its own <object> instead of being merged
+//     into one triangle soup
+//   * colour — from Shape#color
+//
+// Colour is a tag on the OcctShape wrapper rather than on the topology, so one
+// export has at most one colour and every object shares it. Per-body colour
+// would mean moving the tag onto the shape's labels, which is a change to the
+// model, not to this writer.
+
+namespace {
+
+// Append a coordinate in fixed notation, trimming the trailing zeros that six
+// decimals leave on round numbers. Both forms are valid XML doubles; trimming
+// keeps a large mesh from spending six bytes per coordinate saying nothing.
+void append_3mf_number(std::string& out, double v) {
+    std::ostringstream oss;
+    // The classic locale keeps '.' as the decimal separator whatever the
+    // user's locale is — a comma here would silently produce a broken file.
+    oss.imbue(std::locale::classic());
+    oss << std::fixed << std::setprecision(6) << v;
+    std::string s = oss.str();
+    if (s.find('.') != std::string::npos) {
+        s.erase(s.find_last_not_of('0') + 1);
+        if (!s.empty() && s.back() == '.')
+            s.pop_back();
+    }
+    if (s == "-0")
+        s = "0";
+    out += s;
+}
+
+// A welded triangle mesh: nodes plus indices into them.
+struct Mesh3mf {
+    std::vector<gp_Pnt> nodes;
+    std::vector<std::array<int, 3>> triangles;
+};
+
+// Weld key: the exact bit patterns of the three coordinates.
+//
+// Adjacent faces tessellate their shared edge from the same polygon, so their
+// node coordinates match bitwise and welding on equality closes the mesh. It
+// deliberately never merges points that are merely close — a tolerance here
+// would collapse a thin wall into a self-intersecting sheet.
+struct NodeKey {
+    uint64_t x, y, z;
+    bool operator==(const NodeKey& o) const { return x == o.x && y == o.y && z == o.z; }
+};
+
+struct NodeKeyHash {
+    size_t operator()(const NodeKey& k) const noexcept {
+        // Rotate before mixing: a plain XOR would collapse the common mirrored
+        // cases (x == y, or a point and its negation) onto one bucket.
+        size_t h = std::hash<uint64_t>()(k.x);
+        h ^= std::hash<uint64_t>()(k.y) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+        h ^= std::hash<uint64_t>()(k.z) + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
+        return h;
+    }
+};
+
+NodeKey node_key(const gp_Pnt& p) {
+    static_assert(sizeof(double) == sizeof(uint64_t), "the weld key assumes 64-bit doubles");
+    double c[3] = {p.X(), p.Y(), p.Z()};
+    for (double& v : c) {
+        // -0.0 and +0.0 are equal as numbers but differ in every bit of the
+        // sign; normalise so a mirrored face still welds to its neighbour.
+        if (v == 0.0)
+            v = 0.0;
+    }
+    NodeKey k;
+    std::memcpy(&k.x, &c[0], sizeof(uint64_t));
+    std::memcpy(&k.y, &c[1], sizeof(uint64_t));
+    std::memcpy(&k.z, &c[2], sizeof(uint64_t));
+    return k;
+}
+
+// Collect one body's faces into a single welded mesh. The shape must already
+// have been tessellated; this only reads the triangulation hanging off it.
+Mesh3mf collect_3mf_mesh(const TopoDS_Shape& body) {
+    Mesh3mf mesh;
+    std::unordered_map<NodeKey, int, NodeKeyHash> index;
+
+    for (TopExp_Explorer ex(body, TopAbs_FACE); ex.More(); ex.Next()) {
+        const TopoDS_Face& face = TopoDS::Face(ex.Current());
+        TopLoc_Location loc;
+        Handle(Poly_Triangulation) tri = BRep_Tool::Triangulation(face, loc);
+        if (tri.IsNull())
+            continue;
+        gp_Trsf trsf;
+        if (!loc.IsIdentity())
+            trsf = loc.Transformation();
+
+        // A REVERSED face's triangles wind the opposite way round. 3MF wants
+        // every triangle counter-clockwise seen from outside the solid, so
+        // those get swapped back; leaving them is how a model ends up printing
+        // inside out.
+        const bool flip = (face.Orientation() == TopAbs_REVERSED);
+
+        // Triangulation nodes are 1-based, so slot 0 goes unused.
+        std::vector<int> local(static_cast<size_t>(tri->NbNodes()) + 1, -1);
+        for (int i = 1; i <= tri->NbNodes(); i++) {
+            gp_Pnt p = tri->Node(i).Transformed(trsf);
+            auto [it, fresh] = index.try_emplace(node_key(p), static_cast<int>(mesh.nodes.size()));
+            if (fresh)
+                mesh.nodes.push_back(p);
+            local[static_cast<size_t>(i)] = it->second;
+        }
+
+        for (int i = 1; i <= tri->NbTriangles(); i++) {
+            int a = 0, b = 0, c = 0;
+            tri->Triangle(i).Get(a, b, c);
+            if (flip)
+                std::swap(b, c);
+            const int ia = local[static_cast<size_t>(a)];
+            const int ib = local[static_cast<size_t>(b)];
+            const int ic = local[static_cast<size_t>(c)];
+            // Welding can collapse a degenerate sliver onto two distinct
+            // points. A triangle with a repeated corner is not a triangle, and
+            // some slicers reject the whole mesh over one of them.
+            if (ia == ib || ib == ic || ia == ic)
+                continue;
+            mesh.triangles.push_back({ia, ib, ic});
+        }
+    }
+    return mesh;
+}
+
+// 3MF `displaycolor` is sRGB hex with an alpha byte: #RRGGBBAA.
+std::string srgb_hex(float r, float g, float b) {
+    auto channel = [](float v) {
+        return std::clamp(static_cast<int>(std::lround(v * 255.0f)), 0, 255);
+    };
+    char buf[10];
+    std::snprintf(buf, sizeof(buf), "#%02X%02X%02XFF", channel(r), channel(g), channel(b));
+    return std::string(buf);
+}
+
+} // namespace
+
+rust::String shape_3mf_model(const OcctShape& shape, double linear_deflection) {
+    try {
+        BRepMesh_IncrementalMesh mesher(shape.get(), linear_deflection,
+                                        /*isRelative=*/Standard_False,
+                                        /*angularDeflection=*/0.5, /*isParallel=*/Standard_True);
+        mesher.Perform();
+
+        // One <object> per solid. A shape with no solids — a shell, a face, a
+        // sheet-metal blank — still has surface worth exporting, so it goes
+        // out as a single object rather than as an empty package.
+        std::vector<TopoDS_Shape> bodies;
+        for (TopExp_Explorer ex(shape.get(), TopAbs_SOLID); ex.More(); ex.Next())
+            bodies.push_back(ex.Current());
+        if (bodies.empty())
+            bodies.push_back(shape.get());
+
+        std::vector<Mesh3mf> meshes;
+        for (const TopoDS_Shape& body : bodies) {
+            Mesh3mf mesh = collect_3mf_mesh(body);
+            if (!mesh.triangles.empty())
+                meshes.push_back(std::move(mesh));
+        }
+        if (meshes.empty())
+            throw std::runtime_error("export_3mf: shape tessellated to no triangles — it has no "
+                                     "surface to print (an empty compound, a wire, or a vertex)");
+
+        const bool has_color = shape.has_color();
+        // Resource ids must be unique within the package. Id 1 is the material
+        // group when there is one, so objects start at 2 either way and the
+        // numbering does not shift when a colour is added.
+        const int first_object_id = 2;
+
+        std::string xml;
+        xml += "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+        xml += "<model unit=\"millimeter\" xml:lang=\"en-US\" "
+               "xmlns=\"http://schemas.microsoft.com/3dmanufacturing/core/2015/02\">\n";
+        xml += "  <metadata name=\"Application\">rrcad</metadata>\n";
+        xml += "  <resources>\n";
+
+        if (has_color) {
+            xml += "    <basematerials id=\"1\">\n";
+            xml += "      <base name=\"rrcad\" displaycolor=\"";
+            xml += srgb_hex(shape.color_r(), shape.color_g(), shape.color_b());
+            xml += "\"/>\n";
+            xml += "    </basematerials>\n";
+        }
+
+        for (size_t m = 0; m < meshes.size(); m++) {
+            const Mesh3mf& mesh = meshes[m];
+            xml += "    <object id=\"";
+            xml += std::to_string(first_object_id + static_cast<int>(m));
+            xml += "\" type=\"model\"";
+            if (has_color)
+                xml += " pid=\"1\" pindex=\"0\"";
+            xml += ">\n      <mesh>\n        <vertices>\n";
+            for (const gp_Pnt& p : mesh.nodes) {
+                xml += "          <vertex x=\"";
+                append_3mf_number(xml, p.X());
+                xml += "\" y=\"";
+                append_3mf_number(xml, p.Y());
+                xml += "\" z=\"";
+                append_3mf_number(xml, p.Z());
+                xml += "\"/>\n";
+            }
+            xml += "        </vertices>\n        <triangles>\n";
+            for (const auto& t : mesh.triangles) {
+                xml += "          <triangle v1=\"";
+                xml += std::to_string(t[0]);
+                xml += "\" v2=\"";
+                xml += std::to_string(t[1]);
+                xml += "\" v3=\"";
+                xml += std::to_string(t[2]);
+                xml += "\"/>\n";
+            }
+            xml += "        </triangles>\n      </mesh>\n    </object>\n";
+        }
+
+        xml += "  </resources>\n  <build>\n";
+        for (size_t m = 0; m < meshes.size(); m++) {
+            xml += "    <item objectid=\"";
+            xml += std::to_string(first_object_id + static_cast<int>(m));
+            xml += "\"/>\n";
+        }
+        xml += "  </build>\n</model>\n";
+
+        return rust::String(xml);
     } catch (const Standard_Failure& e) {
         throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
     } catch (const std::exception&) {

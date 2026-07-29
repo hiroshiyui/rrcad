@@ -101,4 +101,22 @@ impl Shape {
             )
         })
     }
+
+    /// Export to 3MF. Tessellates with `linear_deflection`, then writes the OPC
+    /// package.
+    ///
+    /// Unlike the other mesh exporters this is a two-stage job: OCCT has no 3MF
+    /// writer, so C++ produces the model XML (`shape_3mf_model` in bridge.cpp)
+    /// and Rust wraps it in the ZIP (`threemf::write_package`). The split is
+    /// along the line each side is good at — geometry there, container here.
+    pub fn export_3mf(&self, path: &str, linear_deflection: f64) -> Result<(), String> {
+        let model = ffi::shape_3mf_model(&self.inner, linear_deflection).map_err(|e| {
+            self.fail_with_debug(
+                format!("export_3mf({path:?}) on {} failed: {e}", summarize(self)),
+                "export_3mf",
+                &[("input", self)],
+            )
+        })?;
+        super::threemf::write_package(path, &model)
+    }
 }

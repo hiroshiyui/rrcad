@@ -137,6 +137,7 @@ mod tests {
             &vec![
                 serde_json::Value::from("step"),
                 serde_json::Value::from("stl"),
+                serde_json::Value::from("3mf"),
                 serde_json::Value::from("glb"),
                 serde_json::Value::from("gltf"),
                 serde_json::Value::from("obj"),

@@ -24,7 +24,7 @@ pub(crate) const MCP_PREVIEW_GLB: &str = "preview.glb";
 ///
 /// Single source of truth: `validate_format()` checks membership and the
 /// `cad_export` JSON schema enum in `resources.rs` is built from this list.
-pub(crate) const MCP_EXPORT_FORMATS: &[&str] = &["step", "stl", "glb", "gltf", "obj"];
+pub(crate) const MCP_EXPORT_FORMATS: &[&str] = &["step", "stl", "3mf", "glb", "gltf", "obj"];
 
 /// Address-space ceiling applied once at server startup (Mitigation 4).
 ///
@@ -260,7 +260,7 @@ mod tests {
 
     #[test]
     fn validate_format_accepts_known_exports_and_rejects_unknown() {
-        for format in ["step", "stl", "glb", "gltf", "obj"] {
+        for format in ["step", "stl", "3mf", "glb", "gltf", "obj"] {
             validate_format(format).expect("known export format should pass");
         }
         let err = validate_format("exe").expect_err("unknown format should fail");

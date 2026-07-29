@@ -2351,6 +2351,21 @@ class Shape
 
   # --- Stubs overridden by native after prelude runs -----------------------
 
+  # export(path, opts = nil) — write the shape, picking the format from the
+  # extension:
+  #
+  #   .step / .stp  exact BRep geometry, for another CAD package
+  #   .stl          triangle soup, no units, no colour
+  #   .3mf          triangles with units, colour, and one object per solid
+  #   .glb / .gltf  triangles for a viewer
+  #   .obj          triangles plus a companion .mtl
+  #   .svg / .dxf   a 2-D drawing, not a model (see the drawing options)
+  #
+  # Anything unrecognised is written as STEP.
+  #
+  # Prefer `.3mf` over `.stl` when the destination is a slicer: an STL carries
+  # no units, so the receiving end has to assume the numbers are millimetres,
+  # and it merges every body into one mesh.
   def export(_path)
     raise NotImplementedError, "Shape#export is not yet implemented (Phase 1)"
   end

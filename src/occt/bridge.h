@@ -439,6 +439,16 @@ void export_glb(const OcctShape& shape, rust::Str path, double linear_deflection
 // OBJ — Wavefront OBJ text format via RWObj_CafWriter (OCCT 7.6+).
 void export_obj(const OcctShape& shape, rust::Str path, double linear_deflection);
 
+// Tessellate `shape` and return the `3D/3dmodel.model` XML of a 3MF package:
+// one <object> per solid, in millimetres, coloured from Shape#color.
+//
+// This returns the XML rather than writing a file because a 3MF is a ZIP and
+// there is no ZIP writer on this side of the bridge. Rust packages the result
+// — see `Shape::export_3mf` in src/occt/file_ops.rs.
+//
+// Throws if the shape tessellates to no triangles.
+rust::String shape_3mf_model(const OcctShape& shape, double linear_deflection);
+
 // --- Phase 8 Tier 4: 2-D drawing output ---
 //
 // The whole request travels as a `DrawingSpec`: a cxx shared struct, generated

@@ -333,6 +333,8 @@ mod ffi {
         fn export_gltf(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
         fn export_glb(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
         fn export_obj(shape: &OcctShape, path: &str, linear_deflection: f64) -> Result<()>;
+        // Returns the 3MF model XML; Rust wraps it in the ZIP package.
+        fn shape_3mf_model(shape: &OcctShape, linear_deflection: f64) -> Result<String>;
 
         // Phase 8 Tier 4: 2-D drawing output.
         //
@@ -418,6 +420,7 @@ mod shape_core_debug;
 mod shape_core_diagnostics;
 mod shape_core_named_refs;
 mod surface_ops;
+mod threemf;
 
 /// Owned handle to a live OCCT shape.
 pub struct Shape {

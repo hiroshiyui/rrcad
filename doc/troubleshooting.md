@@ -155,13 +155,26 @@ The glTF pipeline runs tessellation first (`BRepMesh_IncrementalMesh`). If
 the shape is degenerate, tessellation may produce no triangles and the
 writer will fail.
 
-Also check:
-- The output directory exists.
-- `linear_deflection` is positive and not extremely small (e.g. `1e-10`)
-  which would create a huge mesh.
+Also check that the output directory exists.
 
-A reasonable value for mechanical parts is `0.1` (0.1 mm on a ~10 mm part),
-or `size / 100` where `size` is the largest dimension.
+Tessellation runs at a fixed linear deflection of 0.1 mm — a reasonable value
+for mechanical parts — and is not adjustable from a script. A
+`linear_deflection:` option passed to `export` is accepted and ignored.
+
+---
+
+### `export_3mf: shape tessellated to no triangles`
+
+The shape has no surface to print. Usually it is a wire or an edge — a
+`helix`, a `polyline`, a sketch that was never turned into a face — or a
+compound that ended up empty after a boolean removed everything.
+
+Check with `shape.shape_type` and `shape.volume`. If the intent was to export
+a path rather than a body, `sweep` or `pipe` it into a solid first; if a
+boolean emptied the shape, the cutting tool was larger than expected.
+
+The export fails rather than writing an empty package, which a slicer would
+open and display nothing for.
 
 ---
 

@@ -488,7 +488,7 @@ mod tests {
 
     #[test]
     fn test_format_allowlist_accepts_valid() {
-        for fmt in &["step", "stl", "glb", "gltf", "obj"] {
+        for fmt in &["step", "stl", "3mf", "glb", "gltf", "obj"] {
             validate_format(fmt).unwrap_or_else(|e| panic!("format '{fmt}' should be valid: {e}"));
         }
     }

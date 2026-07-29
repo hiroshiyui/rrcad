@@ -44,6 +44,7 @@ OCCT geometry kernel        (src/occt/)
   • BRep modeling, splines, tessellation
   • Shape logic split across focused Rust modules under src/occt/
   • STEP / STL / glTF (text) / GLB (binary) / OBJ export
+  • 3MF export: C++ emits the model XML, Rust (src/occt/threemf.rs) writes the OPC ZIP
   • SVG / DXF 2-D drawings via HLR, incl. sheets, GD&T frames, section views
       │
 Live preview               (src/preview/)

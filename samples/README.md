@@ -9,7 +9,7 @@ Scripts are numbered in order of increasing complexity.
 | `02_boolean_ops.rb` | `fuse`, `cut`, `common` | Phase 1 |
 | `03_transforms.rb` | `translate`, `rotate`, `scale` | Phase 1 |
 | `04_bracket.rb` | Realistic L-bracket with holes | Phase 1–2 |
-| `05_export_formats.rb` | STEP, STL, and glTF from one part | Phase 1 |
+| `05_export_formats.rb` | STEP, 3MF, STL, and glTF from one part | Phase 1 |
 | `06_live_preview.rb` | Live browser viewer with `preview` | Phase 1, 3 |
 | `07_teapot.rb` | Utah Teapot from 28 Newell Bézier patches (`bezier_patch`, `sew`) | Phase 6 |
 | `08_parametric_box.rb` | Parametric box with `param` DSL; drive with `--param` or `--design-table` | Phase 5 |

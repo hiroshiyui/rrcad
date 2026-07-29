@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **3MF export** — `part.export("part.3mf")`. STL is the format every slicer
+  reads and the reason a print occasionally comes out at the wrong scale: an
+  STL says `10` and nothing about what `10` means, and it merges every body
+  into one triangle soup. A 3MF declares `unit="millimeter"` once, gives each
+  solid in the shape its own `<object>`, and carries `Shape#color` as an sRGB
+  material. OCCT has no 3MF writer and a 3MF is a ZIP, so the work is split
+  along the line each side is good at: C++ (`shape_3mf_model` in
+  `src/occt/bridge.cpp`) tessellates and returns the model XML, and Rust
+  (`src/occt/threemf.rs`) wraps it in the OPC package. Per-face triangulations
+  are welded on exact node coordinates — never on a tolerance, which would
+  collapse a thin wall — and reversed faces are wound back, so the result is a
+  closed surface with outward normals rather than a pile of loose quads that
+  merely looks right in a viewer. Colour is one per shape, because that is
+  where `Shape#color` puts it; a multi-coloured assembly still needs a file per
+  part. A shape with no surface is refused rather than written as an empty
+  package. Adds the `zip` dependency (deflate only). 14 tests in
+  `tests/export_3mf.rs` and `src/occt/threemf.rs`.
+
 - **Sheet metal** (Phase 11 Track D, `src/ruby/prelude.rb`):
   `sheet_metal(thickness:, radius:, k_factor:) { |s| ... }` builds a folded
   part from a recipe of bends — `s.base(w, h)` for the plate and
@@ -268,6 +286,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   output was byte-compared against the previous build across twelve files.
 
 ### Fixed
+
+- **The user guide documented a `linear_deflection:` option on `export` that
+  does nothing.** `Shape#export` never read it — the mesh exporters have always
+  used a fixed 0.1 mm deflection — so the "coarse (quick preview)" example
+  produced a file byte-identical to the fine one. The documentation now says
+  what the code does; making the option real is separate work.
 
 - **Annotation text can no longer corrupt the drawing it is written into**
   (`src/occt/bridge.cpp`): an `&` or `<` in a `datum:` or `feature_control:`

@@ -183,6 +183,7 @@ extern void rrcad_shape_export_stl(void* ptr, const char* path, const char** err
 extern void rrcad_shape_export_gltf(void* ptr, const char* path, const char** error_out);
 extern void rrcad_shape_export_glb(void* ptr, const char* path, const char** error_out);
 extern void rrcad_shape_export_obj(void* ptr, const char* path, const char** error_out);
+extern void rrcad_shape_export_3mf(void* ptr, const char* path, const char** error_out);
 
 /* Phase 8 Tier 4 — SVG / DXF 2-D drawing output */
 extern void rrcad_shape_export_svg(
@@ -602,6 +603,7 @@ static mrb_value mrb_rrcad_shape_inspect(mrb_state* mrb, mrb_value self) {
  * dimensions: false, title_block: false, callouts: false, datum: nil, feature_control: nil,
  * tolerance: 0.0]) — dispatches by file extension: .step / .stp  → STEP AP203 .stl          → ASCII
  * STL .glb          → binary glTF (GLB) .gltf         → text glTF .obj          → Wavefront OBJ
+ *   .3mf          → 3MF (units, colour, one object per solid)
  *   .svg          → SVG 2-D drawing (HLR projection)
  *   .dxf          → DXF R12 2-D drawing (HLR projection)
  * Defaults to STEP for any unrecognised extension.
@@ -853,6 +855,8 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
         rrcad_shape_export_gltf(ptr, path, &err);
     } else if (dot && (strcasecmp(dot, ".obj") == 0)) {
         rrcad_shape_export_obj(ptr, path, &err);
+    } else if (dot && (strcasecmp(dot, ".3mf") == 0)) {
+        rrcad_shape_export_3mf(ptr, path, &err);
     } else if (dot && (strcasecmp(dot, ".svg") == 0)) {
         rrcad_shape_export_svg(
             ptr, path, view, scale, hidden, center_marks, dimensions, title_block, callouts, datum,

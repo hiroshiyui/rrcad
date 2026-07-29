@@ -209,7 +209,12 @@ so the two deliverables cannot drift apart. It lives entirely in
 
 Folded in where they fit rather than scheduled:
 
-- [ ] 3MF export — carries units, colour, and multi-body properly, unlike STL.
+- [x] 3MF export — carries units, colour, and multi-body properly, unlike STL.
+      `export("part.3mf")`. OCCT has no 3MF writer, so the work is split: C++
+      tessellates and emits the model XML, Rust wraps it in the OPC ZIP
+      (`src/occt/threemf.rs`). Colour is still one per shape, because that is
+      where `Shape#color` puts it; per-body colour needs the tag on the
+      topology.
 - [ ] `pattern_along_path`.
 - [ ] `thicken` / `knit` surfacing operations.
 

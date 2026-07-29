@@ -69,6 +69,7 @@ shape_export!(rrcad_shape_export_stl => export_stl);
 shape_export!(rrcad_shape_export_gltf => export_gltf, DEFAULT_LINEAR_DEFLECTION);
 shape_export!(rrcad_shape_export_glb => export_glb, DEFAULT_LINEAR_DEFLECTION);
 shape_export!(rrcad_shape_export_obj => export_obj, DEFAULT_LINEAR_DEFLECTION);
+shape_export!(rrcad_shape_export_3mf => export_3mf, DEFAULT_LINEAR_DEFLECTION);
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rrcad_shape_gdt_apply(

@@ -20,12 +20,14 @@ boolean, or pad onto them just like geometry built in rrcad.
 shape.export("file.step")    # format determined by file extension
 ```
 
-Supported extensions: `.step`, `.stl`, `.glb`, `.gltf`, `.obj`, `.svg`, `.dxf`.
+Supported extensions: `.step`, `.stl`, `.3mf`, `.glb`, `.gltf`, `.obj`, `.svg`,
+`.dxf`.
 
 | Extension | Format | Best for |
 |-----------|--------|----------|
 | `.step` | STEP AP203 | CAD interchange, manufacturing, CNC/CAM |
-| `.stl` | ASCII STL | 3D printing slicers |
+| `.3mf` | 3MF | 3D printing slicers — carries units, colour, and separate bodies |
+| `.stl` | ASCII STL | 3D printing, when the receiving tool only reads STL |
 | `.glb` | Binary glTF 2.0 | Web visualization, game engines, live preview |
 | `.gltf` | Text glTF 2.0 | Human-readable; separate `.bin` companion |
 | `.obj` | Wavefront OBJ | 3D modeling software; companion `.mtl` created |
@@ -267,26 +269,50 @@ often it means the centre was given in the wrong pair of axes. Detail views
 need a single view; `view: :sheet` is refused, since there is no one parent to
 magnify. Export the detail separately.
 
-## GLB / glTF / OBJ tessellation quality
+## 3MF: the format to hand a slicer
 
-Mesh formats require a tessellation step. The `linear_deflection` option
-controls how closely the mesh follows the BRep — smaller values produce a
-finer mesh and a larger file.
+STL is the format every slicer reads, and it is the reason a printed part
+sometimes comes out at 1/25 scale. An STL file says `10` and nothing about
+what `10` means, so the receiving end has to assume — usually millimetres,
+which is right until it isn't. It also has no notion of a body: two parts that
+were never touching arrive as one undifferentiated pile of triangles.
+
+3MF fixes both, and carries colour as well:
 
 ```ruby
-part.export("model.glb", linear_deflection: 0.1)   # fine (production)
-part.export("model.glb", linear_deflection: 0.5)   # coarse (quick preview)
+tray = box(10, 10, 10).fuse(box(10, 10, 10).translate(30, 0, 0))
+tray.export("tray.3mf")
 ```
 
-## Worked example: STEP + STL + drawing in one script
+- **Units** are declared once on the model, as millimetres.
+- **Bodies** stay separate: each solid in the shape becomes its own object,
+  so a slicer can arrange, colour, or remove them independently.
+- **Colour** comes from `.color(r, g, b)`, written as sRGB.
+
+The colour is a property of the whole shape rather than of each body, so one
+export carries at most one colour. Exporting a multi-coloured assembly means
+exporting each part to its own file for now.
+
+A shape with no surface at all — a bare wire, an empty compound — is refused
+rather than written as an empty package, which a slicer would open and show
+nothing for.
+
+## Mesh tessellation quality
+
+Mesh formats (`.3mf`, `.stl`, `.glb`, `.gltf`, `.obj`) require a tessellation
+step, which is fixed at a linear deflection of 0.1 mm. This is fine for
+printing and for preview; it is not yet adjustable per export. Passing a
+`linear_deflection:` option is accepted and ignored.
+
+## Worked example: STEP + 3MF + drawing in one script
 
 ```ruby
 # export_all.rb
 part = box(50, 30, 10).fillet(2)
 
 part.export("part.step")                                          # for CNC
-part.export("part.stl",   linear_deflection: 0.1)                 # for printing
-part.export("part.glb",   linear_deflection: 0.2)                 # for web preview
+part.export("part.3mf")                                           # for printing
+part.export("part.glb")                                           # for web preview
 part.export("drawing.svg", view: :sheet, title_block: true,
                            dimensions: true, hidden: true)        # for the shop
 ```
