@@ -2344,6 +2344,42 @@ void shape_bounding_box(const OcctShape& shape, rust::Slice<double> out) {
 
 double shape_volume(const OcctShape& shape) {
     try {
+        // An open Shell encloses nothing, and asking BRepGProp anyway does not
+        // produce zero — it produces a confident, plausible, wrong number. The
+        // divergence integral over a surface with a hole in it depends on where
+        // the hole happens to be: a ruled surface between two square loops
+        // reported 517.9 for a region whose honest answer is "not a volume".
+        // That number then flowed into `mass_estimate` and an assembly's mass
+        // rollup as if it meant something.
+        //
+        // The test is deliberately narrow — a Shell carrying a free boundary
+        // edge — because the obvious wider rules are both wrong:
+        //
+        //   * "must be closed?" would reject a sphere, every boolean result and
+        //     every imported mesh. OCCT reports all of those as not closed
+        //     (seam and degenerate edges belong to one face) while computing
+        //     their volumes perfectly.
+        //   * "must contain a Solid" would zero out `import_stl(...).volume`,
+        //     which is a Compound of triangles with no Solid in it and a
+        //     correct volume of exactly the source box.
+        //
+        // A Face is left alone for the same reason: a single spherical face is
+        // a closed surface with a real volume. Only a Shell that demonstrably
+        // has a boundary is refused, and the fix for one is `thicken` (give it
+        // a wall) or `sew` (close it into a solid).
+        if (shape.get().ShapeType() == TopAbs_SHELL) {
+            TopTools_IndexedDataMapOfShapeListOfShape edge_face_map;
+            TopExp::MapShapesAndAncestors(shape.get(), TopAbs_EDGE, TopAbs_FACE, edge_face_map);
+            for (int i = 1; i <= edge_face_map.Extent(); ++i) {
+                const TopoDS_Edge& edge = TopoDS::Edge(edge_face_map.FindKey(i));
+                // A degenerate edge (a cone apex, a sphere pole) bounds nothing
+                // and is expected to have a single face.
+                if (BRep_Tool::Degenerated(edge))
+                    continue;
+                if (edge_face_map.FindFromIndex(i).Extent() < 2)
+                    return 0.0; // free boundary: an open surface
+            }
+        }
         GProp_GProps props;
         BRepGProp::VolumeProperties(shape.get(), props);
         return props.Mass();

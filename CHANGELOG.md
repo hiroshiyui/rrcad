@@ -336,6 +336,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`volume` on an open surface reported a fictional number**
+  (`src/occt/bridge.cpp`). A Shell with a free boundary encloses nothing, but
+  `BRepGProp::VolumeProperties` does not return zero for one — it returns the
+  divergence integral over whatever faces exist, which depends on where the
+  opening happens to be. A `ruled_surface` between two 10x10 loops five apart
+  reported `517.918…`, close enough to the 500 of the region it appears to
+  bound to survive a glance, and nothing indicated the number was meaningless.
+  It then flowed into `mass_estimate` and `Assembly#mass_properties` as a
+  fictional mass. An open Shell now reports `0.0`, matching what a Face and a
+  Wire already did; `thicken` or `sew` turn the surface into something with a
+  real volume.
+
+  The check is specifically "a Shell carrying a free boundary edge", because
+  the two obvious wider rules are both wrong. Requiring `closed?` would reject
+  a sphere, every boolean result and every imported mesh — OCCT reports all of
+  them as not closed, since seam and degenerate edges belong to a single face,
+  while computing their volumes perfectly. Requiring a Solid would zero out
+  `import_stl(...).volume`, which is a Compound of triangles containing no
+  Solid and whose volume is exactly that of the source. A lone Face is left
+  alone too: a single spherical face is a closed surface with a genuine volume.
+  8 tests in `tests/volume_of_surfaces.rs`, most of them pinning the cases the
+  guard must *not* catch.
+
 - **`--preview` panicked instead of starting** (`src/preview/mod.rs`).
   `preview::start` bound the port before creating the Tokio runtime, and
   `bind_listener` ends in `TcpListener::from_std`, which panics outright with

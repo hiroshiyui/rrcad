@@ -821,7 +821,7 @@ constraints are present.
 | `.edges(:vertical\|:horizontal\|:all)` | Array of matching edge sub-shapes (deduplicated) |
 | `.vertices(:all)` | Array of all unique vertex sub-shapes |
 | `.bounding_box` | Returns `{x:, y:, z:, dx:, dy:, dz:}` — minimum corner and extents |
-| `.volume` | Volume of the solid (float) |
+| `.volume` | Volume of the enclosed material in mm³ (float). An **open** surface returns `0.0` rather than a number: a Shell with a free boundary edge encloses nothing, and integrating over it anyway yields a plausible but meaningless figure. Solids, booleans, spheres and imported meshes all measure normally — the check is specifically for a bounded Shell, not `closed?`, which OCCT reports as `false` for all of those. Give a surface volume with `.thicken` or `sew`. |
 | `.surface_area` | Total surface area (float) |
 | `.shape_type` | Returns a Symbol naming the topological type: `:compound`, `:compsolid`, `:solid`, `:shell`, `:face`, `:wire`, `:edge`, `:vertex` |
 | `.centroid` | Returns `[x, y, z]` centre of mass. Uses `BRepGProp::VolumeProperties` for solids/compounds, `SurfaceProperties` for shells/faces, `LinearProperties` for wires/edges. |

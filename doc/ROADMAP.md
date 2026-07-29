@@ -235,6 +235,14 @@ Folded in where they fit rather than scheduled:
       `export("part.stl", ascii: true)` opts back into text. Changes the bytes
       existing scripts write, not the geometry.
       Tests: 7 in `tests/export_stl_binary.rs`.
+- [x] `volume` on an open surface — a Shell with a free boundary encloses
+      nothing, but OCCT integrates over it anyway and returned a plausible,
+      meaningless number (517.9 for a ruled surface between two loops), which
+      became a fictional mass in `mass_estimate` and the assembly rollup. Now
+      `0.0`, matching Face and Wire. The guard is narrow on purpose: keying off
+      `closed?` would reject spheres, booleans and imported meshes, all of
+      which OCCT reports as not closed while measuring correctly.
+      Tests: 8 in `tests/volume_of_surfaces.rs`.
 
 ---
 

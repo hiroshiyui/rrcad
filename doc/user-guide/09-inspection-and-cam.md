@@ -15,6 +15,8 @@ unsupported overhangs? rrcad ships a small toolbox for these checks.
 | `.rebuild` | Shape | Replays the stored feature tree from its recorded parents |
 | `.closed?` | Boolean | True if every edge has ≥ 2 adjacent faces |
 | `.manifold?` | Boolean | True if every edge has exactly 2 adjacent faces |
+| `.volume` | Float | Enclosed material in mm³; `0.0` for an open surface |
+| `.surface_area` | Float | Total area of every face, in mm² |
 | `.centroid` | `[x, y, z]` | Centre of mass |
 | `.inertia` | Hash | `{ixx:, iyy:, izz:, ixy:, ixz:, iyz:}` inertia tensor |
 | `.min_thickness` | Float | Minimum wall thickness |
@@ -30,6 +32,28 @@ puts part.shape_type    # :solid, :shell, :face, …
 puts part.closed?
 puts part.manifold?
 ```
+
+`closed?` and `manifold?` are *topological* tests — they count how many faces
+each edge is shared by. That is not the same question as "is this watertight",
+and the difference surprises people: a `sphere` reports `closed? == false`
+because its seam edge belongs to one face, and an imported STL reports `false`
+because its triangles are never sewn together. Both are perfectly good solids.
+Treat a `false` as "worth a look", not as a defect.
+
+`volume` does not rely on that test. It measures the enclosed material and
+returns `0.0` for an **open** surface — a Shell with a free boundary, such as a
+`ruled_surface` with no end caps. Such a surface encloses nothing, so there is
+no volume to report and no mass either:
+
+```ruby
+skin = ruled_surface(bottom_loop, top_loop)
+skin.volume            # 0.0 — a surface, not a part
+mass_estimate(skin)    # 0.0
+
+skin.thicken(1.5).volume   # a real number: it has walls now
+```
+
+Spheres, boolean results, and imported meshes all measure normally.
 
 **Typical use** — inspect the modeling chain:
 
