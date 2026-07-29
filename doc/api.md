@@ -809,6 +809,7 @@ constraints are present.
 | `.revolve(deg=360)` | Revolve around Z axis |
 | `.sweep(path)` | Sweep profile along a `spline_3d` wire |
 | `.shell(thickness)` | Hollow out a solid by removing the topmost face and offsetting walls inward |
+| `.thicken(thickness)` | Give a Face or Shell a wall of `thickness`, returning a solid — the counterpart to `.shell`. Offsets along the surface normal; negative builds on the other side. Uses `BRepOffsetAPI_MakeThickSolid::MakeThickSolidBySimple`. Raises on a Solid, which already has thickness. |
 | `.offset(distance)` | Inflate (positive) or deflate (negative) a solid uniformly |
 | `.offset_2d(distance)` | Offset a 2D Wire or Face inward (negative) or outward (positive) in its own plane. Uses `BRepOffsetAPI_MakeOffset`. A Face returns a Face — the offset wires are rebuilt into a planar profile, so the result extrudes, pads, and pockets like any other profile. Profiles with holes are supported: growing the material shrinks the holes. Raises if an inward offset consumes the whole profile. |
 | `.simplify(min_feature_size)` | Remove small holes/fillets; faces with area < `min_feature_size²` are defeatured. Returns the original shape if none qualify. |

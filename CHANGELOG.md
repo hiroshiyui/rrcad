@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`thicken`** (`src/occt/bridge.cpp`, `src/ruby/glue.c`): `surface.thicken(t)`
+  gives a Face or Shell a wall and returns a solid — the counterpart to
+  `shell`, which takes material out of one. It is how a lofted or filled
+  surface becomes a part that can be machined or printed. The wall grows along
+  the surface normal, a negative thickness builds on the other side, and
+  curvature is preserved: thickening a cylinder's side face gives a tube, not
+  an extrusion. A Solid is refused, naming `offset` and `shell` as the two
+  operations that were probably meant.
+
+  Uses `MakeThickSolidBySimple` rather than the `MakeThickSolidByJoin` that
+  `shell` uses: ByJoin is the hollowing algorithm and expects a solid to remove
+  material from, so handed an open surface it offsets the faces without closing
+  the sides and returns a zero-volume shape that looks right in a viewer. The
+  result's orientation is then corrected from the sign of its volume, because a
+  face that was never cut from a solid has no side that is meaningfully
+  "inside", and getting it backwards produces a solid that removes material
+  where it should add it. 9 tests in `tests/thicken.rs`.
+
 - **3MF export** — `part.export("part.3mf")`. STL is the format every slicer
   reads and the reason a print occasionally comes out at the wrong scale: an
   STL says `10` and nothing about what `10` means, and it merges every body

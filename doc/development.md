@@ -437,6 +437,7 @@ is still active.
 | `tests/bom_sheets.rs` | `bom:` / `balloons:` on assembly drawings: table contents, balloon-to-component anchoring, delimiter and markup safety, DXF layers |
 | `tests/sheet_metal.rs` | `sheet_metal`: flange geometry against hand-computed trigonometry, bend allowance and k-factor, bend relief in both the solid and the blank, blank outline closure, refusals |
 | `tests/drawing_text_safety.rs` | Annotation text cannot corrupt its output: SVG entity escaping and round-trip, DXF group-code stream stays in sync across newlines |
+| `tests/thicken.rs` | `thicken`: plate volume from a flat face, tube volume from a curved one, which side the wall grows on, that the result is a real solid in a boolean and is not inverted, refusals, feature-graph rebuild |
 | `tests/export_deflection.rs` | `linear_deflection:` on `export`: triangle count against mesh quality, the documented default, re-meshing on re-export, every mesh format honouring it, flat faces unaffected, refusals |
 | `tests/export_3mf.rs` | 3MF export: OPC package skeleton, declared units, one object per solid, colour; the mesh is checked closed (edge parity) and outward-wound (signed volume vs the kernel's own volume), not merely present |
 | `tests/auto_dimensioning.rs` | `ordinate:` dimensions: measured values, datum corner, scale invariance, per-view axes, DXF layer and text alignment |

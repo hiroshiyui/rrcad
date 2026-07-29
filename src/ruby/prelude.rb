@@ -2484,6 +2484,23 @@ class Shape
     raise NotImplementedError, "Shape#offset is not yet implemented (Phase 4)"
   end
 
+  # Give a surface a wall thickness, turning it into a solid.
+  #
+  # This is the counterpart to `shell`: `shell` takes material out of a solid,
+  # `thicken` puts a solid around a surface that has none. It is how a lofted
+  # or filled surface becomes a part you can machine or print.
+  #
+  #   skin  = fill_surface(outline)      # a Face — no thickness
+  #   panel = skin.thicken(1.5)          # a 1.5 mm solid panel
+  #
+  # The shape must be a Face or a Shell. A negative thickness builds on the
+  # other side of the surface. A Solid is refused: it already has thickness,
+  # and `offset` grows it while `shell` hollows it out.
+  # Uses BRepOffsetAPI_MakeThickSolid.
+  def thicken(_thickness)
+    raise NotImplementedError, "Shape#thicken is not yet implemented"
+  end
+
   # Offset a 2D Wire or Face inward (negative) or outward (positive) in its
   # own plane.  Uses BRepOffsetAPI_MakeOffset.  Phase 7 Tier 1.
   #

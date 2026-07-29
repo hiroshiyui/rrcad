@@ -224,6 +224,12 @@ impl FeatureNode {
                 .ok_or_else(|| "convex_hull feature missing parent".to_string())?
                 .rebuild()?
                 .convex_hull(),
+            FeatureOp::Thicken { thickness } => self
+                .parents
+                .first()
+                .ok_or_else(|| "thicken feature missing parent".to_string())?
+                .rebuild()?
+                .thicken(*thickness),
             FeatureOp::PathPattern { n } => {
                 let profile = self
                     .parents

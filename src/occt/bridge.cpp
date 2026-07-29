@@ -1447,6 +1447,54 @@ std::unique_ptr<OcctShape> shape_shell(const OcctShape& shape, double thickness)
 }
 
 // ---------------------------------------------------------------------------
+// .thicken(thickness) — give a surface a wall thickness, making it a solid
+// ---------------------------------------------------------------------------
+
+std::unique_ptr<OcctShape> shape_thicken(const OcctShape& shape, double thickness) {
+    try {
+        // A surface has no inside, so this only makes sense for a Face or a
+        // Shell. A Solid already has thickness: `offset` grows it and `shell`
+        // hollows it, and silently doing one of those would be a surprise.
+        const TopAbs_ShapeEnum type = shape.get().ShapeType();
+        if (type != TopAbs_FACE && type != TopAbs_SHELL) {
+            throw std::runtime_error(
+                "thicken: expects a Face or Shell (a surface with no thickness yet); "
+                "for a solid use offset() to grow it or shell() to hollow it");
+        }
+
+        // BySimple, not ByJoin: ByJoin is the hollowing algorithm shape_shell
+        // uses, and it expects a solid to take material out of. Handed an open
+        // surface it offsets the faces without ever closing the sides, which
+        // comes back as a zero-volume shape that looks plausible. BySimple
+        // offsets along the normal and walls in the open boundary, which is
+        // what thickening a surface means.
+        BRepOffsetAPI_MakeThickSolid thick;
+        thick.MakeThickSolidBySimple(shape.get(), thickness);
+        if (!thick.IsDone())
+            throw std::runtime_error("thicken: BRepOffsetAPI_MakeThickSolid failed");
+
+        TopoDS_Shape result = thick.Shape();
+
+        // The offset inherits the source face's orientation, which for a face
+        // that was not cut from a solid is arbitrary — nothing has told it
+        // which side is inside. Half the time that yields an inverted solid:
+        // it has the right shape and the right bounding box, reports a
+        // negative volume, and removes material where it should add it. The
+        // sign of the volume is what says which one we got.
+        GProp_GProps props;
+        BRepGProp::VolumeProperties(result, props);
+        if (props.Mass() < 0.0)
+            result.Reverse();
+
+        return wrap(result);
+    } catch (const Standard_Failure& e) {
+        throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
+    } catch (const std::exception&) {
+        throw;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Phase 4: .offset(distance) — inflate / deflate a solid
 // ---------------------------------------------------------------------------
 

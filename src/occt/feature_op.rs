@@ -135,6 +135,9 @@ pub(crate) enum FeatureOp {
         count: usize,
     },
     ConvexHull,
+    Thicken {
+        thickness: f64,
+    },
     PathPattern {
         n: i32,
     },

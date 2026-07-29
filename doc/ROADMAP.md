@@ -215,8 +215,20 @@ Folded in where they fit rather than scheduled:
       (`src/occt/threemf.rs`). Colour is still one per shape, because that is
       where `Shape#color` puts it; per-body colour needs the tag on the
       topology.
-- [ ] `pattern_along_path`.
-- [ ] `thicken` / `knit` surfacing operations.
+- [x] `pattern_along_path` — already present, under the name `path_pattern`
+      (`path_pattern(shape, path, n)`). Distributes n arc-length-even copies
+      along a Wire or Edge, each oriented to the path tangent. Kept in the list
+      by an oversight rather than left undone.
+- [x] `knit` — already present, under the name `sew`
+      (`sew([face1, face2, …], tolerance:)`). Same oversight.
+- [x] `thicken` — `surface.thicken(t)` gives a Face or Shell a wall and returns
+      a solid, the counterpart to `shell` hollowing one out. Uses
+      `BRepOffsetAPI_MakeThickSolid::MakeThickSolidBySimple`; the *ByJoin*
+      variant `shell` uses is the hollowing algorithm and hands back a
+      zero-volume shape for an open surface. The result's orientation is
+      corrected from the sign of its volume, since a face that was never cut
+      from a solid has no side that is meaningfully "inside".
+      Tests: 9 in `tests/thicken.rs`.
 
 ---
 

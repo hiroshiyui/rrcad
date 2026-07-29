@@ -195,6 +195,7 @@ mod ffi {
         // --- Phase 4: 3-D operations ---
         fn shape_shell(shape: &OcctShape, thickness: f64) -> Result<UniquePtr<OcctShape>>;
         fn shape_offset(shape: &OcctShape, distance: f64) -> Result<UniquePtr<OcctShape>>;
+        fn shape_thicken(shape: &OcctShape, thickness: f64) -> Result<UniquePtr<OcctShape>>;
         // Phase 7 Tier 1: 2D profile offset (Wire or Face in its own plane).
         fn shape_offset_2d(shape: &OcctShape, distance: f64) -> Result<UniquePtr<OcctShape>>;
         fn shape_simplify(shape: &OcctShape, min_feature_size: f64)

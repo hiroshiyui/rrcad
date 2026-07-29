@@ -225,6 +225,13 @@ std::unique_ptr<OcctShape> shape_shell(const OcctShape& shape, double thickness)
 //   Uses BRepOffsetAPI_MakeOffsetShape::PerformByJoin.
 std::unique_ptr<OcctShape> shape_offset(const OcctShape& shape, double distance);
 
+// .thicken(thickness) — turn a surface (Face or Shell) into a solid by giving
+// it a wall of `thickness`, offsetting along the surface normal. Negative
+// thickens the other way. Uses BRepOffsetAPI_MakeThickSolid with no faces
+// removed, which is what separates it from shape_shell.
+// Throws if the shape is not a Face or Shell.
+std::unique_ptr<OcctShape> shape_thicken(const OcctShape& shape, double thickness);
+
 // .offset_2d(distance) — offset a 2D Face or Wire inward (negative) or outward (positive).
 //   Uses BRepOffsetAPI_MakeOffset, which operates on Wire/Face shapes in their own plane.
 std::unique_ptr<OcctShape> shape_offset_2d(const OcctShape& shape, double distance);

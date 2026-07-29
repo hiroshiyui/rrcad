@@ -21,6 +21,7 @@ bottom.
 | `.chamfer(d, :vertical)` | Bevel only vertical edges |
 | `.chamfer_asym(d1, d2)` | Asymmetric bevel (different distances on each side) |
 | `.shell(thickness)` | Hollow the solid (negative = inward offset) |
+| `.thicken(thickness)` | Give a surface a wall, turning it into a solid |
 | `.offset(distance)` | Offset the solid volume |
 | `.offset_2d(distance)` | Offset a 2D profile in its own plane; returns a profile you can extrude |
 | `.simplify(min_feature_size)` | Remove features smaller than the threshold |
@@ -77,7 +78,7 @@ If a fillet fails ("BRepFilletAPI_MakeFillet …"), the radius likely
 exceeds the smallest adjacent face. Try a smaller radius, or fillet a
 selected edge with [`fillet_sel`](06-topology-and-selectors.md).
 
-## Shell and offset
+## Shell, thicken, and offset
 
 `.shell` hollows a solid (positive thickness offsets outward, negative
 inward); `.offset` grows or shrinks the whole volume.
@@ -85,6 +86,23 @@ inward); `.offset` grows or shrinks the whole volume.
 ```ruby
 case_body = box(80, 50, 30).fillet(4).shell(-2)   # hollow with 2 mm walls
 ```
+
+`.thicken` is the other direction: it takes a surface — a Face or a Shell,
+which has area but no volume — and gives it a wall, returning a solid. That is
+how a lofted or filled surface becomes a part you can machine or print.
+
+```ruby
+skin  = fill_surface(outline)   # a Face: no thickness, no volume
+panel = skin.thicken(1.5)       # a 1.5 mm solid
+```
+
+The wall grows along the surface normal; a negative thickness builds on the
+other side, which is what you want when the normal points away from the
+material. Curvature is preserved — thickening the side of a cylinder gives a
+tube, not an extrusion.
+
+A solid is refused. It already has thickness: use `.offset` to grow it or
+`.shell` to hollow it.
 
 `.offset_2d(distance)` grows (positive) or shrinks (negative) a 2-D profile
 in its own plane, keeping every edge parallel to where it started. A Face in

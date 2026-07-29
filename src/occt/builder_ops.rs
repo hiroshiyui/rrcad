@@ -62,6 +62,23 @@ impl Shape {
             .map_err(|e| e.to_string())
     }
 
+    /// Give a surface (Face or Shell) a wall thickness, making it a solid.
+    ///
+    /// This is the counterpart to `shell`: `shell` takes material out of a
+    /// solid, `thicken` puts a solid around a surface that has none.
+    pub fn thicken(&self, thickness: f64) -> Result<Shape, String> {
+        ffi::shape_thicken(&self.inner, thickness)
+            .map(|p| {
+                self.with_feature(
+                    p,
+                    FeatureOp::Thicken { thickness },
+                    format!("thicken(thickness={thickness})"),
+                    vec![self.feature.clone()],
+                )
+            })
+            .map_err(|e| e.to_string())
+    }
+
     /// 3-D convex hull of the shape's tessellated mesh vertices.
     pub fn convex_hull(&self) -> Result<Shape, String> {
         ffi::shape_convex_hull(&self.inner)

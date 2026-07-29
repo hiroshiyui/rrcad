@@ -105,6 +105,7 @@ impl FeatureOp {
             }
             FeatureOp::FragmentAll { count } => format!("fragment_all(count={count})"),
             FeatureOp::ConvexHull => "convex_hull()".to_string(),
+            FeatureOp::Thicken { thickness } => format!("thicken(thickness={thickness})"),
             FeatureOp::PathPattern { n } => format!("path_pattern(n={n})"),
             FeatureOp::Slice { plane, offset } => format!("slice(plane={plane}, offset={offset})"),
             FeatureOp::Fillet { radius } => format!("fillet(radius={radius})"),
@@ -196,6 +197,7 @@ impl FeatureOp {
             | FeatureOp::Offset2D { .. }
             | FeatureOp::Simplify { .. }
             | FeatureOp::ConvexHull
+            | FeatureOp::Thicken { .. }
             | FeatureOp::Slice { .. }
             | FeatureOp::Fillet { .. }
             | FeatureOp::FilletSel { .. }

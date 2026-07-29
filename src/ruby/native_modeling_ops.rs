@@ -61,6 +61,11 @@ shape_method!(
 );
 
 shape_method!(
+    /// `.thicken(t)` - give a Face or Shell a wall thickness, making it a solid.
+    rrcad_shape_thicken(thickness: f64) => thicken
+);
+
+shape_method!(
     /// `path_pattern(shape, path, n)` - distribute n copies of `shape` along `path`.
     rrcad_shape_path_pattern(path_ptr: shape, n: int) => path_pattern
 );

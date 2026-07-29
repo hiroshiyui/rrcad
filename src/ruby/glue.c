@@ -268,6 +268,7 @@ extern void* rrcad_make_helix(double radius, double pitch, double height, const 
 /* Phase 8 Tier 5 — Advanced composition */
 extern void* rrcad_shape_fragment(const void** ptrs, size_t n, const char** error_out);
 extern void* rrcad_shape_convex_hull(void* ptr, const char** error_out);
+extern void* rrcad_shape_thicken(void* ptr, double thickness, const char** error_out);
 extern void* rrcad_shape_path_pattern(void* ptr, void* path_ptr, int n, const char** error_out);
 extern void* rrcad_shape_sweep_guide(void* ptr, void* path_ptr, void* guide_ptr,
                                      const char** error_out);
@@ -2880,6 +2881,18 @@ static mrb_value mrb_rrcad_fragment(mrb_state* mrb, mrb_value self) {
     return shape_from_ptr(mrb, result);
 }
 
+/* .thicken(thickness) — give a Face or Shell a wall, making it a solid. */
+static mrb_value mrb_rrcad_shape_thicken(mrb_state* mrb, mrb_value self) {
+    mrb_value thickness_val;
+    mrb_get_args(mrb, "o", &thickness_val);
+    double thickness = value_to_double(mrb, thickness_val);
+    void* ptr = self_ptr(mrb, self);
+    const char* err = NULL;
+    void* result = rrcad_shape_thicken(ptr, thickness, &err);
+    raise_if_err(mrb, err);
+    return shape_from_ptr(mrb, result);
+}
+
 /* shape.convex_hull */
 static mrb_value mrb_rrcad_shape_convex_hull(mrb_state* mrb, mrb_value self) {
     void* ptr = self_ptr(mrb, self);
@@ -3021,6 +3034,7 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     mrb_define_method(mrb, shape_class, "offset", mrb_rrcad_shape_offset, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "offset_2d", mrb_rrcad_shape_offset_2d, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "simplify", mrb_rrcad_shape_simplify, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "thicken", mrb_rrcad_shape_thicken, MRB_ARGS_REQ(1));
 
     /* Phase 4: Patterns */
     mrb_define_method(mrb, mrb->kernel_module, "linear_pattern", mrb_rrcad_linear_pattern,
