@@ -5,7 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-07-29
+
+Behaviour changes worth knowing about before upgrading. None alter geometry,
+but each changes what an existing script produces:
+
+- `export("part.stl")` now writes **binary** STL instead of ASCII — same
+  triangles, roughly a fifth of the bytes. Pass `ascii: true` for the old
+  encoding.
+- `linear_deflection:` on `export` is now actually applied. It was accepted and
+  ignored, so every mesh came out at the fixed 0.1 mm default; scripts that
+  passed a value will now get the mesh they asked for.
+- `volume` on an **open** surface returns `0.0` rather than a plausible but
+  meaningless number, which also changes `mass_estimate` and assembly mass
+  rollups for surface models.
+- `offset_2d` returns a Face rather than loose wires, so an offset profile
+  extrudes into a solid instead of an open shell.
+- Rust API: `Shape::export_stl` takes an additional `ascii: bool`.
 
 ### Added
 
