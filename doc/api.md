@@ -48,6 +48,7 @@ let w = Shape::make_wedge(10.0, 8.0, 6.0, 4.0)?;
 | `Shape::make_circle_face(r) -> Result<Shape>` | Circular face in the XY plane |
 | `Shape::make_polygon(pts: &[f64]) -> Result<Shape>` | Closed polygon face in the XY plane. `pts` is a flat `[x0, y0, x1, y1, …]` slice; at least 3 points required. |
 | `Shape::make_profile_2d(pts: &[f64], counts: &[i32], kinds: &[i32]) -> Result<Shape>` | Closed XY profile face from a chain of segments: segment *i* owns `counts[i]` consecutive points and repeats the corner it shares with its neighbour; `kinds[i]` is 0 for a straight run or 1 for a BSpline interpolated through them (`GeomAPI_Interpolate`). Backs constraint sketches that mix `line` and `spline` segments. |
+| `Shape::make_text(text: &str, size: f64, font: &str) -> Result<Shape>` | Phase 12: text glyph outlines as a Compound of planar Faces in the XY plane, baseline at the origin, `size` tall in model units. `font` is a family name (system font manager), a `.ttf`/`.otf` path, or `""` for the sans-serif default. Uses `Font_BRepFont` + `Font_BRepTextBuilder`. |
 | `Shape::make_ellipse_face(rx, ry) -> Result<Shape>` | Elliptic face in the XY plane. OCCT requires major ≥ minor; arguments are swapped automatically if needed. |
 | `Shape::make_arc(r, start_deg, end_deg) -> Result<Shape>` | Circular arc `Wire` in the XY plane, counterclockwise from `start_deg` to `end_deg`. Suitable as a sweep path. |
 | `Shape::make_spline_2d(pts: &[f64]) -> Result<Shape>` | Closed profile in the XZ plane. `pts` is a flat `[r0, z0, r1, z1, …]` slice. Interpolates a BSpline, closes with a straight edge if the endpoints differ, returns a `Face`. Designed for `.revolve()`. |
@@ -386,10 +387,21 @@ let section = Shape::make_box(10.0, 10.0, 10.0)?.slice("xy", 5.0)?;
 
 ---
 
+### Phase 12 — Quadcopter Readiness
+
+| Method | Description |
+|--------|-------------|
+| `.shell_open(faces: &[&Shape], thickness: f64) -> Result<Shape>` | Hollow out the solid removing the *chosen* faces instead of the topmost one. Faces must belong to this solid (matched by `IsSame`); duplicates are deduped and removing every face is refused. Wraps the `ShellOpenBuilder` bridge trio. |
+
+(`Shape::make_text` is listed with the 2D sketch faces, and `Shape::export_step_assembly` with the exports below.)
+
+---
+
 ### Export
 
 | Method | Description |
 |--------|-------------|
+| `Shape::export_step_assembly(assembly_name, parts: &[(&str, &Shape)], path) -> Result<()>` | Phase 12: structured STEP export — each `(name, shape)` pair becomes a named PRODUCT under one root assembly via XCAF + `STEPCAFControl_Writer`; colour comes from each shape's own `.color`. |
 | `.export_step(path: &str) -> Result<()>` | STEP AP214 boundary-representation file (OCCT's default `write.step.schema`; the files declare `AUTOMOTIVE_DESIGN 214`) |
 | `.export_stl(path: &str, linear_deflection: f64, ascii: bool) -> Result<()>` | STL triangulated mesh. `ascii: false` writes binary (80-byte header, `uint32` count, 50 bytes per triangle) — ~5x smaller and the default everywhere above this layer. `ascii: true` writes text. |
 | `.export_gltf(path: &str, linear_deflection: f64) -> Result<()>` | glTF 2.0 (text JSON + companion `.bin`). `linear_deflection` controls tessellation quality (e.g. `0.1` for 0.1 mm). |
@@ -480,6 +492,7 @@ fn make_circle_face(r: f64)                            -> Result<UniquePtr<OcctS
 fn make_polygon(pts: &[f64])                           -> Result<UniquePtr<OcctShape>>;
 fn make_ellipse_face(rx: f64, ry: f64)                -> Result<UniquePtr<OcctShape>>;
 fn make_arc(r: f64, start_deg: f64, end_deg: f64)    -> Result<UniquePtr<OcctShape>>;
+fn make_text(text: &str, size: f64, font: &str)       -> Result<UniquePtr<OcctShape>>;
 fn make_spline_2d(pts: &[f64])                         -> Result<UniquePtr<OcctShape>>;
 fn make_spline_2d_tan(pts: &[f64], t0x: f64, t0z: f64,
                       t1x: f64, t1z: f64)              -> Result<UniquePtr<OcctShape>>;
@@ -629,6 +642,20 @@ fn shape_convex_hull(shape: &OcctShape)                                   -> Res
 fn shape_path_pattern(shape: &OcctShape, path: &OcctShape, n: i32)       -> Result<UniquePtr<OcctShape>>;
 fn shape_sweep_guide(profile: &OcctShape, path: &OcctShape,
                      guide: &OcctShape)                                   -> Result<UniquePtr<OcctShape>>;
+
+// Phase 12 — shell with face selection
+type ShellOpenBuilder;
+fn shell_open_new()                                                        -> Result<UniquePtr<ShellOpenBuilder>>;
+fn shell_open_add(builder: Pin<&mut ShellOpenBuilder>, face: &OcctShape)  -> Result<()>;
+fn shell_open_build(builder: Pin<&mut ShellOpenBuilder>, shape: &OcctShape,
+                    thickness: f64)                                        -> Result<UniquePtr<OcctShape>>;
+
+// Phase 12 — structured assembly STEP export
+type StepAssemblyWriter;
+fn step_assembly_new(assembly_name: &str)                                  -> Result<UniquePtr<StepAssemblyWriter>>;
+fn step_assembly_add(writer: Pin<&mut StepAssemblyWriter>, name: &str,
+                     shape: &OcctShape)                                    -> Result<()>;
+fn step_assembly_write(writer: Pin<&mut StepAssemblyWriter>, path: &str)  -> Result<()>;
 ```
 
 ---
