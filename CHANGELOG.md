@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Phase 12 — quadcopter readiness: the six gaps found by scoping a real drone
+design against the feature set. All additive; no existing script changes
+behaviour.
+
+### Added
+
+- **`airfoil` profile primitive** (`src/ruby/prelude.rb`): closed aerofoil
+  Face in the XY plane from a NACA 4-digit code (`naca: "2412"`, generated
+  analytically with the closed-trailing-edge polynomial and cosine point
+  spacing), explicit Selig-ordered `coordinates:`, or the text of a Selig
+  `.dat` file via `dat:`. Two interpolated BSpline segments keep the surfaces
+  smooth through extrude/loft while the trailing edge stays a sharp corner.
+  28 tests in `tests/phase12_airfoil.rs`.
+- **Per-section `twist:` / `scale:` in `sweep_sections`**
+  (`src/ruby/prelude.rb`, `src/ruby/glue.c`): each keyword takes a
+  per-profile Array or a single Numeric blended linearly (total twist from
+  0°, end scale from 1). Applied by transforming profile copies before the
+  native sweep places them — a propeller blade is one call. 14 tests in
+  `tests/phase12_sweep_twist.rs`.
+- **`nut_pocket` / `standoff_pocket`** (`src/ruby/prelude.rb`): hex (or
+  `:square`) recess tools for captive nuts and anti-rotation standoff
+  pockets, sized from the shared ISO across-flats table plus a print-fit
+  `clearance:` (0.2 mm default); `slot:` opens a slide-in channel. 17 tests
+  in `tests/phase12_nut_pockets.rs`.
+- **`shell(thickness, open:)`** (`src/occt/bridge.cpp`, `src/ruby/glue.c`):
+  choose which face(s) become the opening — `.faces` selectors or Face
+  shapes from the same solid — instead of always the topmost. Requested
+  faces are matched by `IsSame`, so a face of another shape is rejected by
+  name; feature rebuild re-finds openings by centroid. 15 tests in
+  `tests/phase12_shell_open.rs`.
+- **`text` glyph profiles** (`src/occt/bridge.cpp`, `src/ruby/glue.c`):
+  `text("X-450", size: 6)` renders glyph outlines as faces via
+  `Font_BRepFont` + `Font_BRepTextBuilder`; emboss is extrude + fuse,
+  engrave is extrude + cut. `font:` takes a family name or a `.ttf`/`.otf`
+  path. Links two new OCCT toolkits (`TKService`, `TKV3d`) and needs a
+  system font — CI's slim Debian container now installs
+  `libocct-visualization-dev` and `fonts-dejavu-core`. 14 tests in
+  `tests/phase12_text.rs`.
+- **Structured assembly STEP export** (`src/occt/bridge.cpp`,
+  `src/ruby/prelude.rb`): `asm.export("drone.step", structured: true)`
+  writes each component as a named PRODUCT under one root assembly via XCAF
+  + `STEPCAFControl_Writer`, so FreeCAD/Fusion reopen the parts
+  individually; part `.color` travels as `COLOUR_RGB`/`STYLED_ITEM`. The
+  default export still fuses, unchanged. 8 tests in
+  `tests/phase12_step_assembly.rs`.
+
 ## [0.5.0] - 2026-07-29
 
 Behaviour changes worth knowing about before upgrading. None alter geometry,
