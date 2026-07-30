@@ -23,6 +23,7 @@ These functions return a Face you can pass to `.extrude` or `.revolve`.
 | `spline_2d(pts, tangents: nil)` | Closed profile in the XZ plane for `.revolve` |
 | `spline_3d(pts, tangents: nil)` | 3D Wire path for `.sweep` |
 | `airfoil(naca:/coordinates:/dat:, chord:)` | Closed aerofoil face in the XY plane, chord along +X |
+| `text(str, size:, font: nil)` | Glyph outline faces in the XY plane, baseline at the origin |
 
 **Typical use** — extrude a rectangle into a slab:
 

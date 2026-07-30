@@ -2865,6 +2865,41 @@ class GdtBuilder
 end
 
 class Shape
+  # shell(thickness, open: nil) — hollow out a solid, leaving walls of
+  # `thickness`. Phase 12 adds `open:` to choose which face(s) become the
+  # opening; without it the topmost face is removed, as always.
+  #
+  # `open:` accepts a Face (from `.faces` on this same shape), an Array of
+  # them, or a selector the `.faces` method understands (:top, :bottom,
+  # :side, or a direction like :">X"); selecting every face is refused,
+  # since at least one must remain as a wall.
+  #
+  #   tray   = box(60, 40, 20).shell(1.6)                        # opens the top
+  #   canopy = box(60, 40, 20).shell(1.6, open: :bottom)         # opens the base
+  #   duct   = box(60, 40, 20).shell(2, open: [:">X", :"<X"])    # through-tunnel
+  #
+  # Faces must belong to the shape being shelled — a face taken from another
+  # shape (or from a transformed copy) is rejected by name rather than
+  # silently shelling the wrong thing.
+  def shell(thickness, open: nil)
+    return __rrcad_shell(thickness) if open.nil?
+
+    faces = Array(open).flat_map do |entry|
+      case entry
+      when Shape
+        entry
+      when Symbol, String
+        matched = faces(entry.to_s)
+        raise ArgumentError, "shell: open: selector #{entry.inspect} matched no faces" if matched.empty?
+        matched
+      else
+        raise ArgumentError,
+              "shell: open: takes Face shapes or .faces selectors (got #{entry.inspect})"
+      end
+    end
+    __rrcad_shell_open(faces, thickness)
+  end
+
   def gdt(standard: :asme, &block)
     builder = GdtBuilder.new(self, standard)
     if block_given?
@@ -3841,7 +3876,29 @@ class Assembly
   # Both are drawing-only and are ignored by the solid formats.
   #
   #   asm.export("sheet.svg", view: :sheet, bom: true, balloons: true)
+  # `structured: true` (STEP only) writes the components as separate named
+  # PRODUCTs under one root assembly instead of fusing them — what FreeCAD,
+  # Fusion, or a machine shop needs to see the parts individually. Component
+  # names come from `name:` (auto `part_N` otherwise); a part's `.color`
+  # travels with it. Everything else about the file is STEPCAFControl's
+  # AP214 output.
+  #
+  #   asm.export("drone.step", structured: true)
   def export(path, opts = nil)
+    structured = opts.is_a?(Hash) && opts.delete(:structured)
+    if structured
+      unless path.to_s.end_with?(".step", ".stp")
+        raise ArgumentError,
+              "export: structured: is STEP-only (.step/.stp) — every other format flattens " \
+              "the assembly anyway"
+      end
+      rows = components
+      raise RuntimeError, "Assembly '#{@name}' contains no shapes" if rows.empty?
+      return __rrcad_export_step_assembly(@name.to_s, path,
+                                          rows.map { |r| r[:shape] },
+                                          rows.map { |r| r[:name].to_s })
+    end
+
     shape = to_shape
     opts = drawing_annotations(opts)
     # Shape#export takes the options as an optional trailing Hash; passing an
@@ -5090,6 +5147,28 @@ module Kernel
     size * scale
   end
 
+  # ISO 4032 / ASME B18.2.2 hex across-flats, shared by the nut body
+  # generator and the Phase 12 pocket tools. Hex standoffs use the same
+  # across-flats as the nut of their thread size.
+  def nut_across_flats(size, label)
+    hardware_diameter(size, {
+      "m2" => 4.0,
+      "m2_5" => 5.0,
+      "m25" => 5.0,
+      "m3" => 5.5,
+      "m4" => 7.0,
+      "m5" => 8.0,
+      "4_40" => 4.76,
+      "6_32" => 7.94,
+      "8_32" => 8.73,
+      "10_32" => 9.53,
+      "10_24" => 9.53,
+      "1/4_20" => 11.11,
+      "5/16_18" => 12.70,
+      "3/8_16" => 14.29,
+    }, label)
+  end
+
   def nut_hex_profile(across_flats)
     validate_positive_dimension(across_flats, "nut across flats")
     radius = across_flats / Math.sqrt(3.0)
@@ -5205,22 +5284,7 @@ module Kernel
   def nut(size, thickness:, style: :hex)
     validate_positive_dimension(thickness, "nut thickness")
 
-    across_flats = hardware_diameter(size, {
-      "m2" => 4.0,
-      "m2_5" => 5.0,
-      "m25" => 5.0,
-      "m3" => 5.5,
-      "m4" => 7.0,
-      "m5" => 8.0,
-      "4_40" => 4.76,
-      "6_32" => 7.94,
-      "8_32" => 8.73,
-      "10_32" => 9.53,
-      "10_24" => 9.53,
-      "1/4_20" => 11.11,
-      "5/16_18" => 12.70,
-      "3/8_16" => 14.29,
-    }, "nut across flats")
+    across_flats = nut_across_flats(size, "nut across flats")
     hole_d = hardware_diameter(size, {
       "m2" => 2.4,
       "m2_5" => 2.9,
@@ -5265,6 +5329,61 @@ module Kernel
            end
     nut_body = body.cut(cylinder(hole_d / 2.0, thickness))
     nut_body.translate(0, 0, -thickness / 2.0)
+  end
+
+  # nut_pocket(size, depth:, style: :hex, clearance: 0.2, slot: nil) —
+  # Phase 12 quadcopter readiness: recess tool for a captive nut in a
+  # printed part.  Subtract from the part with `.cut`; pair with
+  # `clearance_hole` for the screw's through-hole.
+  #
+  # The pocket is a hex (or `:square`) prism centred on the origin,
+  # extruded from Z=0 upward, sized to the nut's across-flats plus
+  # 2 × `clearance:` (0.2 mm suits most FDM printers; 0 gives nominal).
+  # Sizes take the same metric/imperial symbols as `nut`, or a numeric
+  # nominal thread diameter (across-flats estimated as 1.7 × nominal).
+  #
+  # `slot:` extends the pocket along +Y by that many mm so the nut slides
+  # in from an edge — the flats face ±X, so the channel walls guide the
+  # nut on its flats.  Rotate the tool to aim the slot elsewhere.
+  #
+  #   arm = box(60, 12, 8)
+  #   arm = arm.cut(nut_pocket(:m3, depth: 3, slot: 8).translate(30, 6, 5))
+  #   arm = arm.cut(clearance_hole(:m3, depth: 8).translate(30, 6, 0))
+  def nut_pocket(size, depth:, style: :hex, clearance: 0.2, slot: nil)
+    validate_positive_dimension(depth, "nut_pocket depth")
+    unless clearance.is_a?(Numeric) && clearance >= 0
+      raise ArgumentError, "nut_pocket clearance must be >= 0"
+    end
+
+    af = nut_across_flats(size, "nut_pocket across flats")
+    af = hardware_heuristic_dimension(size, "nut_pocket", 1.7) if size.is_a?(Numeric)
+    af += 2.0 * clearance
+
+    profile = case style
+              when :hex then nut_hex_profile(af)
+              when :square then nut_square_profile(af)
+              else
+                raise ArgumentError,
+                      "nut_pocket: unsupported style #{style.inspect} (use :hex or :square)"
+              end
+    pocket = profile.extrude(depth)
+
+    if slot
+      validate_positive_dimension(slot, "nut_pocket slot length")
+      half = af / 2.0
+      channel = polygon([[-half, 0.0], [half, 0.0], [half, slot], [-half, slot]]).extrude(depth)
+      pocket = pocket.fuse(channel)
+    end
+    pocket
+  end
+
+  # standoff_pocket(size, depth:, clearance: 0.2) — hex recess tool that
+  # keeps a threaded hex standoff from spinning in a printed frame plate.
+  # Hex standoffs share the across-flats of the nut of their thread, so
+  # this is `nut_pocket` under a name that says what it is for; like the
+  # other hardware helpers, a numeric size is a nominal thread diameter.
+  def standoff_pocket(size, depth:, clearance: 0.2)
+    nut_pocket(size, depth: depth, clearance: clearance)
   end
 
   # csink(d:, csink_d:, csink_angle:, depth:) — Phase 8 Tier 2 countersink tool.
@@ -5514,6 +5633,31 @@ module Kernel
     [upper, lower].map do |surface|
       surface.map { |pt| [(pt[0] - min_x) * factor, pt[1] * factor] }
     end
+  end
+
+  # text — Phase 12 quadcopter readiness: part labels, version numbers, and
+  # motor-rotation arrows on frame plates.
+  #
+  # Returns the string's glyph outlines as a Compound of planar Faces in the
+  # XY plane, baseline starting at the origin, `size:` tall in mm. Extrude
+  # for solid letters, then fuse to emboss or cut to engrave:
+  #
+  #   label = text("X-450 V2", size: 6).extrude(0.6)
+  #   plate = plate.fuse(label.translate(5, 5, 3))      # embossed
+  #   plate = plate.cut(label.translate(5, 20, 2.4))    # engraved
+  #
+  # font: names a font family (resolved by the system font manager), or a
+  # path to a .ttf/.otf file; omitted, the sans-serif default is used. The
+  # feature tree records the request, so rebuild re-renders — the font must
+  # still resolve then.
+  def text(string, size:, font: nil)
+    string = string.to_s
+    raise ArgumentError, "text: the string is empty" if string.empty?
+    validate_positive_dimension(size, "text size")
+    unless font.nil? || font.is_a?(String) || font.is_a?(Symbol)
+      raise ArgumentError, "text: font: takes a family name or a .ttf/.otf path"
+    end
+    __rrcad_text(string, size, font.nil? ? "" : font.to_s)
   end
 
   # sweep_sections — Phase 12 quadcopter readiness: per-section twist and

@@ -31,6 +31,8 @@ jobs:
           libocct-modeling-algorithms-dev \
           libocct-data-exchange-dev \
           libocct-ocaf-dev \
+          libocct-visualization-dev \
+          fontconfig fonts-dejavu-core \
           gcc g++ make pkg-config ca-certificates
     - name: Install Rust toolchain
       run: |

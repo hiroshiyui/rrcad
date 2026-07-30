@@ -68,6 +68,54 @@ impl Shape {
             })
     }
 
+    /// Phase 12: hollow out the solid removing the *chosen* faces instead of
+    /// the topmost one. Every face must belong to this solid (selected via
+    /// `.faces` on the same shape); the bridge matches them with `IsSame`.
+    pub fn shell_open(&self, faces: &[&Shape], thickness: f64) -> Result<Shape, String> {
+        let n = faces.len();
+        let ctx = || format!("shell(thickness={thickness}, open_faces={n})");
+        let mut builder = ffi::shell_open_new().map_err(|e| format!("{} failed: {e}", ctx()))?;
+        for face in faces {
+            ffi::shell_open_add(builder.pin_mut(), &face.inner)
+                .map_err(|e| format!("{} failed: {e}", ctx()))?;
+        }
+        // Record each removed face's centroid so rebuild can re-find it on
+        // the rebuilt body: a face Shape carries its parent solid's feature
+        // node, so keeping the faces as parents would rebuild solids.
+        let mut face_centroids = Vec::with_capacity(n * 3);
+        for face in faces {
+            let c = face
+                .centroid()
+                .map_err(|e| format!("{} failed: {e}", ctx()))?;
+            face_centroids.extend_from_slice(&c);
+        }
+
+        ffi::shell_open_build(builder.pin_mut(), &self.inner, thickness)
+            .map(|p| {
+                self.with_feature(
+                    p,
+                    FeatureOp::ShellOpen {
+                        thickness,
+                        face_centroids: face_centroids.clone(),
+                    },
+                    ctx(),
+                    vec![self.feature.clone()],
+                )
+            })
+            .map_err(|e| {
+                self.fail_with_debug(
+                    format!(
+                        "{} on {} failed: {e}{}",
+                        ctx(),
+                        summarize(self),
+                        hint("open: faces must be selected with .faces on the shape being shelled, and thickness must be smaller than the part's smallest dimension")
+                    ),
+                    "shell_open",
+                    &[("input", self)],
+                )
+            })
+    }
+
     /// Inflate (positive) or deflate (negative) the solid uniformly.
     /// Wraps BRepOffsetAPI_MakeOffsetShape::PerformByJoin.
     pub fn offset(&self, distance: f64) -> Result<Shape, String> {

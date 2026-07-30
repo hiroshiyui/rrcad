@@ -16,6 +16,7 @@ impl FeatureOp {
                 format!("wedge(dx={dx}, dy={dy}, dz={dz}, ltx={ltx})")
             }
             FeatureOp::Rect { w, h } => format!("rect(w={w}, h={h})"),
+            FeatureOp::Text { text, size, .. } => format!("text({text:?}, size={size})"),
             FeatureOp::Circle { r } => format!("circle(r={r})"),
             FeatureOp::Polygon { points } => format!("polygon(points={})", points.len() / 2),
             FeatureOp::Profile2D { counts, .. } => {
@@ -88,6 +89,13 @@ impl FeatureOp {
                 profile_count,
             } => format!("loft(profiles={profile_count}, ruled={ruled})"),
             FeatureOp::Shell { thickness } => format!("shell(thickness={thickness})"),
+            FeatureOp::ShellOpen {
+                thickness,
+                face_centroids,
+            } => format!(
+                "shell(thickness={thickness}, open_faces={})",
+                face_centroids.len() / 3
+            ),
             FeatureOp::Offset { distance } => format!("offset(distance={distance})"),
             FeatureOp::Offset2D { distance } => format!("offset_2d(distance={distance})"),
             FeatureOp::Simplify { min_feature_size } => {
@@ -170,6 +178,7 @@ impl FeatureOp {
             | FeatureOp::Torus { .. }
             | FeatureOp::Wedge { .. }
             | FeatureOp::Rect { .. }
+            | FeatureOp::Text { .. }
             | FeatureOp::Circle { .. }
             | FeatureOp::Polygon { .. }
             | FeatureOp::Profile2D { .. }
@@ -220,6 +229,7 @@ impl FeatureOp {
             FeatureOp::Loft { .. } => count >= 2,
             FeatureOp::FragmentAll { .. } | FeatureOp::Sew { .. } => count >= 1,
             FeatureOp::SweepSections { .. } => count >= 3,
+            FeatureOp::ShellOpen { .. } => count == 1,
         }
     }
 }

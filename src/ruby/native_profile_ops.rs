@@ -33,6 +33,24 @@ pub unsafe extern "C" fn rrcad_shape_mirror(
 shape_ctor!(rrcad_make_rect(w: f64, h: f64) => Shape::make_rect);
 shape_ctor!(rrcad_make_circle_face(r: f64) => Shape::make_circle_face);
 
+/// Phase 12: text glyph outlines. `text` and `font` are NUL-terminated UTF-8
+/// C strings; `font` may be empty for the sans-serif default.
+///
+/// # Safety
+/// `text` and `font` must point to valid NUL-terminated strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_make_text(
+    text: *const c_char,
+    size: f64,
+    font: *const c_char,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let text = unsafe { std::ffi::CStr::from_ptr(text) }.to_string_lossy();
+    let font = unsafe { std::ffi::CStr::from_ptr(font) }.to_string_lossy();
+    unsafe { shape_result_to_ptr(Shape::make_text(&text, size, &font), error_out) }
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn rrcad_make_polygon(
     pts: *const f64,

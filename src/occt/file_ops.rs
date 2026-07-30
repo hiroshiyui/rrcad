@@ -57,6 +57,28 @@ impl Shape {
         })
     }
 
+    /// Phase 12: structured (non-fused) assembly STEP export. Each
+    /// `(name, shape)` pair becomes a named PRODUCT under one root assembly,
+    /// geometry in world coordinates, colour from the shape's own `.color`.
+    pub fn export_step_assembly(
+        assembly_name: &str,
+        parts: &[(&str, &Shape)],
+        path: &str,
+    ) -> Result<(), String> {
+        let ctx = || format!("export_step_assembly({path:?}, parts={})", parts.len());
+        if parts.is_empty() {
+            return Err(format!("{} failed: the assembly has no components", ctx()));
+        }
+        let mut writer =
+            ffi::step_assembly_new(assembly_name).map_err(|e| format!("{} failed: {e}", ctx()))?;
+        for (name, shape) in parts {
+            ffi::step_assembly_add(writer.pin_mut(), name, &shape.inner)
+                .map_err(|e| format!("{} failed: {e}", ctx()))?;
+        }
+        ffi::step_assembly_write(writer.pin_mut(), path)
+            .map_err(|e| format!("{} failed: {e}", ctx()))
+    }
+
     /// Export to STL. `linear_deflection` controls tessellation quality.
     ///
     /// `ascii` selects the text encoding; the default everywhere above this

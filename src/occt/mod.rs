@@ -160,6 +160,7 @@ mod ffi {
             kinds: &[i32],
         ) -> Result<UniquePtr<OcctShape>>;
         fn make_ellipse_face(rx: f64, ry: f64) -> Result<UniquePtr<OcctShape>>;
+        fn make_text(text: &str, size: f64, font: &str) -> Result<UniquePtr<OcctShape>>;
         fn make_arc(r: f64, start_deg: f64, end_deg: f64) -> Result<UniquePtr<OcctShape>>;
 
         fn shape_extrude(shape: &OcctShape, height: f64) -> Result<UniquePtr<OcctShape>>;
@@ -367,6 +368,29 @@ mod ffi {
         fn fragment_new() -> Result<UniquePtr<FragmentBuilder>>;
         fn fragment_add(builder: Pin<&mut FragmentBuilder>, shape: &OcctShape) -> Result<()>;
         fn fragment_build(builder: Pin<&mut FragmentBuilder>) -> Result<UniquePtr<OcctShape>>;
+
+        // Phase 12: structured assembly STEP export — components accumulate
+        // with names, then STEPCAFControl_Writer writes them as PRODUCTs
+        // under one root assembly.
+        type StepAssemblyWriter;
+        fn step_assembly_new(assembly_name: &str) -> Result<UniquePtr<StepAssemblyWriter>>;
+        fn step_assembly_add(
+            writer: Pin<&mut StepAssemblyWriter>,
+            name: &str,
+            shape: &OcctShape,
+        ) -> Result<()>;
+        fn step_assembly_write(writer: Pin<&mut StepAssemblyWriter>, path: &str) -> Result<()>;
+
+        // Phase 12: shell with face selection. Faces are accumulated one at a
+        // time because cxx cannot pass a slice of opaque types.
+        type ShellOpenBuilder;
+        fn shell_open_new() -> Result<UniquePtr<ShellOpenBuilder>>;
+        fn shell_open_add(builder: Pin<&mut ShellOpenBuilder>, face: &OcctShape) -> Result<()>;
+        fn shell_open_build(
+            builder: Pin<&mut ShellOpenBuilder>,
+            shape: &OcctShape,
+            thickness: f64,
+        ) -> Result<UniquePtr<OcctShape>>;
 
         // convex hull of the shape's tessellated mesh vertices.
         fn shape_convex_hull(shape: &OcctShape) -> Result<UniquePtr<OcctShape>>;

@@ -3,7 +3,7 @@
 use std::ffi::{c_char, c_void};
 
 use super::native_helpers::{
-    DEFAULT_LINEAR_DEFLECTION, cstr_arg, resolve_path, set_err, shape_result_to_ptr,
+    DEFAULT_LINEAR_DEFLECTION, cstr_arg, resolve_path, set_err, shape_refs, shape_result_to_ptr,
     split_csv_list, validate_linear_deflection,
 };
 use crate::occt::{
@@ -128,6 +128,45 @@ shape_export_meshed!(rrcad_shape_export_gltf => export_gltf);
 shape_export_meshed!(rrcad_shape_export_glb => export_glb);
 shape_export_meshed!(rrcad_shape_export_obj => export_obj);
 shape_export_meshed!(rrcad_shape_export_3mf => export_3mf);
+
+/// Phase 12: structured (non-fused) assembly STEP export. `shapes` and
+/// `names` are parallel arrays of `n` entries; each pair becomes a named
+/// PRODUCT under one root assembly named `asm_name`.
+///
+/// # Safety
+/// `shapes` and `names` must point to arrays of `n` valid entries;
+/// `asm_name`, `path`, and every name must be NUL-terminated strings.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_export_step_assembly(
+    asm_name: *const c_char,
+    shapes: *const *const c_void,
+    names: *const *const c_char,
+    n: usize,
+    path: *const c_char,
+    error_out: *mut *const c_char,
+) {
+    unsafe { *error_out = std::ptr::null() };
+    let Some(safe) = (unsafe { resolve_path(path, error_out) }) else {
+        return;
+    };
+    let asm_name = unsafe { std::ffi::CStr::from_ptr(asm_name) }.to_string_lossy();
+    let shape_list = unsafe { shape_refs(shapes, n) };
+    let name_list: Vec<String> = (0..n)
+        .map(|i| {
+            unsafe { std::ffi::CStr::from_ptr(*names.add(i)) }
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    let parts: Vec<(&str, &Shape)> = name_list
+        .iter()
+        .map(String::as_str)
+        .zip(shape_list)
+        .collect();
+    if let Err(e) = Shape::export_step_assembly(&asm_name, &parts, &safe.to_string_lossy()) {
+        unsafe { set_err(error_out, &e) };
+    }
+}
 
 /// STL export. Hand-written rather than generated because STL is the one mesh
 /// format with two encodings; `ascii` is non-zero only when the script asked

@@ -57,6 +57,8 @@
 #include <Geom_Plane.hxx>
 
 // --- OCCT: Phase 4 sketch profiles ---
+#include <Font_BRepFont.hxx>
+#include <Font_BRepTextBuilder.hxx>
 #include <GC_MakeArcOfCircle.hxx>
 #include <GC_MakeEllipse.hxx>
 
@@ -158,6 +160,7 @@
 
 // --- OCCT: STEP import / export ---
 #include <IFSelect_ReturnStatus.hxx>
+#include <STEPCAFControl_Writer.hxx>
 #include <STEPControl_Reader.hxx>
 #include <STEPControl_StepModelType.hxx>
 #include <STEPControl_Writer.hxx>
@@ -177,6 +180,7 @@
 #include <TCollection_AsciiString.hxx>
 #include <TCollection_ExtendedString.hxx>
 #include <TDF_Label.hxx>
+#include <TDataStd_Name.hxx>
 #include <TDocStd_Document.hxx>
 #include <XCAFApp_Application.hxx>
 #include <XCAFDoc_ColorTool.hxx>
@@ -1137,6 +1141,61 @@ std::unique_ptr<OcctShape> make_arc(double r, double start_deg, double end_deg) 
 }
 
 // ---------------------------------------------------------------------------
+// Phase 12: text glyph outlines — Font_BRepFont + Font_BRepTextBuilder
+// ---------------------------------------------------------------------------
+
+std::unique_ptr<OcctShape> make_text(rust::Str text, double size, rust::Str font) {
+    try {
+        std::string txt(text.data(), text.size());
+        std::string fnt(font.data(), font.size());
+        if (txt.empty())
+            throw std::runtime_error("text: the string is empty");
+        if (size <= 0)
+            throw std::runtime_error("text: size must be > 0");
+
+        Font_BRepFont brep_font;
+        // A slash or a font-file extension means a path; anything else is a
+        // family name for the system font manager. "" falls back to the
+        // sans-serif alias, which fontconfig maps to whatever is installed.
+        const bool is_path = fnt.find('/') != std::string::npos ||
+                             (fnt.size() > 4 && (fnt.compare(fnt.size() - 4, 4, ".ttf") == 0 ||
+                                                 fnt.compare(fnt.size() - 4, 4, ".otf") == 0));
+        bool ok;
+        if (is_path) {
+            ok = brep_font.Init(NCollection_String(fnt.c_str()), size, /*theFaceId=*/0);
+            if (!ok)
+                throw std::runtime_error("text: could not load font file '" + fnt + "'");
+        } else {
+            const char* name = fnt.empty() ? "sans-serif" : fnt.c_str();
+            ok = brep_font.FindAndInit(name, Font_FontAspect_Regular, size);
+            if (!ok)
+                throw std::runtime_error(
+                    std::string("text: no font found for '") + name +
+                    "' — install a system font or pass font: with a family name or a "
+                    ".ttf/.otf path");
+        }
+
+        Font_BRepTextBuilder builder;
+        TopoDS_Shape glyphs = builder.Perform(brep_font, NCollection_String(txt.c_str()));
+        if (glyphs.IsNull())
+            throw std::runtime_error("text: the font produced no glyph geometry");
+
+        // Whitespace-only strings render no faces; catch that here so the
+        // failure names the cause instead of surfacing later as an empty
+        // boolean operand.
+        TopExp_Explorer probe(glyphs, TopAbs_FACE);
+        if (!probe.More())
+            throw std::runtime_error("text: the string produced no glyph faces");
+
+        return wrap(glyphs);
+    } catch (const Standard_Failure& e) {
+        throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
+    } catch (const std::exception&) {
+        throw;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Phase 2: Extrude / Revolve
 // ---------------------------------------------------------------------------
 
@@ -1438,6 +1497,84 @@ std::unique_ptr<OcctShape> shape_shell(const OcctShape& shape, double thickness)
         thick.MakeThickSolidByJoin(shape.get(), faces_to_remove, -thickness, 1e-3);
         if (!thick.IsDone())
             throw std::runtime_error("BRepOffsetAPI_MakeThickSolid (shell) failed");
+        return wrap(thick.Shape());
+    } catch (const Standard_Failure& e) {
+        throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
+    } catch (const std::exception&) {
+        throw;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 12: shell with face selection — remove the *chosen* faces
+// ---------------------------------------------------------------------------
+
+struct ShellOpenBuilder::Impl {
+    TopTools_ListOfShape faces; // requested opening faces, in Add order
+};
+
+ShellOpenBuilder::ShellOpenBuilder() : impl(std::make_unique<Impl>()) {}
+ShellOpenBuilder::~ShellOpenBuilder() = default;
+
+std::unique_ptr<ShellOpenBuilder> shell_open_new() { return std::make_unique<ShellOpenBuilder>(); }
+
+void shell_open_add(ShellOpenBuilder& builder, const OcctShape& face) {
+    if (face.get().ShapeType() != TopAbs_FACE)
+        throw std::runtime_error("shell: every open: entry must be a Face (use .faces to select)");
+    builder.impl->faces.Append(face.get());
+}
+
+std::unique_ptr<OcctShape> shell_open_build(ShellOpenBuilder& builder, const OcctShape& shape,
+                                            double thickness) {
+    try {
+        if (builder.impl->faces.IsEmpty())
+            throw std::runtime_error("shell: open: selected no faces");
+
+        // Resolve every requested face to a face of the body. IsSame compares
+        // the underlying TShape and location while ignoring orientation, so a
+        // face taken from .faces() on this body matches; a face of some other
+        // shape — or of a transformed copy — does not, and that is an error
+        // worth naming rather than silently shelling the wrong thing.
+        TopTools_ListOfShape faces_to_remove;
+        int requested = 0;
+        for (TopTools_ListIteratorOfListOfShape it(builder.impl->faces); it.More(); it.Next()) {
+            ++requested;
+            bool matched = false;
+            for (TopExp_Explorer exp(shape.get(), TopAbs_FACE); exp.More(); exp.Next()) {
+                if (exp.Current().IsSame(it.Value())) {
+                    // Skip duplicates so open: [f, f] does not confuse OCCT.
+                    bool already = false;
+                    for (TopTools_ListIteratorOfListOfShape seen(faces_to_remove); seen.More();
+                         seen.Next()) {
+                        if (seen.Value().IsSame(exp.Current())) {
+                            already = true;
+                            break;
+                        }
+                    }
+                    if (!already)
+                        faces_to_remove.Append(exp.Current());
+                    matched = true;
+                    break;
+                }
+            }
+            if (!matched)
+                throw std::runtime_error("shell: open: face " + std::to_string(requested) +
+                                         " is not a face of this solid — select it with .faces "
+                                         "on the same shape being shelled");
+        }
+
+        // Refuse to remove every face: MakeThickSolid needs walls to keep.
+        int total = 0;
+        for (TopExp_Explorer exp(shape.get(), TopAbs_FACE); exp.More(); exp.Next())
+            ++total;
+        if (faces_to_remove.Extent() >= total)
+            throw std::runtime_error("shell: open: selects every face of the solid — at least "
+                                     "one face must remain as a wall");
+
+        BRepOffsetAPI_MakeThickSolid thick;
+        thick.MakeThickSolidByJoin(shape.get(), faces_to_remove, -thickness, 1e-3);
+        if (!thick.IsDone())
+            throw std::runtime_error("BRepOffsetAPI_MakeThickSolid (shell open:) failed");
         return wrap(thick.Shape());
     } catch (const Standard_Failure& e) {
         throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
@@ -3062,6 +3199,107 @@ void export_step(const OcctShape& shape, rust::Str path) {
         status = writer.Write(temp_path.string().c_str());
         if (status != IFSelect_RetDone)
             throw std::runtime_error("STEPControl_Writer::Write failed for: " + path_str);
+        rename_export_artifact(temp_path, path_str);
+    } catch (const Standard_Failure& e) {
+        throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
+    } catch (const std::exception&) {
+        throw;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 12: structured assembly STEP export — XCAF + STEPCAFControl_Writer
+// ---------------------------------------------------------------------------
+
+struct StepAssemblyWriter::Impl {
+    Handle(TDocStd_Document) doc;
+    Handle(XCAFDoc_ShapeTool) shape_tool;
+    Handle(XCAFDoc_ColorTool) color_tool;
+    TDF_Label root; // the assembly every component is added under
+    int count = 0;
+};
+
+StepAssemblyWriter::StepAssemblyWriter() : impl(std::make_unique<Impl>()) {}
+StepAssemblyWriter::~StepAssemblyWriter() = default;
+
+std::unique_ptr<StepAssemblyWriter> step_assembly_new(rust::Str assembly_name) {
+    try {
+        auto writer = std::make_unique<StepAssemblyWriter>();
+        Handle(XCAFApp_Application) app = XCAFApp_Application::GetApplication();
+        app->NewDocument(TCollection_ExtendedString("BinXCAF"), writer->impl->doc);
+        if (writer->impl->doc.IsNull())
+            throw std::runtime_error("step assembly export: failed to create XCAF document");
+
+        writer->impl->shape_tool = XCAFDoc_DocumentTool::ShapeTool(writer->impl->doc->Main());
+        writer->impl->color_tool = XCAFDoc_DocumentTool::ColorTool(writer->impl->doc->Main());
+
+        // NewShape gives an empty top-level label that AddComponent turns
+        // into an assembly as components arrive.
+        writer->impl->root = writer->impl->shape_tool->NewShape();
+        std::string name(assembly_name.data(), assembly_name.size());
+        TDataStd_Name::Set(writer->impl->root,
+                           TCollection_ExtendedString(name.empty() ? "assembly" : name.c_str()));
+        return writer;
+    } catch (const Standard_Failure& e) {
+        throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
+    } catch (const std::exception&) {
+        throw;
+    }
+}
+
+void step_assembly_add(StepAssemblyWriter& writer, rust::Str name, const OcctShape& shape) {
+    try {
+        // The same validity guard the fused export applies, but naming the
+        // offending component instead of the whole assembly.
+        std::string part_name(name.data(), name.size());
+        BRepCheck_Analyzer checker(shape.get());
+        if (!checker.IsValid())
+            throw std::runtime_error("step assembly export: component '" + part_name +
+                                     "' is topologically invalid — check upstream boolean "
+                                     "operations or fillet radii");
+
+        // Each part is its own product; the component reference under the
+        // root carries an identity transform because the shapes already sit
+        // in world coordinates.
+        TDF_Label part =
+            writer.impl->shape_tool->AddShape(shape.get(), /*makeAssembly=*/Standard_False);
+        TDataStd_Name::Set(part, TCollection_ExtendedString(part_name.c_str()));
+
+        if (shape.has_color()) {
+            Quantity_Color color(shape.color_r(), shape.color_g(), shape.color_b(),
+                                 Quantity_TOC_sRGB);
+            writer.impl->color_tool->SetColor(part, color, XCAFDoc_ColorSurf);
+            writer.impl->color_tool->SetColor(part, color, XCAFDoc_ColorGen);
+        }
+
+        TDF_Label component =
+            writer.impl->shape_tool->AddComponent(writer.impl->root, part, TopLoc_Location());
+        TDataStd_Name::Set(component, TCollection_ExtendedString(part_name.c_str()));
+        writer.impl->count++;
+    } catch (const Standard_Failure& e) {
+        throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());
+    } catch (const std::exception&) {
+        throw;
+    }
+}
+
+void step_assembly_write(StepAssemblyWriter& writer, rust::Str path) {
+    try {
+        if (writer.impl->count == 0)
+            throw std::runtime_error("step assembly export: no components were added");
+
+        writer.impl->shape_tool->UpdateAssemblies();
+
+        STEPCAFControl_Writer step_writer;
+        step_writer.SetColorMode(Standard_True);
+        step_writer.SetNameMode(Standard_True);
+        if (!step_writer.Transfer(writer.impl->doc, STEPControl_AsIs))
+            throw std::runtime_error("STEPCAFControl_Writer::Transfer failed");
+
+        std::string path_str(path.data(), path.size());
+        auto temp_path = atomic_export_temp_path(path_str);
+        if (step_writer.Write(temp_path.string().c_str()) != IFSelect_RetDone)
+            throw std::runtime_error("STEPCAFControl_Writer::Write failed for: " + path_str);
         rename_export_artifact(temp_path, path_str);
     } catch (const Standard_Failure& e) {
         throw std::runtime_error(std::string("OCCT error: ") + e.GetMessageString());

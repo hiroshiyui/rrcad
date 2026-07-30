@@ -296,6 +296,17 @@ Everything in [chapter 10](10-import-export.md#2-d-drawings-svg--dxf) —
 `view:`, `scale:`, `section:`, `dimensions:`, `ordinate:`, `detail:`,
 `hidden:`, `title_block:` — is forwarded untouched.
 
+To hand the design to another CAD system with the parts kept separate,
+`structured: true` (STEP only) writes each component as its own named
+product under one root assembly instead of fusing:
+
+```ruby
+asm.export("drone.step", structured: true)   # FreeCAD/Fusion see every part
+```
+
+Component names come from `name:` on `place`/`part` (unnamed parts become
+`part_1`, `part_2`, …), and a component's `.color` travels with it.
+
 The export is of the **fused** geometry, so it is a picture of the assembled
 product. Two extra options put the component data back on the page.
 

@@ -150,6 +150,13 @@ std::unique_ptr<OcctShape> make_profile_2d(rust::Slice<const double> pts,
 std::unique_ptr<OcctShape> make_ellipse_face(double rx, double ry);
 std::unique_ptr<OcctShape> make_arc(double r, double start_deg, double end_deg);
 
+// Phase 12: text glyph outlines as a Compound of planar Faces in the XY
+// plane, baseline starting at the origin, `size` tall in model units.
+// `font` is a family name resolved through the system font manager
+// (Font_FontMgr), a path to a .ttf/.otf file, or "" for the sans-serif
+// default. Uses Font_BRepFont + Font_BRepTextBuilder (TKService).
+std::unique_ptr<OcctShape> make_text(rust::Str text, double size, rust::Str font);
+
 // --- Phase 2: extrude / revolve ---
 std::unique_ptr<OcctShape> shape_extrude(const OcctShape& shape, double height);
 std::unique_ptr<OcctShape> shape_revolve(const OcctShape& shape, double angle_deg);
@@ -220,6 +227,31 @@ std::unique_ptr<OcctShape> pipe_shell_build(PipeShellBuilder& builder);
 //   (highest Z centroid) and offsetting all other faces inward by `thickness`.
 //   Uses BRepOffsetAPI_MakeThickSolid::MakeThickSolidByJoin.
 std::unique_ptr<OcctShape> shape_shell(const OcctShape& shape, double thickness);
+
+// Phase 12: .shell(thickness, open: faces) — hollow out a solid removing the
+// *chosen* faces instead of the topmost one. Faces are accumulated one at a
+// time (cxx cannot pass a slice of opaque types); each must be a Face of the
+// body being shelled — they are matched by TopoDS_Shape::IsSame against the
+// body's own faces, so select them with .faces on the same shape.
+// Builder-pattern twin of FragmentBuilder.
+class ShellOpenBuilder {
+public:
+    ShellOpenBuilder();
+    ~ShellOpenBuilder(); // defined in bridge.cpp (Impl is incomplete here)
+
+    ShellOpenBuilder(const ShellOpenBuilder&) = delete;
+    ShellOpenBuilder& operator=(const ShellOpenBuilder&) = delete;
+    ShellOpenBuilder(ShellOpenBuilder&&) = delete;
+    ShellOpenBuilder& operator=(ShellOpenBuilder&&) = delete;
+
+    struct Impl; // fully defined in bridge.cpp; holds TopTools_ListOfShape
+    std::unique_ptr<Impl> impl;
+};
+
+std::unique_ptr<ShellOpenBuilder> shell_open_new();
+void shell_open_add(ShellOpenBuilder& builder, const OcctShape& face);
+std::unique_ptr<OcctShape> shell_open_build(ShellOpenBuilder& builder, const OcctShape& shape,
+                                            double thickness);
 
 // .offset(distance) — inflate (distance>0) or deflate (distance<0) a solid.
 //   Uses BRepOffsetAPI_MakeOffsetShape::PerformByJoin.
@@ -439,6 +471,29 @@ std::unique_ptr<OcctShape> shape_slice(const OcctShape& shape, rust::Str plane, 
 
 // --- Export ---
 void export_step(const OcctShape& shape, rust::Str path);
+
+// Phase 12: structured (non-fused) assembly STEP export. Components are
+// accumulated with their names — each becomes a PRODUCT under one root
+// assembly, geometry in world coordinates, colour taken from the shape's own
+// .color when set — then written via STEPCAFControl_Writer from an XCAF
+// document. Builder pattern, like the other multi-shape bridge calls.
+class StepAssemblyWriter {
+public:
+    StepAssemblyWriter();
+    ~StepAssemblyWriter(); // defined in bridge.cpp (Impl is incomplete here)
+
+    StepAssemblyWriter(const StepAssemblyWriter&) = delete;
+    StepAssemblyWriter& operator=(const StepAssemblyWriter&) = delete;
+    StepAssemblyWriter(StepAssemblyWriter&&) = delete;
+    StepAssemblyWriter& operator=(StepAssemblyWriter&&) = delete;
+
+    struct Impl; // fully defined in bridge.cpp; holds the XCAF document
+    std::unique_ptr<Impl> impl;
+};
+
+std::unique_ptr<StepAssemblyWriter> step_assembly_new(rust::Str assembly_name);
+void step_assembly_add(StepAssemblyWriter& writer, rust::Str name, const OcctShape& shape);
+void step_assembly_write(StepAssemblyWriter& writer, rust::Str path);
 void export_stl(const OcctShape& shape, rust::Str path, double linear_deflection, bool ascii);
 void export_gltf(const OcctShape& shape, rust::Str path, double linear_deflection);
 // Binary glTF (GLB) — single-file format, suitable for HTTP serving.

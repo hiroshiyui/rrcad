@@ -31,6 +31,13 @@ pub(crate) enum FeatureOp {
         w: f64,
         h: f64,
     },
+    /// Text glyph outlines (Phase 12). Rebuilds by re-rendering, so the
+    /// font must still resolve at rebuild time.
+    Text {
+        text: String,
+        size: f64,
+        font: String,
+    },
     Circle {
         r: f64,
     },
@@ -103,6 +110,14 @@ pub(crate) enum FeatureOp {
     },
     Shell {
         thickness: f64,
+    },
+    /// Shell with chosen opening faces. The single parent is the body; the
+    /// removed faces are re-found on rebuild by centroid (flat x,y,z
+    /// triples), because a face Shape carries its parent solid's feature
+    /// node and cannot rebuild into a face.
+    ShellOpen {
+        thickness: f64,
+        face_centroids: Vec<f64>,
     },
     Offset {
         distance: f64,

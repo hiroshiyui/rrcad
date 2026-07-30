@@ -77,6 +77,9 @@ extern void rrcad_require_end(void);
 extern void* rrcad_import_step(const char* path, const char** error_out);
 extern void* rrcad_import_stl(const char* path, const char** error_out);
 extern void rrcad_shape_export_step(void* ptr, const char* path, const char** error_out);
+extern void rrcad_export_step_assembly(const char* asm_name, const void** shapes,
+                                       const char** names, size_t n, const char* path,
+                                       const char** error_out);
 extern void* rrcad_shape_fuse(void* a, void* b, const char** error_out);
 extern void* rrcad_shape_cut(void* a, void* b, const char** error_out);
 extern void* rrcad_shape_common(void* a, void* b, const char** error_out);
@@ -122,6 +125,8 @@ extern void* rrcad_shape_mirror(void* ptr, const char* plane, const char** error
 extern void* rrcad_make_rect(double w, double h, const char** error_out);
 extern void* rrcad_make_circle_face(double r, const char** error_out);
 extern void* rrcad_make_polygon(const double* pts, size_t n_pts, const char** error_out);
+extern void* rrcad_make_text(const char* text, double size, const char* font,
+                             const char** error_out);
 extern void* rrcad_make_profile_2d(const double* pts, size_t n_pts, const int* counts,
                                    const int* kinds, size_t n_segments, const char** error_out);
 extern void* rrcad_make_ellipse_face(double rx, double ry, const char** error_out);
@@ -163,6 +168,8 @@ extern double rrcad_shape_surface_area(void* ptr, const char** error_out);
 /* Phase 4 — 3-D operations */
 extern void* rrcad_shape_loft(const void** ptrs, size_t n, int ruled, const char** error_out);
 extern void* rrcad_shape_shell(void* ptr, double thickness, const char** error_out);
+extern void* rrcad_shape_shell_open(void* self_ptr, const void** ptrs, size_t n, double thickness,
+                                    const char** error_out);
 extern void* rrcad_shape_offset(void* ptr, double distance, const char** error_out);
 extern void* rrcad_shape_simplify(void* ptr, double min_feature_size, const char** error_out);
 extern void* rrcad_shape_extrude_ex(void* ptr, double height, double twist_deg, double scale,
@@ -911,6 +918,56 @@ static mrb_value mrb_rrcad_shape_export(mrb_state* mrb, mrb_value self) {
     return self;
 }
 
+/* __rrcad_export_step_assembly(asm_name, path, shapes, names)
+ *
+ * Kernel-level primitive behind Assembly#export(structured: true).  Writes
+ * the shapes as named components of one root assembly via
+ * STEPCAFControl_Writer, instead of fusing them into a single solid.
+ * `shapes` and `names` are parallel Arrays of equal length. */
+static mrb_value mrb_rrcad_export_step_assembly(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    const char* asm_name;
+    const char* path;
+    mrb_value shapes;
+    mrb_value names;
+    mrb_get_args(mrb, "zzAA", &asm_name, &path, &shapes, &names);
+
+    mrb_int n = RARRAY_LEN(shapes);
+    if (n < 1)
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "assembly export: no components to write");
+    if (RARRAY_LEN(names) != n)
+        mrb_raise(mrb, E_ARGUMENT_ERROR, "assembly export: shapes and names differ in length");
+
+    int count = 0;
+    const void** ptrs =
+        collect_shape_ptrs(mrb, shapes, 1, "assembly export: no components to write",
+                           "assembly export", &count);
+
+    /* The name pointers stay valid through the call: each mrb string is held
+     * alive by the `names` array on the caller's stack. */
+    const char** name_ptrs = (const char**)malloc(sizeof(char*) * (size_t)n);
+    if (!name_ptrs) {
+        free(ptrs);
+        mrb_raise(mrb, E_RUNTIME_ERROR, "assembly export: out of memory");
+    }
+    for (mrb_int i = 0; i < n; i++) {
+        mrb_value name = mrb_ary_ref(mrb, names, i);
+        if (!mrb_string_p(name)) {
+            free(ptrs);
+            free(name_ptrs);
+            mrb_raise(mrb, E_TYPE_ERROR, "assembly export: every component name must be a String");
+        }
+        name_ptrs[i] = mrb_str_to_cstr(mrb, name);
+    }
+
+    const char* err = NULL;
+    rrcad_export_step_assembly(asm_name, ptrs, name_ptrs, (size_t)n, path, &err);
+    free(ptrs);
+    free(name_ptrs);
+    raise_if_err(mrb, err);
+    return mrb_nil_value();
+}
+
 static mrb_value mrb_rrcad_shape_fuse(mrb_state* mrb, mrb_value self) {
     mrb_value other;
     mrb_get_args(mrb, "o", &other);
@@ -1482,7 +1539,9 @@ static mrb_value mrb_rrcad_loft(mrb_state* mrb, mrb_value self) {
     return shape_from_ptr(mrb, result);
 }
 
-/* .shell(thickness) — hollow out the solid, removing the top face. */
+/* __rrcad_shell(thickness) — hollow out the solid, removing the top face.
+ * Native primitive behind the prelude's Shape#shell, which adds the open:
+ * keyword and dispatches to __rrcad_shell_open when it is given. */
 static mrb_value mrb_rrcad_shape_shell(mrb_state* mrb, mrb_value self) {
     mrb_value thickness_val;
     mrb_get_args(mrb, "o", &thickness_val);
@@ -1490,6 +1549,26 @@ static mrb_value mrb_rrcad_shape_shell(mrb_state* mrb, mrb_value self) {
     void* ptr = self_ptr(mrb, self);
     const char* err = NULL;
     void* result = rrcad_shape_shell(ptr, thickness, &err);
+    raise_if_err(mrb, err);
+    return shape_from_ptr(mrb, result);
+}
+
+/* __rrcad_shell_open(faces, thickness) — hollow out the solid, removing the
+ * given Face shapes (selected with .faces on this same solid). */
+static mrb_value mrb_rrcad_shape_shell_open(mrb_state* mrb, mrb_value self) {
+    mrb_value arr;
+    mrb_value thickness_val;
+    mrb_get_args(mrb, "Ao", &arr, &thickness_val);
+    double thickness = value_to_double(mrb, thickness_val);
+    void* ptr = self_ptr(mrb, self);
+
+    int n = 0;
+    const void** ptrs =
+        collect_shape_ptrs(mrb, arr, 1, "shell: open: selected no faces", "shell", &n);
+
+    const char* err = NULL;
+    void* result = rrcad_shape_shell_open(ptr, ptrs, (size_t)n, thickness, &err);
+    free(ptrs);
     raise_if_err(mrb, err);
     return shape_from_ptr(mrb, result);
 }
@@ -1715,6 +1794,23 @@ static mrb_value mrb_rrcad_sweep_sections(mrb_state* mrb, mrb_value self) {
  * Phase 4: Sketch profiles — polygon, ellipse, arc
  * -------------------------------------------------------------------------
  */
+
+/* __rrcad_text(str, size, font) — glyph outlines as a Compound of Faces in
+ * the XY plane, baseline at the origin.  Native primitive behind the
+ * prelude's text(), which owns the keyword interface and validation. */
+static mrb_value mrb_rrcad_text(mrb_state* mrb, mrb_value self) {
+    (void)self;
+    const char* text;
+    mrb_value size_val;
+    const char* font;
+    mrb_get_args(mrb, "zoz", &text, &size_val, &font);
+    double size = value_to_double(mrb, size_val);
+
+    const char* err = NULL;
+    void* ptr = rrcad_make_text(text, size, font, &err);
+    raise_if_err(mrb, err);
+    return shape_from_ptr(mrb, ptr);
+}
 
 static mrb_value mrb_rrcad_polygon(mrb_state* mrb, mrb_value self) {
     (void)self;
@@ -2996,6 +3092,11 @@ void rrcad_register_shape_class(mrb_state* mrb) {
 
     /* Phase 4: Sketch profiles */
     mrb_define_method(mrb, mrb->kernel_module, "polygon", mrb_rrcad_polygon, MRB_ARGS_REQ(1));
+    /* Private name: the prelude's text() wraps it with the keyword interface. */
+    mrb_define_method(mrb, mrb->kernel_module, "__rrcad_text", mrb_rrcad_text, MRB_ARGS_REQ(3));
+    /* Private name: Assembly#export(structured: true) is the public face. */
+    mrb_define_method(mrb, mrb->kernel_module, "__rrcad_export_step_assembly",
+                      mrb_rrcad_export_step_assembly, MRB_ARGS_REQ(4));
     mrb_define_method(mrb, mrb->kernel_module, "__rrcad_profile_2d", mrb_rrcad_profile_2d,
                       MRB_ARGS_REQ(3));
     mrb_define_method(mrb, mrb->kernel_module, "ellipse", mrb_rrcad_ellipse, MRB_ARGS_REQ(2));
@@ -3035,7 +3136,11 @@ void rrcad_register_shape_class(mrb_state* mrb) {
     /* Phase 4: 3-D operations */
     mrb_define_method(mrb, mrb->kernel_module, "loft", mrb_rrcad_loft,
                       MRB_ARGS_REQ(1) | MRB_ARGS_OPT(1));
-    mrb_define_method(mrb, shape_class, "shell", mrb_rrcad_shape_shell, MRB_ARGS_REQ(1));
+    /* Registered under private names: the prelude's Shape#shell wraps them to
+     * add the open: keyword, so the plain name must not be overridden here. */
+    mrb_define_method(mrb, shape_class, "__rrcad_shell", mrb_rrcad_shape_shell, MRB_ARGS_REQ(1));
+    mrb_define_method(mrb, shape_class, "__rrcad_shell_open", mrb_rrcad_shape_shell_open,
+                      MRB_ARGS_REQ(2));
     mrb_define_method(mrb, shape_class, "offset", mrb_rrcad_shape_offset, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "offset_2d", mrb_rrcad_shape_offset_2d, MRB_ARGS_REQ(1));
     mrb_define_method(mrb, shape_class, "simplify", mrb_rrcad_shape_simplify, MRB_ARGS_REQ(1));

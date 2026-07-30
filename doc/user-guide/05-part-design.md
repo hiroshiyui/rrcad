@@ -63,6 +63,8 @@ symbol (`:m2`, `:m2_5`, `:m3`, `:m4`, `:m5`) or a numeric diameter.
 | `socket_head_cbore(size, depth:, head_depth:)` | Counterbore for a socket-head screw |
 | `flat_head_csink(size, depth:, angle: 45)` | Countersink for a flat-head screw |
 | `bearing_bore(size, depth:, fit: :press)` | Outer-diameter bore for deep-groove ball bearings (`:b608`, `:b623`, …, or numeric OD); `fit:` is `:press` or `:slip` |
+| `nut_pocket(size, depth:, style: :hex, clearance: 0.2, slot: nil)` | Hex (or `:square`) recess for a captive nut; `slot:` opens a slide-in channel along +Y |
+| `standoff_pocket(size, depth:, clearance: 0.2)` | Hex recess that keeps a threaded standoff from spinning |
 | `cbore(d:, cbore_d:, cbore_h:, depth:)` | Generic counterbore tool |
 | `csink(d:, csink_d:, csink_angle:, depth:)` | Generic countersink tool |
 
@@ -75,6 +77,22 @@ hole  = clearance_hole(:m3, depth: 6)
   plate = plate.cut(hole.translate(x, y, 0))
 end
 ```
+
+## Labels — emboss and engrave
+
+`text` renders a string as glyph outline faces; extrude gives it depth, then
+fuse raises it off the surface and cut sinks it in. On a quad frame the
+CW/CCW motor markings are genuinely functional, not decoration.
+
+```ruby
+plate = box(40, 12, 3)
+label = text("X-450 V2", size: 6).extrude(0.6)
+embossed = plate.fuse(label.translate(4, 3, 3))    # raised off the top
+engraved = plate.cut(label.translate(4, 3, 2.4))   # sunk into the top
+```
+
+`font:` picks a family by name or takes a `.ttf`/`.otf` path; without it the
+system sans-serif is used.
 
 ## Mating bodies (fasteners, shafts, bearings)
 

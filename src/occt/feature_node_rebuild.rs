@@ -11,6 +11,7 @@ impl FeatureNode {
             FeatureOp::Torus { r1, r2 } => Shape::make_torus(*r1, *r2),
             FeatureOp::Wedge { dx, dy, dz, ltx } => Shape::make_wedge(*dx, *dy, *dz, *ltx),
             FeatureOp::Rect { w, h } => Shape::make_rect(*w, *h),
+            FeatureOp::Text { text, size, font } => Shape::make_text(text, *size, font),
             FeatureOp::Circle { r } => Shape::make_circle_face(*r),
             FeatureOp::Polygon { points } => Shape::make_polygon(points),
             FeatureOp::Profile2D {
@@ -146,6 +147,42 @@ impl FeatureNode {
                 .ok_or_else(|| "shell feature missing parent".to_string())?
                 .rebuild()?
                 .shell(*thickness),
+            FeatureOp::ShellOpen {
+                thickness,
+                face_centroids,
+            } => {
+                let body = self
+                    .parents
+                    .first()
+                    .ok_or_else(|| "shell_open feature missing body parent".to_string())?
+                    .rebuild()?;
+                // Re-find each removed face on the rebuilt body by centroid:
+                // the rebuilt topology is fresh, so identity matching cannot
+                // work, but the geometry is identical by construction.
+                let all = body.faces("all")?;
+                let mut refs: Vec<&Shape> = Vec::with_capacity(face_centroids.len() / 3);
+                for target in face_centroids.chunks_exact(3) {
+                    let nearest = all
+                        .iter()
+                        .map(|f| {
+                            let c = f.centroid().unwrap_or([f64::MAX; 3]);
+                            let d2 = (c[0] - target[0]).powi(2)
+                                + (c[1] - target[1]).powi(2)
+                                + (c[2] - target[2]).powi(2);
+                            (f, d2)
+                        })
+                        .min_by(|a, b| a.1.total_cmp(&b.1))
+                        .ok_or_else(|| "shell_open rebuild: body has no faces".to_string())?;
+                    if nearest.1 > 1.0e-6 {
+                        return Err(format!(
+                            "shell_open rebuild: no face found at centroid ({}, {}, {})",
+                            target[0], target[1], target[2]
+                        ));
+                    }
+                    refs.push(nearest.0);
+                }
+                body.shell_open(&refs, *thickness)
+            }
             FeatureOp::Offset { distance } => self
                 .parents
                 .first()

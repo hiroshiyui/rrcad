@@ -94,6 +94,26 @@ impl Shape {
             .map_err(|e| e.to_string())
     }
 
+    /// Phase 12: text glyph outlines as a Compound of planar Faces in the XY
+    /// plane, baseline at the origin. `font` is a family name, a .ttf/.otf
+    /// path, or "" for the sans-serif default. Extrude for solid letters,
+    /// then fuse to emboss or cut to engrave.
+    pub fn make_text(text: &str, size: f64, font: &str) -> Result<Self, String> {
+        ffi::make_text(text, size, font)
+            .map(|p| {
+                Shape::fresh_with_feature(
+                    p,
+                    FeatureOp::Text {
+                        text: text.to_string(),
+                        size,
+                        font: font.to_string(),
+                    },
+                    format!("text({text:?}, size={size})"),
+                )
+            })
+            .map_err(|e| e.to_string())
+    }
+
     pub fn make_polygon(pts: &[f64]) -> Result<Self, String> {
         ffi::make_polygon(pts)
             .map(|p| {

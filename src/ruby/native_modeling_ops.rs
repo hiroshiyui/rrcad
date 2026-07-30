@@ -112,6 +112,23 @@ pub unsafe extern "C" fn rrcad_shape_loft(
 }
 
 shape_method!(rrcad_shape_shell(thickness: f64) => shell);
+
+/// Phase 12: shell with chosen opening faces.
+/// `self_ptr` is the solid; `ptrs` is an array of `n` raw Shape pointers,
+/// each a Face of that solid selected with `.faces`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rrcad_shape_shell_open(
+    self_ptr: *mut c_void,
+    ptrs: *const *const c_void,
+    n: usize,
+    thickness: f64,
+    error_out: *mut *const c_char,
+) -> *mut c_void {
+    unsafe { *error_out = std::ptr::null() };
+    let body = unsafe { &*(self_ptr as *const Shape) };
+    let faces = unsafe { shape_refs(ptrs, n) };
+    unsafe { shape_result_to_ptr(body.shell_open(&faces, thickness), error_out) }
+}
 shape_method!(rrcad_shape_offset(distance: f64) => offset);
 shape_method!(rrcad_shape_offset_2d(distance: f64) => offset_2d);
 shape_method!(rrcad_shape_simplify(min_feature_size: f64) => simplify);

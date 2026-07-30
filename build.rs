@@ -99,7 +99,9 @@ fn main() {
         "TKDEGLTF",
         "TKDEOBJ", // RWObj_CafWriter — Wavefront OBJ export
         "TKRWMesh",
-        "TKHLR", // HLRBRep_PolyAlgo — hidden-line removal for SVG/DXF export
+        "TKHLR",     // HLRBRep_PolyAlgo — hidden-line removal for SVG/DXF export
+        "TKService", // Font_FontMgr — system font lookup for text() profiles
+        "TKV3d",     // StdPrs_BRepFont / Font_BRepTextBuilder — text() glyph outlines
     ] {
         println!("cargo:rustc-link-lib={lib}");
     }

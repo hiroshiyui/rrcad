@@ -20,7 +20,7 @@ bottom.
 | `.chamfer(d)` | Bevel all edges symmetrically by distance `d` |
 | `.chamfer(d, :vertical)` | Bevel only vertical edges |
 | `.chamfer_asym(d1, d2)` | Asymmetric bevel (different distances on each side) |
-| `.shell(thickness)` | Hollow the solid (negative = inward offset) |
+| `.shell(thickness, open: nil)` | Hollow the solid (negative = inward offset); `open:` picks the opening face(s) |
 | `.thicken(thickness)` | Give a surface a wall, turning it into a solid |
 | `.offset(distance)` | Offset the solid volume |
 | `.offset_2d(distance)` | Offset a 2D profile in its own plane; returns a profile you can extrude |
@@ -99,6 +99,15 @@ inward); `.offset` grows or shrinks the whole volume.
 
 ```ruby
 case_body = box(80, 50, 30).fillet(4).shell(-2)   # hollow with 2 mm walls
+```
+
+By default the topmost face becomes the opening. `open:` chooses instead —
+a `.faces` selector or Face shapes from the same solid:
+
+```ruby
+tray   = box(60, 40, 20).shell(1.6, open: :bottom)       # opens the base
+duct   = box(60, 40, 20).shell(2, open: [:">X", :"<X"])  # through-tunnel
+canopy = dome.shell(1.2, open: dome.faces(:bottom))      # pick faces explicitly
 ```
 
 `.thicken` is the other direction: it takes a surface — a Face or a Shell,
