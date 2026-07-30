@@ -26,7 +26,9 @@ sudo apt-get install -y \
   libocct-modeling-data-dev \
   libocct-modeling-algorithms-dev \
   libocct-data-exchange-dev \
-  libocct-ocaf-dev
+  libocct-ocaf-dev \
+  libocct-visualization-dev \
+  fontconfig fonts-dejavu-core
 ```
 
 ## Build
