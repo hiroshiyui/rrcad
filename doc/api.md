@@ -390,7 +390,7 @@ let section = Shape::make_box(10.0, 10.0, 10.0)?.slice("xy", 5.0)?;
 
 | Method | Description |
 |--------|-------------|
-| `.export_step(path: &str) -> Result<()>` | STEP AP203 boundary-representation file |
+| `.export_step(path: &str) -> Result<()>` | STEP AP214 boundary-representation file (OCCT's default `write.step.schema`; the files declare `AUTOMOTIVE_DESIGN 214`) |
 | `.export_stl(path: &str, linear_deflection: f64, ascii: bool) -> Result<()>` | STL triangulated mesh. `ascii: false` writes binary (80-byte header, `uint32` count, 50 bytes per triangle) — ~5x smaller and the default everywhere above this layer. `ascii: true` writes text. |
 | `.export_gltf(path: &str, linear_deflection: f64) -> Result<()>` | glTF 2.0 (text JSON + companion `.bin`). `linear_deflection` controls tessellation quality (e.g. `0.1` for 0.1 mm). |
 | `.export_glb(path: &str, linear_deflection: f64) -> Result<()>` | Binary glTF (GLB). Single self-contained file; used by the live preview server. |

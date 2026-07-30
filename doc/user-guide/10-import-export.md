@@ -25,7 +25,7 @@ Supported extensions: `.step`, `.stl`, `.3mf`, `.glb`, `.gltf`, `.obj`, `.svg`,
 
 | Extension | Format | Best for |
 |-----------|--------|----------|
-| `.step` | STEP AP203 | CAD interchange, manufacturing, CNC/CAM |
+| `.step` | STEP AP214 | CAD interchange, manufacturing, CNC/CAM |
 | `.3mf` | 3MF | 3D printing slicers — carries units, colour, and separate bodies |
 | `.stl` | Binary STL | 3D printing, when the receiving tool only reads STL |
 | `.glb` | Binary glTF 2.0 | Web visualization, game engines, live preview |
@@ -33,6 +33,10 @@ Supported extensions: `.step`, `.stl`, `.3mf`, `.glb`, `.gltf`, `.obj`, `.svg`,
 | `.obj` | Wavefront OBJ | 3D modeling software; companion `.mtl` created |
 | `.svg` | SVG (2D) | Technical drawings (uses HLR projection) |
 | `.dxf` | DXF R12 (2D) | CAD software 2D drawing exchange |
+
+For assemblies, `asm.export("drone.step", structured: true)` keeps the
+components as separate named products instead of fusing them — see
+[8. Assemblies](08-assemblies.md#exporting-an-assembly).
 
 ## Where files may be read and written
 
