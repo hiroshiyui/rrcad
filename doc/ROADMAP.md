@@ -605,82 +605,82 @@ in the chain needs. Ordered so the pure-Ruby items landed first.
 
 **Complete.** All six items.
 
-- [x] **Airfoil profile primitive** — the one quadcopter part that could not
-      be modelled was a propeller. A blade is a loft of airfoil sections with
-      varying chord and twist along the radius; `loft` already accepted
-      pre-rotated, pre-placed 3-D profiles, but there was no way to *make* an
-      airfoil section short of hand-feeding dozens of points into
-      `spline_2d`. `airfoil(naca: "2412", chord: 20)` generates NACA 4-digit
-      sections analytically (closed-trailing-edge polynomial, cosine point
-      spacing); `coordinates:` takes published points in Selig order and
-      `dat:` the text of a Selig `.dat` file, with a blunt trailing edge
-      closed by a straight base. Built as two interpolated BSpline segments
-      over `make_profile_2d`, so the surfaces stay smooth through
-      extrude/loft while the trailing edge stays a true corner. Pure Ruby in
-      the prelude. Unlocks propellers and an aerodynamic canopy.
-      Tests: 28 in `tests/phase12_airfoil.rs`.
-- [x] **Per-section twist and scale in `sweep_sections`** — the sweep placed
-      origin-centred profiles at the spine points but could not rotate or
-      scale them per station, so a blade or tapered arm meant manual loft
-      bookkeeping. `twist:` and `scale:` take a per-profile Array or a single
-      Numeric blended linearly (total twist from 0°; end scale from 1). Done
-      in the prelude: the native sweep is now `__rrcad_sweep_sections` and
-      the wrapper rotates/scales a copy of each profile in its own plane
-      before placement, so no C++ changed and profiles are never mutated.
-      A blade is one call: `sweep_sections(spine, [section] * 3,
-      twist: [30, 20, 12], scale: [1.0, 0.75, 0.4])`.
-      Tests: 14 in `tests/phase12_sweep_twist.rs`.
-- [x] **Nut-pocket helpers** — the hardware library (`clearance_hole`,
-      `tap_drill`, `heat_set_insert`, `bearing_bore`) stopped short of two
-      staples of printed frames: hex recesses for captive metric nuts and
-      pockets that keep threaded standoffs from spinning.
-      `nut_pocket(:m3, depth: 3)` cuts a hex (or `:square`) recess sized to
-      the nut's across-flats plus a print-fit `clearance:` (default 0.2 mm),
-      and `slot:` opens a slide-in channel so the nut enters from an edge —
-      the captive-nut idiom of printed quad arms. `standoff_pocket` is the
-      same recess under the name of its other use. Both share the ISO
-      across-flats table `nut` uses, now factored into one place. Pure Ruby.
-      Tests: 17 in `tests/phase12_nut_pockets.rs`.
-- [x] **`shell` with face selection** — `.shell(thickness)` always removed
-      the topmost face. A canopy or battery tray chooses its opening(s):
-      `.shell(1.6, open: :bottom)`, a direction like `:">X"`, an Array of
-      selectors, or Face shapes from `.faces` on the same solid. The bridge
-      (`ShellOpenBuilder`, the builder-pattern twin of `FragmentBuilder`)
-      matches requested faces against the body with `IsSame`, so a face of
-      another shape — or of a transformed copy — is rejected by name rather
-      than silently shelling the wrong thing, and removing every face is
-      refused. Feature rebuild re-finds the openings by face centroid, since
-      a face Shape carries its parent solid's feature node and cannot
-      rebuild into a face.
-      Tests: 15 in `tests/phase12_shell_open.rs`.
-- [x] **Text emboss / engrave** — no `text()` existed anywhere. Frame plates
-      want part labels, version numbers, and motor-rotation arrows — CW/CCW
-      markings are genuinely functional on a quad. `text("X-450", size: 6)`
-      renders glyph outlines as a Compound of Faces in the XY plane via
-      `Font_BRepFont` + `Font_BRepTextBuilder`; emboss is extrude + fuse,
-      engrave is extrude + cut, exactly as scoped. `font:` takes a family
-      name (system font manager, sans-serif default) or a `.ttf`/`.otf`
-      path. Needed two new toolkits (`TKService`, `TKV3d`) in `build.rs` and
-      `libocct-visualization-dev` + `fonts-dejavu-core` in CI, whose slim
-      Debian container has no fonts. The feature tree stores the request and
-      rebuild re-renders it.
-      Tests: 14 in `tests/phase12_text.rs`.
-- [x] **Structured (non-fused) assembly STEP export** — `Assembly#export`
-      fused everything into one solid, so reopening the design in
-      FreeCAD/Fusion — or handing it to whoever machines the plates — lost
-      the motors, arms, and plates as separate components.
-      `asm.export("drone.step", structured: true)` writes each component as
-      a named PRODUCT under one root assembly via XCAF +
-      `STEPCAFControl_Writer` (`StepAssemblyWriter` builder in the bridge);
-      names come from `name:` (auto `part_N`), the root from
-      `assembly("…")`, and a part's `.color` travels as
-      `COLOUR_RGB`/`STYLED_ITEM`. Geometry stays in world coordinates —
-      identity component transforms, no instance reuse. The default export
-      still fuses, unchanged, and the path guard applies. Per-part colour in
-      assembly GLB previews was scoped out: the preview pipeline exports one
-      Shape, so it needs its own assembly-aware path — an item for a future
-      phase if the need shows up.
-      Tests: 8 in `tests/phase12_step_assembly.rs`.
+- **Airfoil profile primitive** — the one quadcopter part that could not
+  be modelled was a propeller. A blade is a loft of airfoil sections with
+  varying chord and twist along the radius; `loft` already accepted
+  pre-rotated, pre-placed 3-D profiles, but there was no way to *make* an
+  airfoil section short of hand-feeding dozens of points into
+  `spline_2d`. `airfoil(naca: "2412", chord: 20)` generates NACA 4-digit
+  sections analytically (closed-trailing-edge polynomial, cosine point
+  spacing); `coordinates:` takes published points in Selig order and
+  `dat:` the text of a Selig `.dat` file, with a blunt trailing edge
+  closed by a straight base. Built as two interpolated BSpline segments
+  over `make_profile_2d`, so the surfaces stay smooth through
+  extrude/loft while the trailing edge stays a true corner. Pure Ruby in
+  the prelude. Unlocks propellers and an aerodynamic canopy.
+  Tests: 28 in `tests/phase12_airfoil.rs`.
+- **Per-section twist and scale in `sweep_sections`** — the sweep placed
+  origin-centred profiles at the spine points but could not rotate or
+  scale them per station, so a blade or tapered arm meant manual loft
+  bookkeeping. `twist:` and `scale:` take a per-profile Array or a single
+  Numeric blended linearly (total twist from 0°; end scale from 1). Done
+  in the prelude: the native sweep is now `__rrcad_sweep_sections` and
+  the wrapper rotates/scales a copy of each profile in its own plane
+  before placement, so no C++ changed and profiles are never mutated.
+  A blade is one call: `sweep_sections(spine, [section] * 3,
+  twist: [30, 20, 12], scale: [1.0, 0.75, 0.4])`.
+  Tests: 14 in `tests/phase12_sweep_twist.rs`.
+- **Nut-pocket helpers** — the hardware library (`clearance_hole`,
+  `tap_drill`, `heat_set_insert`, `bearing_bore`) stopped short of two
+  staples of printed frames: hex recesses for captive metric nuts and
+  pockets that keep threaded standoffs from spinning.
+  `nut_pocket(:m3, depth: 3)` cuts a hex (or `:square`) recess sized to
+  the nut's across-flats plus a print-fit `clearance:` (default 0.2 mm),
+  and `slot:` opens a slide-in channel so the nut enters from an edge —
+  the captive-nut idiom of printed quad arms. `standoff_pocket` is the
+  same recess under the name of its other use. Both share the ISO
+  across-flats table `nut` uses, now factored into one place. Pure Ruby.
+  Tests: 17 in `tests/phase12_nut_pockets.rs`.
+- **`shell` with face selection** — `.shell(thickness)` always removed
+  the topmost face. A canopy or battery tray chooses its opening(s):
+  `.shell(1.6, open: :bottom)`, a direction like `:">X"`, an Array of
+  selectors, or Face shapes from `.faces` on the same solid. The bridge
+  (`ShellOpenBuilder`, the builder-pattern twin of `FragmentBuilder`)
+  matches requested faces against the body with `IsSame`, so a face of
+  another shape — or of a transformed copy — is rejected by name rather
+  than silently shelling the wrong thing, and removing every face is
+  refused. Feature rebuild re-finds the openings by face centroid, since
+  a face Shape carries its parent solid's feature node and cannot
+  rebuild into a face.
+  Tests: 15 in `tests/phase12_shell_open.rs`.
+- **Text emboss / engrave** — no `text()` existed anywhere. Frame plates
+  want part labels, version numbers, and motor-rotation arrows — CW/CCW
+  markings are genuinely functional on a quad. `text("X-450", size: 6)`
+  renders glyph outlines as a Compound of Faces in the XY plane via
+  `Font_BRepFont` + `Font_BRepTextBuilder`; emboss is extrude + fuse,
+  engrave is extrude + cut, exactly as scoped. `font:` takes a family
+  name (system font manager, sans-serif default) or a `.ttf`/`.otf`
+  path. Needed two new toolkits (`TKService`, `TKV3d`) in `build.rs` and
+  `libocct-visualization-dev` + `fonts-dejavu-core` in CI, whose slim
+  Debian container has no fonts. The feature tree stores the request and
+  rebuild re-renders it.
+  Tests: 14 in `tests/phase12_text.rs`.
+- **Structured (non-fused) assembly STEP export** — `Assembly#export`
+  fused everything into one solid, so reopening the design in
+  FreeCAD/Fusion — or handing it to whoever machines the plates — lost
+  the motors, arms, and plates as separate components.
+  `asm.export("drone.step", structured: true)` writes each component as
+  a named PRODUCT under one root assembly via XCAF +
+  `STEPCAFControl_Writer` (`StepAssemblyWriter` builder in the bridge);
+  names come from `name:` (auto `part_N`), the root from
+  `assembly("…")`, and a part's `.color` travels as
+  `COLOUR_RGB`/`STYLED_ITEM`. Geometry stays in world coordinates —
+  identity component transforms, no instance reuse. The default export
+  still fuses, unchanged, and the path guard applies. Per-part colour in
+  assembly GLB previews was scoped out: the preview pipeline exports one
+  Shape, so it needs its own assembly-aware path — an item for a future
+  phase if the need shows up.
+  Tests: 8 in `tests/phase12_step_assembly.rs`.
 
 ---
 
