@@ -38,8 +38,14 @@ sudo apt-get install -y \
   libocct-modeling-data-dev \
   libocct-modeling-algorithms-dev \
   libocct-data-exchange-dev \
-  libocct-ocaf-dev
+  libocct-ocaf-dev \
+  libocct-visualization-dev \
+  fontconfig fonts-dejavu-core
 ```
+
+`libocct-visualization-dev` supplies `TKService`/`TKV3d`, which the `text()`
+glyph renderer links; fontconfig plus at least one installed font family is
+what lets it resolve the default sans-serif face on a headless machine.
 
 **mRuby submodule:**
 
@@ -467,6 +473,12 @@ is still active.
 | `tests/export_stl_binary.rs` | Binary STL: header / `uint32` count / 50-byte stride all agreeing, the header not starting with `solid` (the sniff that picks an encoding), the binary triangle count matching what the ASCII encoding spells out, `ascii: true` opting back into text, round-trip volume |
 | `tests/volume_of_surfaces.rs` | `volume` on non-solids: an open Shell reports `0.0` rather than a plausible integral. Most of the file pins what the guard must *not* catch — sphere, boolean result, imported mesh, sewn solid, flat face — since `closed?` is false for several shapes with correct volumes |
 | `tests/auto_dimensioning.rs` | `ordinate:` dimensions: measured values, datum corner, scale invariance, per-view axes, DXF layer and text alignment |
+| `tests/phase12_airfoil.rs` | `airfoil`: NACA 0012 measures 12% thick, cambered 2412 bulges upward, chord and LE placement, loft into a blade, Selig `coordinates:`/`dat:` parsing and rejections |
+| `tests/phase12_sweep_twist.rs` | `sweep_sections` `twist:`/`scale:`: bounding box opens under twist, taper volume near the analytic frustum, `twist: 0` identical to none, profiles never mutated |
+| `tests/phase12_nut_pockets.rs` | `nut_pocket` / `standoff_pocket`: across-flats + clearance off the bounding box, hex-prism volume, slide-in `slot:` channel width, plate cut removes exactly the recess |
+| `tests/phase12_shell_open.rs` | `shell(open:)`: wall volumes against hand-computed cavities, one and two openings, cylinder cup, legacy default unchanged, foreign/transformed faces rejected by name, centroid-based rebuild |
+| `tests/phase12_text.rs` | `text`: glyph height scales with `size:`, baseline at origin, emboss/engrave volume deltas, engrave-then-STL path, rebuild, font family and missing-file errors |
+| `tests/phase12_step_assembly.rs` | Structured STEP export: component occurrences and named PRODUCTs in the file, colour records, `import_step` round-trip volume, default export still fused, path confinement |
 | `tests/detail_views.rs` | `detail:` on drawings: marker placement, magnification ratio, clipping on the border, captions, DXF layer, rejections |
 | `tests/export_confinement.rs` | Import/export path confinement: working-directory rule, symlink escapes, missing directories |
 | `tests/project_config_integration.rs` | `rrcad.toml` discovery, parent-directory walk-up, `[params]` and `preview_port` |

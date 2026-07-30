@@ -90,6 +90,17 @@ dpkg -S $(find /usr/include/opencascade -name "TheHeader.hxx")
 Then add `println!("cargo:rustc-link-lib=TKTheLib");` to the link list in
 `build.rs` and run `cargo build` again.
 
+Beware headers that alias another class: `Font_BRepFont.hxx` is a thin
+wrapper over `StdPrs_BRepFont`, whose symbols live in `TKV3d` — not in
+`TKService` where the `Font_` package name suggests. When the header trick
+points at the wrong toolkit, search the symbol itself:
+
+```sh
+for lib in /usr/lib/x86_64-linux-gnu/libTK*.so; do
+  nm -D --defined-only "$lib" 2>/dev/null | grep -q TheSymbol && echo "$lib"
+done
+```
+
 ---
 
 ### `cxx-build` fails to find `rust/cxx.h`
@@ -146,6 +157,23 @@ both shapes are valid solids (closed shells).
   directory first.
 - The path contains non-ASCII characters on some platforms — use ASCII paths
   for STEP output for now.
+
+---
+
+### `text: no font found for 'sans-serif'`
+
+`text()` resolves its default face through fontconfig, so a headless or
+minimal system with no fonts installed cannot render glyphs. Install any
+font family (`fonts-dejavu-core` is enough) or pass `font:` with a family
+name that exists on the machine or a path to a `.ttf`/`.otf` file:
+
+```ruby
+text("V2", size: 6, font: "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf")
+```
+
+`text: could not load font file '…'` means the `font:` argument looked like
+a path (contains `/` or ends in `.ttf`/`.otf`) but the file is missing or
+not a parseable font.
 
 ---
 
