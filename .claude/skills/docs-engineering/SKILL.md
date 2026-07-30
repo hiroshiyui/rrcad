@@ -19,4 +19,6 @@ When performing documentation engineering, always follow these steps:
 
 4. **Remove completed items** from `doc/TODOs.md`. If a summary of completed work is warranted, add a brief note before removing the items.
 
-5. **Commit** documentation changes using the `commit-and-push` skill, grouped by topic. Do not mix unrelated documentation changes in a single commit.
+5. **Normalize completed phases** in `doc/ROADMAP.md` — when a phase is complete, convert its `- [x]` checkbox items to plain `-` bullets, matching the style of every other completed phase. Checkboxes are for tracking open work; a finished phase reads as prose.
+
+6. **Commit** documentation changes using the `commit-and-push` skill, grouped by topic. Do not mix unrelated documentation changes in a single commit.
