@@ -5,11 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-07-30
 
 Phase 12 — quadcopter readiness: the six gaps found by scoping a real drone
 design against the feature set. All additive; no existing script changes
 behaviour.
+
+Building from source now additionally requires the OCCT visualization
+toolkits (`libocct-visualization-dev` on Debian/Ubuntu) and, at runtime for
+`text()`, at least one installed system font.
 
 ### Added
 
