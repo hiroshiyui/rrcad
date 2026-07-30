@@ -5310,6 +5310,286 @@ module Kernel
     raise NotImplementedError, "spline_3d() is not yet implemented (Phase 3)"
   end
 
+  # airfoil — Phase 12 quadcopter readiness.
+  #
+  # Closed aerofoil section as a Face in the XY plane: leading edge at the
+  # origin, chord along +X, upper surface toward +Y. Built as two interpolated
+  # BSpline segments (upper and lower surface), so the section stays smooth
+  # through extrude and loft while the trailing edge stays a true corner.
+  # Rotate, scale, and place copies in 3-D, then loft them into a blade.
+  #
+  # Exactly one geometry source:
+  #   naca:        four-digit NACA code ("2412"), generated analytically with
+  #                the closed-trailing-edge thickness polynomial.
+  #   coordinates: [[x, y], ...] in Selig order — trailing edge → upper
+  #                surface → leading edge → lower surface → trailing edge.
+  #   dat:         contents of a Selig-format .dat file as a String (embed it
+  #                in the script or bring it in with require_relative); a
+  #                leading name line is skipped.
+  #
+  # chord: scales the section so its X extent is exactly that many mm and
+  # shifts the leading edge to x = 0. Required with naca:; optional with
+  # coordinates:/dat:, whose data is used as-is when it is omitted.
+  # samples: is the point count per surface for naca: (default 40),
+  # cosine-spaced so the nose stays round.
+  #
+  #   root = airfoil(naca: "2412", chord: 24)
+  #   tip  = airfoil(naca: "2412", chord: 12).rotate(1, 0, 0, 30)
+  def airfoil(naca: nil, coordinates: nil, dat: nil, chord: nil, samples: 40)
+    given = []
+    given << :naca unless naca.nil?
+    given << :coordinates unless coordinates.nil?
+    given << :dat unless dat.nil?
+    unless given.length == 1
+      got = given.empty? ? "none" : given.join(" and ")
+      raise ArgumentError,
+            "airfoil: pass exactly one of naca:, coordinates:, or dat: (got #{got})"
+    end
+    validate_positive_dimension(chord, "airfoil chord") unless chord.nil?
+
+    if naca
+      raise ArgumentError, "airfoil: chord: is required with naca:" if chord.nil?
+      unless samples.is_a?(Integer) && samples >= 8
+        raise ArgumentError, "airfoil: samples: must be an Integer >= 8"
+      end
+      upper, lower = airfoil_naca4_surfaces(naca, samples)
+    else
+      points = dat ? airfoil_parse_dat(dat) : airfoil_check_coordinates(coordinates)
+      upper, lower = airfoil_split_selig(points)
+    end
+
+    upper, lower = airfoil_fit_chord(upper, lower, chord) unless chord.nil?
+
+    # Two spline segments: upper surface TE→LE, lower surface LE→TE. They
+    # share the LE point, so the wire connects; when the data's TE is blunt
+    # (first != last point), the native builder closes it with a straight
+    # base — the correct shape for a blunt trailing edge.
+    __rrcad_profile_2d(upper + lower, [upper.length, lower.length], [1, 1])
+  end
+
+  # NACA 4-digit surfaces: returns [upper TE→LE, lower LE→TE] at unit chord.
+  # Camber line and thickness distribution per Abbott & von Doenhoff; the
+  # −0.1036 x⁴ coefficient makes the trailing edge close exactly.
+  def airfoil_naca4_surfaces(code, samples)
+    s = code.to_s
+    unless s.length == 4 && s.each_char.all? { |c| c >= "0" && c <= "9" }
+      raise ArgumentError,
+            "airfoil: naca: must be a four-digit code like \"2412\" (got #{code.inspect})"
+    end
+    m = s[0].to_i / 100.0 # max camber
+    p = s[1].to_i / 10.0  # camber position
+    t = (s[2] + s[3]).to_i / 100.0 # thickness
+    if t <= 0
+      raise ArgumentError, "airfoil: NACA #{s} has zero thickness — nothing to model"
+    end
+    if m > 0 && p <= 0
+      raise ArgumentError,
+            "airfoil: NACA #{s} is malformed — camber needs a position digit > 0 (like 2412)"
+    end
+
+    upper = []
+    lower = []
+    samples.times do |i|
+      # Cosine spacing clusters points at the nose, where curvature is high.
+      x = (1.0 - Math.cos(Math::PI * i / (samples - 1))) / 2.0
+      yt = 5.0 * t * (0.2969 * Math.sqrt(x) - 0.1260 * x - 0.3516 * x * x +
+                      0.2843 * x**3 - 0.1036 * x**4)
+      if m > 0 && x < p
+        yc = m / p**2 * (2.0 * p * x - x * x)
+        slope = 2.0 * m / p**2 * (p - x)
+      elsif m > 0
+        yc = m / (1.0 - p)**2 * ((1.0 - 2.0 * p) + 2.0 * p * x - x * x)
+        slope = 2.0 * m / (1.0 - p)**2 * (p - x)
+      else
+        yc = 0.0
+        slope = 0.0
+      end
+      theta = Math.atan(slope)
+      upper << [x - yt * Math.sin(theta), yc + yt * Math.cos(theta)]
+      lower << [x + yt * Math.sin(theta), yc - yt * Math.cos(theta)]
+    end
+    # Pin the shared endpoints exactly so the two segments meet and the loop
+    # closes without a hairline gap: LE at the origin, TE at (1, 0).
+    upper[0] = lower[0] = [0.0, 0.0]
+    upper[-1] = lower[-1] = [1.0, 0.0]
+    [upper.reverse, lower]
+  end
+
+  # Validate a coordinates: array without reordering it.
+  def airfoil_check_coordinates(coordinates)
+    unless coordinates.is_a?(Array) && coordinates.length >= 5
+      raise ArgumentError,
+            "airfoil: coordinates: needs an Array of at least 5 [x, y] points in Selig order"
+    end
+    coordinates.each_with_index do |pt, i|
+      unless pt.is_a?(Array) && pt.length == 2 && pt.all? { |v| v.is_a?(Numeric) }
+        raise ArgumentError,
+              "airfoil: coordinates: entry #{i} is not an [x, y] pair (got #{pt.inspect})"
+      end
+    end
+    coordinates.map { |pt| [pt[0].to_f, pt[1].to_f] }
+  end
+
+  # Parse Selig .dat text: an optional name line, then one "x y" pair per
+  # line, trailing edge → upper → leading edge → lower → trailing edge.
+  def airfoil_parse_dat(dat)
+    raise ArgumentError, "airfoil: dat: must be a String" unless dat.is_a?(String)
+    points = []
+    dat.split("\n").each_with_index do |line, lineno|
+      tokens = line.strip.split
+      next if tokens.empty?
+      numeric = tokens.length == 2 && tokens.all? { |tok| airfoil_numeric_token?(tok) }
+      unless numeric
+        # A non-numeric line before any point is the airfoil's name; later
+        # ones mean the file is not what we think it is.
+        next if points.empty?
+        raise ArgumentError,
+              "airfoil: dat: line #{lineno + 1} is not an \"x y\" pair: #{line.strip.inspect}"
+      end
+      points << [tokens[0].to_f, tokens[1].to_f]
+    end
+    if points.length >= 2 && points[0][0] > 1.5
+      # Lednicer files open with the point counts of the two surfaces
+      # (e.g. "61. 61."), which no unit-chord coordinate can reach.
+      raise ArgumentError,
+            "airfoil: dat: looks like Lednicer format (starts with point counts); " \
+            "airfoil() reads Selig order — trailing edge → upper → leading edge → lower"
+    end
+    if points.length < 5
+      raise ArgumentError,
+            "airfoil: dat: found only #{points.length} coordinate pairs — not an airfoil"
+    end
+    points
+  end
+
+  # A float token, checked without Regexp (not in the rrcad gembox).
+  def airfoil_numeric_token?(token)
+    seen_digit = false
+    token.each_char do |c|
+      if c >= "0" && c <= "9"
+        seen_digit = true
+      elsif c != "+" && c != "-" && c != "." && c != "e" && c != "E"
+        return false
+      end
+    end
+    seen_digit
+  end
+
+  # Split a Selig-ordered ring at the leading edge (minimum x) into the two
+  # spline segments, dropping consecutive duplicates that would make
+  # GeomAPI_Interpolate fail.
+  def airfoil_split_selig(points)
+    le = 0
+    points.each_with_index { |pt, i| le = i if pt[0] < points[le][0] }
+    if le < 2 || le > points.length - 3
+      raise ArgumentError,
+            "airfoil: points are not in Selig order — the leading edge (minimum x) " \
+            "must sit between the two surfaces, not at index #{le}"
+    end
+    upper = airfoil_dedupe(points[0..le])
+    lower = airfoil_dedupe(points[le..-1])
+    if upper.length < 3 || lower.length < 3
+      raise ArgumentError, "airfoil: too few distinct points per surface to interpolate"
+    end
+    [upper, lower]
+  end
+
+  def airfoil_dedupe(points)
+    out = []
+    points.each do |pt|
+      near = !out.empty? &&
+             (out[-1][0] - pt[0]).abs < 1.0e-9 && (out[-1][1] - pt[1]).abs < 1.0e-9
+      out << pt unless near
+    end
+    out
+  end
+
+  # Scale both surfaces so the X extent equals chord:, with the LE at x = 0.
+  def airfoil_fit_chord(upper, lower, chord)
+    xs = (upper + lower).map { |pt| pt[0] }
+    min_x = xs.min
+    extent = xs.max - min_x
+    raise ArgumentError, "airfoil: coordinates span zero chord" if extent < 1.0e-12
+    factor = chord / extent
+    [upper, lower].map do |surface|
+      surface.map { |pt| [(pt[0] - min_x) * factor, pt[1] * factor] }
+    end
+  end
+
+  # sweep_sections — Phase 12 quadcopter readiness: per-section twist and
+  # scale over the Phase 6 variable-section sweep.
+  #
+  # Sweeps origin-centred profiles along `path` (a spline_3d Wire), morphing
+  # smoothly between them: first profile at the spine start, last at the end,
+  # the rest at evenly spaced parametric positions.
+  #
+  # twist: rotates each profile in its own plane before placement —
+  #   a Numeric is the total twist in degrees, distributed linearly from 0
+  #   at the first section; an Array gives one angle per profile.
+  # scale: resizes each profile about its origin —
+  #   a Numeric is the end scale, blended linearly from 1 at the first
+  #   section; an Array gives one positive factor per profile.
+  #
+  # A propeller blade in one call: sections shrink and unwind toward the tip.
+  #
+  #   spine = spline_3d([[0, 0, 0], [0, 0, 40], [0, 0, 80]])
+  #   blade = sweep_sections(spine,
+  #                          [airfoil(naca: "2412", chord: 24)] * 3,
+  #                          twist: [30, 20, 12], scale: [1.0, 0.75, 0.4])
+  #
+  # The native sweep behind this is __rrcad_sweep_sections; the keywords are
+  # applied here by rotating and scaling each profile before placement.
+  def sweep_sections(path, profiles, twist: nil, scale: nil)
+    unless profiles.is_a?(Array) && profiles.length >= 2
+      raise ArgumentError, "sweep_sections requires at least 2 profiles"
+    end
+    n = profiles.length
+    twists = sweep_section_series(twist, n, "twist", 0.0)
+    scales = sweep_section_series(scale, n, "scale", 1.0)
+    if scales
+      scales.each_with_index do |s, i|
+        unless s > 0
+          raise ArgumentError, "sweep_sections: scale: entry #{i} must be > 0 (got #{s})"
+        end
+      end
+    end
+
+    shaped = profiles.each_with_index.map do |profile, i|
+      shape = profile
+      shape = shape.scale(scales[i]) if scales && scales[i] != 1.0
+      shape = shape.rotate(0, 0, 1, twists[i]) if twists && twists[i] != 0.0
+      shape
+    end
+    __rrcad_sweep_sections(path, shaped)
+  end
+
+  # Expand a twist:/scale: keyword into one value per section: nil passes
+  # through, a Numeric blends linearly from `from` at the first section to
+  # the given value at the last, an Array is used as-is after length and
+  # type checks.
+  def sweep_section_series(value, n, label, from)
+    return nil if value.nil?
+    if value.is_a?(Numeric)
+      return (0...n).map { |i| from + (value - from) * i / (n - 1.0) }
+    end
+    unless value.is_a?(Array)
+      raise ArgumentError,
+            "sweep_sections: #{label}: takes a Numeric or an Array (got #{value.class})"
+    end
+    unless value.length == n
+      raise ArgumentError,
+            "sweep_sections: #{label}: needs one value per profile " \
+            "(got #{value.length} for #{n} profiles)"
+    end
+    value.each_with_index do |v, i|
+      unless v.is_a?(Numeric)
+        raise ArgumentError,
+              "sweep_sections: #{label}: entry #{i} is not a number (got #{v.inspect})"
+      end
+    end
+    value.map { |v| v.to_f }
+  end
+
   # `solid do ... end` — evaluates block, returns its result.
   def solid
     yield

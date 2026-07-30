@@ -1679,20 +1679,18 @@ static mrb_value mrb_rrcad_shape_sweep(mrb_state* mrb, mrb_value self) {
     return shape_from_ptr(mrb, result);
 }
 
-/* sweep_sections(path, profiles)
+/* __rrcad_sweep_sections(path, profiles)
  *
- * Kernel-level method.  Sweeps multiple section profiles along `path` (a Wire
- * from spline_3d), morphing smoothly between them.  The first profile is placed
- * at the spine start, the last at the spine end, and any intermediate profiles
- * at evenly spaced parametric positions.
+ * Native primitive behind the prelude's sweep_sections().  Sweeps multiple
+ * section profiles along `path` (a Wire from spline_3d), morphing smoothly
+ * between them.  The first profile is placed at the spine start, the last at
+ * the spine end, and any intermediate profiles at evenly spaced parametric
+ * positions.  The prelude wrapper adds the twist:/scale: keywords by
+ * pre-rotating and pre-scaling each profile before calling this.
  *
  * `path`     — Shape (Wire) produced by spline_3d.
  * `profiles` — Array of Shape objects; each must be a Face (e.g. circle, rect),
  *              Wire, or Vertex (pointed cap).  At least 2 required.
- *
- * Example:
- *   path = spline_3d([[-4.5,0,1.5], [-8.54,0,4.8], [-4.0,0,6.3]])
- *   handle = sweep_sections(path, [circle(1.4), circle(0.7), circle(1.4)])
  */
 static mrb_value mrb_rrcad_sweep_sections(mrb_state* mrb, mrb_value self) {
     (void)self;
@@ -3010,7 +3008,9 @@ void rrcad_register_shape_class(mrb_state* mrb) {
                       MRB_ARGS_REQ(1) | MRB_ARGS_KEY(1, 0)); /* (pts[, tangents:]) */
     mrb_define_method(mrb, shape_class, "sweep", mrb_rrcad_shape_sweep,
                       MRB_ARGS_REQ(1) | MRB_ARGS_KEY(1, 0)); /* (path[, guide:]) */
-    mrb_define_method(mrb, mrb->kernel_module, "sweep_sections", mrb_rrcad_sweep_sections,
+    /* Registered under a private name: the prelude's sweep_sections() wraps it
+     * to add the twist:/scale: keywords, so it must not be overridden here. */
+    mrb_define_method(mrb, mrb->kernel_module, "__rrcad_sweep_sections", mrb_rrcad_sweep_sections,
                       MRB_ARGS_REQ(2));
 
     /* Phase 3: Live preview */

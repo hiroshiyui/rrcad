@@ -605,20 +605,31 @@ frame plates, arms, motor mounts, canopy, propellers — that the current
 feature set cannot model comfortably, or cannot deliver in the form the next
 tool in the chain needs. Ordered so the pure-Ruby items land first.
 
-- [ ] **Airfoil profile primitive** — the one quadcopter part that cannot be
-      modelled today is a propeller. A blade is a loft of airfoil sections
-      with varying chord and twist along the radius; `loft` already accepts
-      pre-rotated, pre-placed 3-D profiles, but there is no way to *make* an
+- [x] **Airfoil profile primitive** — the one quadcopter part that could not
+      be modelled was a propeller. A blade is a loft of airfoil sections with
+      varying chord and twist along the radius; `loft` already accepted
+      pre-rotated, pre-placed 3-D profiles, but there was no way to *make* an
       airfoil section short of hand-feeding dozens of points into
-      `spline_2d`. Add `airfoil(naca: "2412", chord: 20)` — the NACA 4-digit
-      formula is a few dozen lines of pure Ruby — plus loading Selig-format
-      `.dat` coordinate files for published sections. Unlocks propellers and
-      an aerodynamic canopy.
-- [ ] **Per-section twist and scale in `sweep_sections`** — the sweep places
-      origin-centred profiles at the spine points but cannot rotate or scale
-      them per station, so a blade or tapered arm today means manual loft
-      bookkeeping. Accept `twist:` / `scale:` arrays (or pre-oriented
-      profiles) and make it one call.
+      `spline_2d`. `airfoil(naca: "2412", chord: 20)` generates NACA 4-digit
+      sections analytically (closed-trailing-edge polynomial, cosine point
+      spacing); `coordinates:` takes published points in Selig order and
+      `dat:` the text of a Selig `.dat` file, with a blunt trailing edge
+      closed by a straight base. Built as two interpolated BSpline segments
+      over `make_profile_2d`, so the surfaces stay smooth through
+      extrude/loft while the trailing edge stays a true corner. Pure Ruby in
+      the prelude. Unlocks propellers and an aerodynamic canopy.
+      Tests: 28 in `tests/phase12_airfoil.rs`.
+- [x] **Per-section twist and scale in `sweep_sections`** — the sweep placed
+      origin-centred profiles at the spine points but could not rotate or
+      scale them per station, so a blade or tapered arm meant manual loft
+      bookkeeping. `twist:` and `scale:` take a per-profile Array or a single
+      Numeric blended linearly (total twist from 0°; end scale from 1). Done
+      in the prelude: the native sweep is now `__rrcad_sweep_sections` and
+      the wrapper rotates/scales a copy of each profile in its own plane
+      before placement, so no C++ changed and profiles are never mutated.
+      A blade is one call: `sweep_sections(spine, [section] * 3,
+      twist: [30, 20, 12], scale: [1.0, 0.75, 0.4])`.
+      Tests: 14 in `tests/phase12_sweep_twist.rs`.
 - [ ] **Nut-pocket helpers** — the hardware library (`clearance_hole`,
       `tap_drill`, `heat_set_insert`, `bearing_bore`) stops short of two
       staples of printed frames: hex recesses for captive metric nuts and

@@ -22,6 +22,7 @@ These functions return a Face you can pass to `.extrude` or `.revolve`.
 | `arc(r, start_deg, end_deg)` | Circular arc Wire (counterclockwise) |
 | `spline_2d(pts, tangents: nil)` | Closed profile in the XZ plane for `.revolve` |
 | `spline_3d(pts, tangents: nil)` | 3D Wire path for `.sweep` |
+| `airfoil(naca:/coordinates:/dat:, chord:)` | Closed aerofoil face in the XY plane, chord along +X |
 
 **Typical use** — extrude a rectangle into a slab:
 
@@ -35,6 +36,19 @@ solid = face.extrude(20)
 ```ruby
 profile = spline_2d([[0, 0], [5, 3], [8, 5]], tangents: [[1, 0], [1, 0]])
 body    = profile.revolve(360)
+```
+
+**Typical use** — loft airfoil sections into a propeller blade. `airfoil`
+generates NACA 4-digit sections analytically (`naca:`), or takes published
+coordinates in Selig order via `coordinates:` or the text of a `.dat` file
+via `dat:`. The leading edge lands at the origin with the chord along +X,
+so rotate each section about X for pitch and stack them along Z:
+
+```ruby
+root = airfoil(naca: "2412", chord: 24).rotate(1, 0, 0, 30)
+mid  = airfoil(naca: "2412", chord: 18).rotate(1, 0, 0, 20).translate(0, 0, 40)
+tip  = airfoil(naca: "2412", chord: 10).rotate(1, 0, 0, 12).translate(0, 0, 80)
+blade = loft([root, mid, tip])
 ```
 
 ## Constraint sketches

@@ -63,6 +63,20 @@ pipe    = section.sweep(path)
 For a helical sweep (threads, springs), pair a `helix(...)` path from
 [chapter 5](05-part-design.md) with a small circular section.
 
+When the cross-section should change along the way, `sweep_sections` sweeps
+through a series of origin-centred profiles: the first lands at the spine
+start, the last at the end, the rest evenly between. `twist:` rotates each
+profile in its own plane (a total angle blended linearly, or one angle per
+profile) and `scale:` resizes it (an end scale blended from 1, or one factor
+per profile) — which makes a propeller blade a single call:
+
+```ruby
+spine   = spline_3d([[0, 0, 0], [0, 0, 40], [0, 0, 80]])
+section = airfoil(naca: "2412", chord: 24)
+blade   = sweep_sections(spine, [section, section, section],
+                         twist: [30, 20, 12], scale: [1.0, 0.75, 0.4])
+```
+
 ## Fillet and chamfer
 
 Round or bevel edges. Both accept an optional `:vertical` or `:horizontal`
