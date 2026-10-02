@@ -34,13 +34,18 @@ jobs:
           libocct-visualization-dev \
           fontconfig fonts-dejavu-core \
           gcc g++ make pkg-config ca-certificates
-    - name: Install Rust toolchain
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-        echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
     - uses: actions/checkout@v4
       with:
         submodules: true
+    # Install only the toolchain pinned in rust-toolchain.toml (channel and
+    # components). Checkout must come first so rustup can read that file;
+    # `--default-toolchain none` avoids downloading an unused stable release.
+    - name: Install Rust toolchain
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
+        echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+        "$HOME/.cargo/bin/rustup" toolchain install
+        "$HOME/.cargo/bin/rustc" --version
     - name: Build
       run: cargo build --verbose
     - name: Run tests
