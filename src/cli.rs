@@ -772,6 +772,20 @@ fn dependency_set(script_path: &str, deps: &[std::path::PathBuf]) -> Vec<std::pa
     files
 }
 
+/// Whether a watcher event can mean a dependency's contents changed.
+///
+/// Creates, modifications and removals qualify — including renames, which
+/// notify reports as `Modify(Name)` and which atomic-write editors use to
+/// save. Pure reads (`Access`) never change anything and must be ignored, or
+/// the preview's own script read re-triggers the watcher in an endless loop.
+fn is_content_change(kind: &notify::EventKind) -> bool {
+    use notify::EventKind;
+    matches!(
+        kind,
+        EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
+    )
+}
+
 /// Parent directories of `files`, de-duplicated — the actual watch targets.
 fn watch_dirs(files: &[std::path::PathBuf]) -> Vec<std::path::PathBuf> {
     let mut dirs: Vec<std::path::PathBuf> = files
@@ -857,6 +871,14 @@ fn watch_script_loop(
     loop {
         match rx.recv() {
             Ok(Ok(event)) => {
+                // Filter: only react to events that can change file contents.
+                // Reads surface as `Access` events (inotify IN_OPEN /
+                // IN_CLOSE_NOWRITE), and every eval reads the script — so
+                // reacting to them re-evaluates forever, and each pass pushes
+                // a reload that snaps the browser camera back to its fit view.
+                if !is_content_change(&event.kind) {
+                    continue;
+                }
                 // Filter: only react when the event touches a file this run
                 // actually depends on.
                 let affects_project = event.paths.iter().any(|p| {
@@ -1254,8 +1276,35 @@ mod runtime_tests {
 
 #[cfg(test)]
 mod dependency_watch_tests {
-    use super::{dependency_set, watch_dirs};
+    use super::{dependency_set, is_content_change, watch_dirs};
+    use notify::event::{AccessKind, AccessMode, CreateKind, ModifyKind, RemoveKind, RenameMode};
+    use notify::EventKind;
     use std::path::PathBuf;
+
+    #[test]
+    fn reads_do_not_count_as_content_changes() {
+        // Every eval reads the script; treating that as a change made the
+        // preview re-evaluate (and reset the browser camera) forever.
+        for kind in [
+            EventKind::Access(AccessKind::Open(AccessMode::Any)),
+            EventKind::Access(AccessKind::Read),
+            EventKind::Access(AccessKind::Close(AccessMode::Read)),
+        ] {
+            assert!(!is_content_change(&kind), "{kind:?} must be ignored");
+        }
+    }
+
+    #[test]
+    fn writes_renames_creates_and_removes_count_as_content_changes() {
+        for kind in [
+            EventKind::Modify(ModifyKind::Any),
+            EventKind::Modify(ModifyKind::Name(RenameMode::To)), // atomic-save editors
+            EventKind::Create(CreateKind::File),
+            EventKind::Remove(RemoveKind::File),
+        ] {
+            assert!(is_content_change(&kind), "{kind:?} must trigger a reload");
+        }
+    }
 
     #[test]
     fn dependency_set_always_includes_the_entry_script() {
