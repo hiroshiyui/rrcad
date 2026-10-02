@@ -39,7 +39,7 @@ CHAMFER_BOT   = 1.0   # break on the case's bottom outer edge (elephant-foot rel
 SW_CUT    = 14.0   # MX square cutout (top 1.5 mm of the plate)
 SW_LEDGE  = 1.5    # MX clip-in plate thickness
 SW_RELIEF = 15.0   # underside relief pocket so the clips can snap open
-CAP       = 18.2   # keycap footprint (used only for the preview caps)
+CAP       = 18.2   # keycap footprint allowance for clearance checks (≥ XDA_BASE)
 
 # ── Raspberry Pi Pico ───────────────────────────────────────
 PICO_W = 21.0; PICO_L = 51.0; PICO_T = 1.0
@@ -60,6 +60,12 @@ PLATE_GAP    = 0.0     # plate rests directly on boss tops / wall top
 
 # ── Rubber feet recesses (10 mm self-adhesive bumpers) ──────
 FOOT_R = 5.4; FOOT_DEPTH = 1.0; FOOT_INSET = 16.0
+
+# Keycaps: XDA profile, printed separately by samples/xda_keycaps.rb. Loaded
+# here so the preview shows the real caps and the clearance checks can
+# confirm they fit the CAP allowance.
+require_relative "lib/xda_keycap"
+raise "XDA keycap (#{XDA_BASE} mm) exceeds the CAP allowance" if XDA_BASE > CAP
 
 # ════════════════════════════════════════════════════════════
 # Key layout (mm, relative to LAYOUT_ORIGIN)
@@ -332,8 +338,10 @@ plate_print.export("hitbox_plate_print.stl")
 EXPLODE = param :explode, default: 25, range: 0..200
 
 plate_z = FT + CH + PLATE_GAP
-sw_z    = plate_z + PT - SW_LEDGE + 1.5   # MX top housing seat height
-cap_z   = plate_z + PT - SW_LEDGE + 8.1   # keycap underside on a pressed-up stem
+sw_z    = plate_z + PT - SW_LEDGE + 1.5   # MX top housing seat height (= plate top)
+# A resting MX stem tops out 11.6 mm above the plate; the cap's cross socket
+# floor (MX_CROSS_DEPTH up from its skirt) sits on it.
+cap_z   = plate_z + PT + MX_STEM_TOP - MX_CROSS_DEPTH
 
 # Stand-in hardware for checking fit (not printed parts).
 pico = box(PICO_W, PICO_L, PICO_T).translate(PICO_X0, PICO_Y0, FT + STANDOFF_H)
@@ -344,11 +352,9 @@ switches = KEY_POSES.values.map do |x, y, a|
   low = box(SW_CUT, SW_CUT, 5.0).translate(-SW_CUT / 2, -SW_CUT / 2, sw_z - 5.0)
   at_key(top.fuse(low), x, y, a)
 end
-caps = KEY_POSES.values.map do |x, y, a|
-  cap = rect(CAP, CAP).fillet_wire(2.0).extrude(8.0, draft: 6.deg)
-          .translate(-CAP / 2, -CAP / 2, cap_z)
-  at_key(cap, x, y, a)
-end
+# Build the XDA cap once; each key gets a moved (and, for arrows, turned) copy.
+xda = xda_keycap.translate(0, 0, cap_z)
+caps = KEY_POSES.values.map { |x, y, a| at_key(xda, x, y, a) }
 
 # Layers, bottom to top, with their explode step (0 = stays on the case).
 LAYERS = [
