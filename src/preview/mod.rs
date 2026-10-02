@@ -288,7 +288,27 @@ mod tests {
         let start = html
             .find(&format!("function {name}("))
             .unwrap_or_else(|| panic!("viewer.html must define {name}"));
-        let open = start + html[start..].find('{').expect("function body");
+        // Skip the parameter list by paren matching first: a destructured
+        // parameter (`{ keepView = false } = {}`) has braces of its own, so
+        // the body is the first `{` after the list's closing `)`.
+        let params = start + html[start..].find('(').expect("parameter list");
+        let mut parens = 0usize;
+        let mut params_end = None;
+        for (offset, ch) in html[params..].char_indices() {
+            match ch {
+                '(' => parens += 1,
+                ')' => {
+                    parens -= 1;
+                    if parens == 0 {
+                        params_end = Some(params + offset);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let params_end = params_end.unwrap_or_else(|| panic!("unbalanced parens in {name}"));
+        let open = params_end + html[params_end..].find('{').expect("function body");
         let mut depth = 0usize;
         for (offset, ch) in html[open..].char_indices() {
             match ch {
@@ -303,6 +323,71 @@ mod tests {
             }
         }
         panic!("unbalanced braces in {name}");
+    }
+
+    #[test]
+    fn a_live_reload_keeps_the_users_camera_but_a_fit_reframes_it() {
+        // Every save pushes a reload; re-fitting the camera on each one threw
+        // away the user's orbit. `keepView` must leave the camera position and
+        // orbit target exactly where the user left them while still widening
+        // the clip range for the new model; a plain fit (first load, the R
+        // shortcut) must re-frame from the default angle.
+        let Some(node) = find_node() else { return };
+
+        // Just enough of Three.js for fitCamera: a vector, a bounding box that
+        // reports a fixed 0..100 cube, a camera, and orbit controls.
+        let script = format!(
+            "class Vector3 {{\n\
+               constructor(x = 0, y = 0, z = 0) {{ this.x = x; this.y = y; this.z = z; }}\n\
+               copy(v) {{ this.x = v.x; this.y = v.y; this.z = v.z; return this; }}\n\
+               add(v) {{ this.x += v.x; this.y += v.y; this.z += v.z; return this; }}\n\
+               multiplyScalar(k) {{ this.x *= k; this.y *= k; this.z *= k; return this; }}\n\
+               length() {{ return Math.hypot(this.x, this.y, this.z); }}\n\
+               normalize() {{ return this.multiplyScalar(1 / this.length()); }}\n\
+               distanceTo(v) {{ return Math.hypot(this.x - v.x, this.y - v.y, this.z - v.z); }}\n\
+             }}\n\
+             class Box3 {{\n\
+               setFromObject() {{ return this; }}\n\
+               getCenter(v) {{ return v.copy(new Vector3(50, 50, 50)); }}\n\
+               getSize(v) {{ return v.copy(new Vector3(100, 100, 100)); }}\n\
+             }}\n\
+             const THREE = {{ Vector3, Box3 }};\n\
+             const fitShadowCamera = () => {{}};\n\
+             const camera = {{ fov: 45, near: 0, far: 0, position: new Vector3(),\n\
+                              updateProjectionMatrix() {{}} }};\n\
+             const controls = {{ target: new Vector3(), update() {{}} }};\n\
+             {fit}\n\
+             const fail = msg => {{ console.error(msg); process.exit(1); }};\n\
+             // The user has orbited far out to an unusual spot.\n\
+             camera.position = new Vector3(-900, 40, 7);\n\
+             controls.target = new Vector3(3, 4, 5);\n\
+             fitCamera({{}}, {{ keepView: true }});\n\
+             const p = camera.position, t = controls.target;\n\
+             if (p.x !== -900 || p.y !== 40 || p.z !== 7) fail('keepView moved the camera');\n\
+             if (t.x !== 3 || t.y !== 4 || t.z !== 5) fail('keepView moved the orbit target');\n\
+             // The far plane must still reach past the model from the kept spot.\n\
+             const reach = p.distanceTo(new Vector3(50, 50, 50)) + 100;\n\
+             if (!(camera.far >= reach)) fail('far plane ' + camera.far + ' clips the model at ' + reach);\n\
+             // A plain fit re-frames: target on the model centre, camera moved.\n\
+             fitCamera({{}});\n\
+             if (controls.target.x !== 50 || controls.target.y !== 50 || controls.target.z !== 50)\n\
+               fail('fit did not re-target the model centre');\n\
+             if (camera.position.x === -900) fail('fit did not move the camera');\n",
+            fit = viewer_function("fitCamera"),
+        );
+
+        let mut path = std::env::temp_dir();
+        path.push(format!("rrcad-fit-camera-{}.mjs", std::process::id()));
+        fs::write(&path, script).expect("write fit camera harness");
+        let status = Command::new(node)
+            .arg(&path)
+            .status()
+            .expect("run fit camera harness");
+        let _ = fs::remove_file(&path);
+        assert!(
+            status.success(),
+            "fitCamera camera handling is wrong (see stderr)"
+        );
     }
 
     #[test]

@@ -15,7 +15,9 @@ cargo run -- --preview script.rb
    exact URL is printed at startup.
 2. Opens your browser to a Three.js 3D viewer.
 3. Watches the script file; on every save, re-evaluates the script and
-   pushes the new geometry over WebSocket.
+   pushes the new geometry over WebSocket. The camera is framed on the
+   first model only — reloads keep your orbit, zoom, and pan, so you can
+   inspect one spot while you edit. Press **R** to re-frame the model.
 4. Call `preview(shape)` in your script to specify which shape to display.
 
 ```ruby
@@ -37,6 +39,7 @@ shortcuts:
 | Right-drag / two-finger drag | Pan |
 | Scroll / pinch | Zoom |
 | **F** | Toggle flat-line view (white flat-shaded surfaces + gray edge lines) |
+| **R** | Fit view: re-frame the camera on the whole model |
 | **A** | Toggle axes helper |
 | **M** | Toggle measurement mode |
 | **Esc** | Clear the active measurement; press again to exit measurement mode |
@@ -45,7 +48,7 @@ The hamburger menu exposes the same toggles plus a **Scene** selector:
 
 | Menu section | Options |
 |-------------|---------|
-| View | Normal (PBR studio material) · Flat-line (technical illustration style) |
+| View | Normal (PBR studio material) · Flat-line (technical illustration style) · Fit view |
 | Scene | Showroom (dark studio, default) · White (bright neutral background) |
 | Show | Axes on/off · Measure on/off · Explode on/off |
 | Section | Off, X/Y/Z clipping planes, and offset slider |
