@@ -100,7 +100,18 @@ command is still running.
 
 Requires OCCT 7.7+ headers and libraries (including the visualization
 toolkits, which the `text()` glyph renderer links), a system font for
-`text()`'s sans-serif default, and mRuby built as a static library. See
+`text()`'s sans-serif default, and mRuby built as a static library. On
+Debian/Ubuntu, install the OCCT development packages and a font with:
+
+```sh
+sudo apt install libocct-foundation-dev libocct-modeling-data-dev \
+  libocct-modeling-algorithms-dev libocct-ocaf-dev \
+  libocct-data-exchange-dev libocct-visualization-dev fonts-dejavu-core
+```
+
+`libocct-data-exchange-dev` (STEP/glTF headers such as `IFSelect_ReturnStatus.hxx`)
+and `libocct-visualization-dev` (`Font_BRepFont.hxx`, used by `text()`) are easy
+to miss: the build fails with a missing-header error without them. See
 [`doc/development.md`](doc/development.md) for full build setup instructions.
 
 ## Third-party components
