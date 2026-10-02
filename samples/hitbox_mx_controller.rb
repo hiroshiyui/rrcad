@@ -36,9 +36,21 @@ CHAMFER_BOT   = 1.0   # break on the case's bottom outer edge (elephant-foot rel
 # ── Cherry MX plate geometry ────────────────────────────────
 # MX clips need a 1.5 mm ledge; the plate is 5 mm thick for stiffness, so a
 # wider relief pocket is cut from the underside, leaving a 1.5 mm ledge on top.
-SW_CUT    = 14.0   # MX square cutout (top 1.5 mm of the plate)
-SW_LEDGE  = 1.5    # MX clip-in plate thickness
-SW_RELIEF = 15.0   # underside relief pocket so the clips can snap open
+# MX latches hook under the plate: the gap between the top housing's flange
+# and the latch hooks is what the plate ledge must fill. Measured 2.0 mm on
+# the switches in use (calipers, 2026-10-02) — remeasure for other switches.
+MX_LATCH_GAP = 2.0
+LEDGE_PLAY   = 0.2    # snap clearance: the latch ramp takes up what's left
+LAYER_H      = 0.2    # print layer height; the ledge must be a whole number of layers
+SW_CUT    = 14.0   # MX square cutout through the ledge
+# The plate prints top-face-down, so the ledge is its first layers and the
+# slicer rounds it to whole layers — 1.8 mm is 9 × 0.2 (or 6 × 0.3), so it
+# prints as designed; e.g. 1.9 would round up to 2.0 and the latches would
+# no longer snap past it.
+SW_LEDGE  = MX_LATCH_GAP - LEDGE_PLAY
+# Underside relief pocket: the latch hooks stand ~0.5 mm proud of the 14 mm
+# body, so give them 0.8 mm per side to spring fully open under the ledge.
+SW_RELIEF = 15.6
 CAP       = 18.2   # keycap footprint allowance for clearance checks (≥ XDA_BASE)
 
 # ── Raspberry Pi Pico ───────────────────────────────────────
@@ -66,6 +78,13 @@ FOOT_R = 5.4; FOOT_DEPTH = 1.0; FOOT_INSET = 16.0
 # confirm they fit the CAP allowance.
 require_relative "lib/xda_keycap"
 raise "XDA keycap (#{XDA_BASE} mm) exceeds the CAP allowance" if XDA_BASE > CAP
+# Switch retention: the ledge must be thinner than the latch gap (or the
+# switch cannot snap in) and land on a layer boundary (or the slicer moves it).
+raise "SW_LEDGE #{SW_LEDGE} must be < MX_LATCH_GAP #{MX_LATCH_GAP}" unless SW_LEDGE < MX_LATCH_GAP
+layers = SW_LEDGE / LAYER_H
+unless (layers - layers.round).abs < 1e-6
+  raise "SW_LEDGE #{SW_LEDGE} mm is not a whole number of #{LAYER_H} mm layers"
+end
 
 # ════════════════════════════════════════════════════════════
 # Key layout (mm, relative to LAYOUT_ORIGIN)
@@ -137,7 +156,9 @@ SCREWS = [
   [BOSS_INSET, BOSS_INSET], [W - BOSS_INSET, BOSS_INSET],           # front corners
   [BOSS_INSET, D - BOSS_INSET], [W - BOSS_INSET, D - BOSS_INSET],   # back corners
   [W / 2.0, BOSS_INSET],                                            # front middle
-  [W / 2.0 - 25.0, D - BOSS_INSET], [W / 2.0 + 25.0, D - BOSS_INSET], # back, flanking the Pico
+  # Back, flanking the Pico: 0.5 mm nearer the wall than the others so the
+  # function-row switch pockets keep ≥ 1 mm of plate to the bosses.
+  [W / 2.0 - 25.0, D - BOSS_INSET + 0.5], [W / 2.0 + 25.0, D - BOSS_INSET + 0.5],
   [BOSS_INSET, D / 2.0], [W - BOSS_INSET, D / 2.0],                 # side middles
   [LAYOUT_ORIGIN[0], LAYOUT_ORIGIN[1]],                             # centre, between the hands
 ]
@@ -288,18 +309,25 @@ def at_key(shape, x, y, a)
   shape.translate(x, y, 0)
 end
 
+# Cutting tools for one MX switch at a key pose, in plate coordinates
+# (plate bottom at Z = 0, top at Z = PT).
+def switch_cut_tools(x, y, a)
+  [
+    # Through-cut: 14 × 14 MX square.
+    at_key(box(SW_CUT, SW_CUT, PT + 2.0).translate(-SW_CUT / 2, -SW_CUT / 2, -1.0), x, y, a),
+    # Underside relief: leaves a SW_LEDGE-thick ledge at the top for the
+    # latches to hook under.
+    at_key(box(SW_RELIEF, SW_RELIEF, PT - SW_LEDGE + 1.0)
+             .translate(-SW_RELIEF / 2, -SW_RELIEF / 2, -1.0), x, y, a),
+  ]
+end
+
 # ── Top plate (switch plate) ────────────────────────────────
 def build_plate
   plate = bevelled_slab(W, D, PT, CORNER_R, CHAMFER_TOP)
 
   tools = []
-  KEY_POSES.each_value do |x, y, a|
-    # Through-cut: 14 × 14 MX square.
-    tools << at_key(box(SW_CUT, SW_CUT, PT + 2.0).translate(-SW_CUT / 2, -SW_CUT / 2, -1.0), x, y, a)
-    # Underside relief: leaves a 1.5 mm ledge at the top for the MX clips.
-    tools << at_key(box(SW_RELIEF, SW_RELIEF, PT - SW_LEDGE + 1.0)
-                      .translate(-SW_RELIEF / 2, -SW_RELIEF / 2, -1.0), x, y, a)
-  end
+  KEY_POSES.each_value { |x, y, a| tools.concat(switch_cut_tools(x, y, a)) }
   SCREWS.each do |x, y|
     # flat_head_csink is wide at Z=0 and narrows upward; flip it so the cone
     # opens at the plate's top face and the shank runs down through the plate.
@@ -330,6 +358,15 @@ plate_print = plate_part.mirror("xy").translate(0, 0, PT)
 plate_part.export("hitbox_plate.step")
 plate_print.export("hitbox_plate_print.stl")
 
+# Switch fit test: a 25 × 25 mm square of plate with one cutout, printed the
+# same way (top-face-down). Print it first and snap a real switch in: it
+# should click in and sit without vertical play. If it won't seat, lower
+# SW_LEDGE by one layer; if it rattles, check MX_LATCH_GAP.
+# Exported flipped like the plate, so its ledge prints as the first layers
+# exactly as it will on the real plate.
+fit_test = cut_all(box(25.0, 25.0, PT), switch_cut_tools(12.5, 12.5, 0.0))
+fit_test.mirror("xy").translate(0, 0, PT).export("switch_fit_test.stl")
+
 # ── Exploded preview: every part lifted apart along Z ──────
 # Each layer rises by EXPLODE mm above where it sits when assembled, so the
 # parts can be inspected one by one while staying aligned in X/Y: standoffs
@@ -338,7 +375,7 @@ plate_print.export("hitbox_plate_print.stl")
 EXPLODE = param :explode, default: 25, range: 0..200
 
 plate_z = FT + CH + PLATE_GAP
-sw_z    = plate_z + PT - SW_LEDGE + 1.5   # MX top housing seat height (= plate top)
+sw_z    = plate_z + PT                    # MX top housing flange sits on the plate top
 # A resting MX stem tops out 11.6 mm above the plate; the cap's cross socket
 # floor (MX_CROSS_DEPTH up from its skirt) sits on it.
 cap_z   = plate_z + PT + MX_STEM_TOP - MX_CROSS_DEPTH
