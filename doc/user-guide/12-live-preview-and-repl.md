@@ -35,7 +35,7 @@ shortcuts:
 
 | Control | Action |
 |---------|--------|
-| Left-drag | Orbit |
+| Left-drag | Orbit — all the way round, including under the model to inspect its underside (the floor drops out of view and a light from below brightens it) |
 | Right-drag / two-finger drag | Pan |
 | Scroll / pinch | Zoom |
 | **F** | Toggle flat-line view (white flat-shaded surfaces + gray edge lines) |

@@ -489,8 +489,17 @@ rim.position.set(-1, 7, -9);
 scene.add(rim);
 
 // Ground bounce: very faint warm fill from below, simulating light reflected
-// back up off the studio floor onto the underside of the model.
+// back up off the studio floor onto the underside of the model.  When the
+// camera orbits below the floor it ramps up to UNDERSIDE_BOUNCE (see
+// undersideLightIntensity) so the underside reads clearly instead of black.
 const bounce = new THREE.DirectionalLight(0xff8844, 0.12);
+// Scene's resting bounce intensity (applySceneMode sets it per scene).
+let bounceBase = 0.12;
+const UNDERSIDE_BOUNCE = 3.0;
+// The resting bounce is a warm floor tint; at full underside strength it
+// turns neutral so it does not colour-cast the part being inspected.
+const BOUNCE_WARM    = new THREE.Color(0xff8844);
+const BOUNCE_NEUTRAL = new THREE.Color(0xffffff);
 bounce.position.set(0, -4, 3);
 scene.add(bounce);
 
@@ -503,8 +512,11 @@ camera.position.set(80, 60, 120);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping  = true;
 controls.dampingFactor  = 0.07;
-// Clamp vertical orbit so the user cannot go below the studio floor.
-controls.maxPolarAngle  = Math.PI * 0.48;
+// Full vertical orbit: the camera may swing under the model to inspect its
+// underside. The studio floor is a one-sided plane facing up, so from below
+// it is back-face culled and simply drops out of view — nothing hides the
+// model, and undersideLightIntensity() lights what the camera finds there.
+controls.maxPolarAngle  = Math.PI;
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 // A subtle axes helper (press 'A' to toggle) — hidden by default in studio mode.
@@ -645,7 +657,7 @@ function applySceneMode() {
     key.color.set(0xffffff);  key.intensity  = 1.0;
     fill.intensity   = 0.6;
     rim.intensity    = 0.0;
-    bounce.intensity = 0.0;
+    bounceBase       = 0.0;
     vignette.style.display = 'none';
     document.body.classList.add('scene-white');
   } else {
@@ -659,7 +671,7 @@ function applySceneMode() {
     key.color.set(0xfff8f2);  key.intensity  = 2.4;
     fill.intensity   = 0.55;
     rim.intensity    = 1.2;
-    bounce.intensity = 0.12;
+    bounceBase       = 0.12;
     vignette.style.display = '';
     document.body.classList.remove('scene-white');
   }
@@ -1384,10 +1396,26 @@ window.addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 
+// Bounce-light intensity for a camera at height `cameraY` (floor at 0) and
+// `viewDist` from its orbit target.  At or above the floor the scene keeps
+// its resting `base`; below it, the light ramps linearly to `peak` over the
+// first quarter of the view distance, so swinging under the model brightens
+// its underside smoothly rather than with a jump at the horizon.
+function undersideLightIntensity(base, peak, cameraY, viewDist) {
+  if (!(viewDist > 0)) return base;
+  const t = Math.min(Math.max(-cameraY / (0.25 * viewDist), 0), 1);
+  return base + t * (peak - base);
+}
+
 // ── Render loop ───────────────────────────────────────────────────────────
 (function animate() {
   requestAnimationFrame(animate);
   controls.update();
+  bounce.intensity = undersideLightIntensity(
+    bounceBase, UNDERSIDE_BOUNCE,
+    camera.position.y, camera.position.distanceTo(controls.target));
+  const boost = (bounce.intensity - bounceBase) / (UNDERSIDE_BOUNCE - bounceBase);
+  bounce.color.copy(BOUNCE_WARM).lerp(BOUNCE_NEUTRAL, boost);
   renderer.render(scene, camera);
 })();
 </script>

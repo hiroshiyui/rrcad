@@ -326,6 +326,41 @@ mod tests {
     }
 
     #[test]
+    fn the_underside_light_ramps_up_only_below_the_floor() {
+        // The camera may orbit under the model; the bounce light must stay at
+        // the scene's resting level above the floor (so the Showroom look is
+        // unchanged), ramp smoothly — no jump at the horizon — once below it,
+        // and saturate at the peak.
+        let Some(node) = find_node() else { return };
+
+        let script = format!(
+            "{f}\n\
+             const fail = msg => {{ console.error(msg); process.exit(1); }};\n\
+             const at = (y, d) => undersideLightIntensity(0.12, 1.6, y, d);\n\
+             const near = (a, b) => Math.abs(a - b) < 1e-9;\n\
+             if (!near(at(50, 200), 0.12)) fail('above the floor must keep the base');\n\
+             if (!near(at(0, 200), 0.12)) fail('at the floor must keep the base');\n\
+             if (!near(at(-1e-6, 200), 0.12 + (1.6 - 0.12) * 1e-6 / 50)) fail('ramp must start continuously');\n\
+             if (!near(at(-25, 200), (0.12 + 1.6) / 2)) fail('halfway down the ramp must be the midpoint');\n\
+             if (!near(at(-50, 200), 1.6) || !near(at(-500, 200), 1.6)) fail('must saturate at the peak');\n\
+             if (!near(at(-50, 0), 0.12)) fail('a degenerate view distance must fall back to the base');\n\
+             // White scene: zero base still ramps to the peak.\n\
+             if (!near(undersideLightIntensity(0, 1.6, -50, 200), 1.6)) fail('zero base must still ramp');\n",
+            f = viewer_function("undersideLightIntensity"),
+        );
+
+        let mut path = std::env::temp_dir();
+        path.push(format!("rrcad-underside-light-{}.mjs", std::process::id()));
+        fs::write(&path, script).expect("write underside light harness");
+        let status = Command::new(node)
+            .arg(&path)
+            .status()
+            .expect("run underside light harness");
+        let _ = fs::remove_file(&path);
+        assert!(status.success(), "underside lighting ramp is wrong (see stderr)");
+    }
+
+    #[test]
     fn a_live_reload_keeps_the_users_camera_but_a_fit_reframes_it() {
         // Every save pushes a reload; re-fitting the camera on each one threw
         // away the user's orbit. `keepView` must leave the camera position and
