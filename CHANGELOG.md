@@ -5,6 +5,62 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-10-02
+
+Live-preview quality of life — the camera stays where you put it, and you can
+now orbit under a model — plus a fix for a reload loop that kept snapping the
+view back, and a complete printable leverless game controller as a sample.
+
+### Added
+
+- **Camera kept across live reloads** (`src/preview/viewer.html`): the
+  camera is framed on the first model only; later reloads keep your orbit,
+  zoom, and pan, while shadow bounds and the far plane still follow the new
+  model so a model that grew is not clipped. **R** (or **Fit view** in the
+  menu) re-frames on demand.
+- **Underside inspection** (`src/preview/viewer.html`): the orbit is no
+  longer clamped above the studio floor, in every scene. The floor drops out
+  of view from below, and the bounce light ramps up to a neutral peak as the
+  camera goes under the model so its underside reads clearly; above the
+  floor each scene looks exactly as before.
+- **`samples/hitbox_mx_controller.rb`**: a leverless (Hitbox-style) game
+  controller for Cherry MX switches and a Raspberry Pi Pico, as two parts
+  that fit a 220 × 220 mm bed — a PC-style inverted-T arrow cluster tilted
+  10° and isolated by a ≥ 10 mm gap, finger-staggered attack keys, Pico
+  standoffs and USB opening, M3 heat-set-insert fastening, and a switch
+  ledge sized from the measured MX latch gap with a `switch_fit_test.stl`
+  coupon. Layout clearances (true distances between rotated keys),
+  ledge/layer alignment, and bed fit are checked before any geometry is
+  built; the preview shows an exploded view (`--param explode=0` to
+  assemble).
+- **`samples/xda_keycaps.rb`** and **`samples/lib/xda_keycap.rb`**: an
+  XDA-profile 1u keycap with an MX cross socket, printable upright without
+  supports, exported singly and as an 18-cap print set; the controller
+  preview loads the same definition to show the real caps.
+
+### Fixed
+
+- **Live-reload loop** (`src/cli.rs`): the file watcher reacted to read-only
+  `Access` events (inotify `IN_OPEN` / `IN_CLOSE_NOWRITE`), and every eval
+  reads the script, so once anything read it the preview re-evaluated
+  forever — each pass pushing a reload that snapped the browser camera back.
+  Only create, modify (including atomic-save renames), and remove events now
+  trigger a reload.
+
+### Changed
+
+- **Rust toolchain pinned to 1.98.1** (`rust-toolchain.toml`), so local
+  builds, clippy, and rustfmt match CI; CI now installs only the pinned
+  toolchain instead of stable first.
+- **Build prerequisites documented**: the README now lists the full
+  Debian/Ubuntu `apt install` line, calling out the easy-to-miss
+  `libocct-data-exchange-dev` and `libocct-visualization-dev`; the
+  getting-started and troubleshooting guides gained the packages `text()`
+  made necessary in 0.6.0.
+- **Docs**: Phase 12 covered in the Rust and bridge API reference; the
+  preview chapter documents the kept camera, **R**, and underside orbiting;
+  `.glb` exports are git-ignored like STEP/STL.
+
 ## [0.6.0] - 2026-07-30
 
 Phase 12 — quadcopter readiness: the six gaps found by scoping a real drone
